@@ -114,6 +114,32 @@ We have ready-to-use SDKs for the most popular languages.
 
 ---
 
+## 🛡️ Security & Sigma Rules
+
+LogWard goes beyond simple monitoring by transforming your logs into a security advantage. We support **Sigma Rules**, the industry-standard format for describing log signatures.
+
+* **Threat Detection:** Automatically detect suspicious activities (e.g., SSH brute force, clearing of history, web shells).
+* **Standard Format:** Write rules in standard YAML or import existing ones from the [Sigma community](https://github.com/SigmaHQ/sigma).
+* **Real-time Matching:** Rules are evaluated against incoming logs in real-time.
+
+**Example Rule (Detecting History Clear):**
+
+```yaml
+title: Clear Command History
+status: stable
+logsource:
+    product: linux
+detection:
+    selection:
+        command:
+            - 'history -c'
+            - 'cat /dev/null > ~/.bash_history'
+    condition: selection
+level: high
+```
+
+---
+
 ## 🏗️ Tech Stack
 
 We use modern, type-safe tools to ensure performance and maintainability.
