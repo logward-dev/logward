@@ -136,4 +136,11 @@ async function start() {
 }
 
 // Start the server directly when this file is run
-start();
+import { fileURLToPath } from 'url';
+
+// ... (existing imports)
+
+// Check if this file is the main module
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  start();
+}

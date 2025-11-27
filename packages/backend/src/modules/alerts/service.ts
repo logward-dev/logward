@@ -318,11 +318,20 @@ export class AlertsService {
       .offset(options?.offset ?? 0)
       .execute();
 
-    const totalQuery = db
+    let totalQuery = db
       .selectFrom('alert_history')
       .innerJoin('alert_rules', 'alert_rules.id', 'alert_history.rule_id')
       .select((eb) => eb.fn.count('alert_history.id').as('count'))
       .where('alert_rules.organization_id', '=', organizationId);
+
+    if (options?.projectId) {
+      totalQuery = totalQuery.where((eb) =>
+        eb.or([
+          eb('alert_rules.project_id', '=', options.projectId!),
+          eb('alert_rules.project_id', 'is', null),
+        ])
+      );
+    }
 
     const total = await totalQuery.executeTakeFirst();
 

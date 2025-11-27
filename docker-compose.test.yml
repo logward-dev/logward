@@ -11,9 +11,9 @@ services:
     ports:
       - "5433:5432"
     tmpfs:
-      - /var/lib/postgresql/data  # In-memory for speed
+      - /var/lib/postgresql/data # In-memory for speed
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U logward_test"]
+      test: [ "CMD-SHELL", "pg_isready -U logward_test" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -27,10 +27,19 @@ services:
     ports:
       - "6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - logward-test-network
+
+  mailhog-test:
+    image: mailhog/mailhog:latest
+    container_name: logward-mailhog-test
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # API/UI
     networks:
       - logward-test-network
 

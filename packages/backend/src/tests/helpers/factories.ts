@@ -191,6 +191,8 @@ export async function createTestSigmaRule(overrides: {
     description?: string;
     level?: string;
     enabled?: boolean;
+    logsource?: any;
+    detection?: any;
 } = {}) {
     // Create organization if not provided
     let organizationId = overrides.organizationId;
@@ -211,10 +213,10 @@ export async function createTestSigmaRule(overrides: {
             description: overrides.description || 'Test sigma rule',
             level,
             status: 'stable',
-            logsource: {
+            logsource: overrides.logsource || {
                 product: 'linux',
             },
-            detection: {
+            detection: overrides.detection || {
                 selection: {
                     'message|contains': 'test',
                 },
