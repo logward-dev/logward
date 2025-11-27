@@ -18,7 +18,10 @@
     "check-schema": "tsx src/scripts/check-schema.ts",
     "enable-system-login": "tsx src/scripts/enable-system-login.ts",
     "add-system-to-org": "tsx src/scripts/add-system-to-org.ts",
-    "test": "vitest",
+    "test": "node src/scripts/run-tests.mjs",
+    "test:watch": "node src/scripts/run-tests.mjs --watch",
+    "test:coverage": "node src/scripts/run-tests.mjs --coverage",
+    "test:ci": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
@@ -48,6 +51,9 @@
     "@types/node": "^20.14.15",
     "@types/nodemailer": "^6.4.15",
     "@types/pg": "^8.11.6",
+    "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^2.0.5",
+    "supertest": "^7.0.0",
     "tsx": "^4.16.5",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"

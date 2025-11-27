@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: timescale/timescaledb:latest-pg16
+    container_name: logward-postgres-test
+    environment:
+      POSTGRES_DB: logward_test
+      POSTGRES_USER: logward_test
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data  # In-memory for speed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logward_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - logward-test-network
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: logward-redis-test
+    command: redis-server --requirepass test_password
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - logward-test-network
+
+networks:
+  logward-test-network:
+    driver: bridge

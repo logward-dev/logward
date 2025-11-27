@@ -3,10 +3,18 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { z } from 'zod';
 
-// Load .env from project root
+// Load environment variables
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const envPath = path.resolve(__dirname, '../../../../.env');
-dotenv.config({ path: envPath, debug: false });
+
+// Load .env.test first if NODE_ENV=test
+if (process.env.NODE_ENV === 'test') {
+  const envTestPath = path.resolve(__dirname, '../../.env.test');
+  dotenv.config({ path: envTestPath, override: true });
+} else {
+  // Load .env from project root for development/production
+  const envPath = path.resolve(__dirname, '../../../../.env');
+  dotenv.config({ path: envPath, debug: false });
+}
 
 const configSchema = z.object({
   // Server

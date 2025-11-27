@@ -1,0 +1,547 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import request from 'supertest';
+import { build } from '../../server.js';
+import { createTestContext, createTestLog } from '../helpers/index.js';
+import { db } from '../../database/index.js';
+import type { FastifyInstance } from 'fastify';
+
+describe('Query API Integration Tests', () => {
+    let app: FastifyInstance;
+    let apiKey: string;
+    let projectId: string;
+    let userId: string;
+    let organizationId: string;
+
+    beforeEach(async () => {
+        // Create test context (user, org, project, API key)
+        const context = await createTestContext();
+        apiKey = context.apiKey.plainKey; // Use the plain key for Authorization header
+        projectId = context.project.id;
+        userId = context.user.id;
+        organizationId = context.organization.id;
+
+        // Build Fastify app
+        app = await build();
+        await app.ready();
+    });
+
+    describe('GET /api/v1/logs - Search and Filter Logs', () => {
+        beforeEach(async () => {
+            // Insert test logs with various properties
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+            await createTestLog({ projectId, 
+                time: now,
+                service: 'api',
+                level: 'info',
+                message: 'User login successful',
+                metadata: { userId: 'user123' },
+            });
+
+            await createTestLog({ projectId, 
+                time: oneHourAgo,
+                service: 'api',
+                level: 'error',
+                message: 'Database connection failed',
+                metadata: { error: 'ECONNREFUSED' },
+            });
+
+            await createTestLog({ projectId, 
+                time: twoHoursAgo,
+                service: 'worker',
+                level: 'warn',
+                message: 'High memory usage detected',
+            });
+
+            await createTestLog({ projectId, 
+                time: now,
+                service: 'worker',
+                level: 'info',
+                message: 'Task completed successfully',
+                trace_id: 'trace-123',
+            });
+        });
+
+        it('should return all logs without filters', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('logs');
+            expect(response.body.logs).toBeInstanceOf(Array);
+            expect(response.body.logs.length).toBeGreaterThan(0);
+        });
+
+        it('should filter logs by service', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, service: 'api' })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(log.service).toBe('api');
+            });
+        });
+
+        it('should filter logs by level', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, level: 'error' })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(log.level).toBe('error');
+            });
+        });
+
+        it('should filter logs by multiple levels', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, level: ['info', 'warn'] })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(['info', 'warn']).toContain(log.level);
+            });
+        });
+
+        it('should filter logs by time range', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({
+                    projectId,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                const logTime = new Date(log.time);
+                expect(logTime.getTime()).toBeGreaterThanOrEqual(oneHourAgo.getTime());
+                expect(logTime.getTime()).toBeLessThanOrEqual(now.getTime());
+            });
+        });
+
+        it('should filter logs by full-text search (message)', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, q: 'Database' })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            expect(response.body.logs.length).toBeGreaterThan(0);
+            expect(response.body.logs[0].message).toContain('Database');
+        });
+
+        it('should filter logs by trace_id', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, traceId: 'trace-123' })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(log.trace_id).toBe('trace-123');
+            });
+        });
+
+        it('should combine multiple filters (service + level + time)', async () => {
+            const now = new Date();
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({
+                    projectId,
+                    service: 'api',
+                    level: 'info',
+                    from: twoHoursAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(log.service).toBe('api');
+                expect(log.level).toBe('info');
+            });
+        });
+
+        it('should handle pagination with limit and offset', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, limit: 2, offset: 0 })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toHaveLength(2);
+            expect(response.body).toHaveProperty('total');
+        });
+
+        it('should handle empty results', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, service: 'non-existent-service' })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toHaveLength(0);
+        });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId })
+                .expect(401);
+        });
+
+        it('should reject invalid API key', async () => {
+            await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId })
+                .set('Authorization', 'Bearer invalid_key')
+                .expect(401);
+        });
+
+        it('should require projectId parameter', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+            expect(response.body.error).toContain('Project context missing');
+        });
+    });
+
+    describe('GET /api/v1/logs/trace/:traceId - Get Logs by Trace ID', () => {
+        beforeEach(async () => {
+            // Insert logs with same trace ID
+            await createTestLog({ projectId, 
+                service: 'api',
+                level: 'info',
+                message: 'Request received',
+                trace_id: 'trace-456',
+            });
+
+            await createTestLog({ projectId, 
+                service: 'database',
+                level: 'info',
+                message: 'Query executed',
+                trace_id: 'trace-456',
+            });
+
+            await createTestLog({ projectId, 
+                service: 'cache',
+                level: 'info',
+                message: 'Cache hit',
+                trace_id: 'trace-456',
+            });
+
+            // Different trace
+            await createTestLog({ projectId, 
+                service: 'api',
+                level: 'info',
+                message: 'Other request',
+                trace_id: 'trace-789',
+            });
+        });
+
+        it('should return all logs for a specific trace ID', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/trace/trace-456')
+                .query({ projectId })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toHaveLength(3);
+            response.body.logs.forEach((log: any) => {
+                expect(log.trace_id).toBe('trace-456');
+            });
+        });
+
+        it('should return empty array for non-existent trace ID', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/trace/non-existent-trace')
+                .query({ projectId })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.logs).toHaveLength(0);
+        });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/trace/trace-456')
+                .query({ projectId })
+                .expect(401);
+        });
+    });
+
+    describe('GET /api/v1/logs/context - Get Log Context', () => {
+        beforeEach(async () => {
+            const now = new Date();
+
+            // Insert logs around a specific time
+            for (let i = -10; i <= 10; i++) {
+                const time = new Date(now.getTime() + i * 1000); // 1 second intervals
+                await createTestLog({ projectId, 
+                    time,
+                    service: 'test',
+                    level: 'info',
+                    message: `Log ${i}`,
+                });
+            }
+        });
+
+        it('should return logs before and after a specific time', async () => {
+            const now = new Date();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/context')
+                .query({
+                    projectId,
+                    time: now.toISOString(),
+                    before: 5,
+                    after: 5,
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('before');
+            expect(response.body).toHaveProperty('after');
+            expect(response.body.before).toHaveLength(5);
+            expect(response.body.after).toHaveLength(5);
+        });
+
+        it('should use default before/after values (10)', async () => {
+            const now = new Date();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/context')
+                .query({
+                    projectId,
+                    time: now.toISOString(),
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.before.length).toBeLessThanOrEqual(10);
+            expect(response.body.after.length).toBeLessThanOrEqual(10);
+        });
+
+        it('should require time parameter', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/context')
+                .query({ projectId })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+        });
+    });
+
+    describe('GET /api/v1/logs/aggregated - Get Aggregated Statistics', () => {
+        beforeEach(async () => {
+            const now = new Date();
+
+            // Insert logs with different levels
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId, 
+                    time: now,
+                    service: 'api',
+                    level: 'info',
+                    message: `Info log ${i}`,
+                });
+            }
+
+            for (let i = 0; i < 3; i++) {
+                await createTestLog({ projectId, 
+                    time: now,
+                    service: 'api',
+                    level: 'error',
+                    message: `Error log ${i}`,
+                });
+            }
+        });
+
+        it('should return aggregated statistics with time buckets', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/aggregated')
+                .query({
+                    projectId,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                    interval: '1h',
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('buckets');
+            expect(response.body.buckets).toBeInstanceOf(Array);
+        });
+
+        it('should filter by service', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/aggregated')
+                .query({
+                    projectId,
+                    service: 'api',
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('buckets');
+        });
+
+        it('should require from and to parameters', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/aggregated')
+                .query({ projectId })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+        });
+    });
+
+    describe('GET /api/v1/logs/top-services - Get Top Services', () => {
+        beforeEach(async () => {
+            // Insert logs for different services
+            for (let i = 0; i < 10; i++) {
+                await createTestLog({ projectId,  service: 'api', level: 'info', message: `API log ${i}` });
+            }
+
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId,  service: 'worker', level: 'info', message: `Worker log ${i}` });
+            }
+
+            for (let i = 0; i < 3; i++) {
+                await createTestLog({ projectId,  service: 'cache', level: 'info', message: `Cache log ${i}` });
+            }
+        });
+
+        it('should return top services by log count', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-services')
+                .query({ projectId, limit: 5 })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.services).toBeInstanceOf(Array);
+            expect(response.body.services[0]).toHaveProperty('service');
+            expect(response.body.services[0]).toHaveProperty('count');
+
+            // Services should be ordered by count (descending)
+            expect(response.body.services[0].service).toBe('api');
+            expect(Number(response.body.services[0].count)).toBeGreaterThanOrEqual(10);
+        });
+
+        it('should respect limit parameter', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-services')
+                .query({ projectId, limit: 2 })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.services.length).toBeLessThanOrEqual(2);
+        });
+
+        it('should filter by time range', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-services')
+                .query({
+                    projectId,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.services).toBeInstanceOf(Array);
+        });
+    });
+
+    describe('GET /api/v1/logs/top-errors - Get Top Errors', () => {
+        beforeEach(async () => {
+            // Insert error logs
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId, 
+                    level: 'error',
+                    service: 'api',
+                    message: 'Database connection timeout',
+                });
+            }
+
+            for (let i = 0; i < 3; i++) {
+                await createTestLog({ projectId, 
+                    level: 'error',
+                    service: 'api',
+                    message: 'Invalid user credentials',
+                });
+            }
+
+            for (let i = 0; i < 2; i++) {
+                await createTestLog({ projectId, 
+                    level: 'critical',
+                    service: 'worker',
+                    message: 'Out of memory',
+                });
+            }
+        });
+
+        it('should return top error messages', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-errors')
+                .query({ projectId, limit: 10 })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.errors).toBeInstanceOf(Array);
+            expect(response.body.errors[0]).toHaveProperty('message');
+            expect(response.body.errors[0]).toHaveProperty('count');
+
+            // Errors should be ordered by count (descending)
+            expect(response.body.errors[0].message).toBe('Database connection timeout');
+        });
+
+        it('should respect limit parameter', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-errors')
+                .query({ projectId, limit: 2 })
+                .set('Authorization', `Bearer ${apiKey}`)
+                .expect(200);
+
+            expect(response.body.errors.length).toBeLessThanOrEqual(2);
+        });
+    });
+});
