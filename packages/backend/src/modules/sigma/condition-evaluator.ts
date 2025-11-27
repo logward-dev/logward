@@ -48,14 +48,14 @@ export class SigmaConditionEvaluator {
     // Replace operators with special markers to preserve them
     const normalized = condition
       .toLowerCase()
+      .replace(/(\d+)\s+of/g, '$1_OF') // "1 of" → "1_OF" (Must be before generic OF replacement)
       .replace(/\(/g, ' ( ')
       .replace(/\)/g, ' ) ')
       .replace(/\band\b/g, ' AND ')
       .replace(/\bor\b/g, ' OR ')
       .replace(/\bnot\b/g, ' NOT ')
       .replace(/\bof\b/g, ' OF ')
-      .replace(/\ball\b/g, ' ALL ')
-      .replace(/\d+\s+of/g, (match) => match.replace(/\s+/, '_')); // "1 of" → "1_OF"
+      .replace(/\ball\b/g, ' ALL ');
 
     // Split on whitespace and filter empty
     return normalized

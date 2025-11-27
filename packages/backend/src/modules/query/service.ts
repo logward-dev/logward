@@ -170,13 +170,24 @@ export class QueryService {
    * Get logs by trace ID
    */
   async getLogsByTraceId(projectId: string, traceId: string) {
-    return db
+    const logs = await db
       .selectFrom('logs')
       .selectAll()
       .where('project_id', '=', projectId)
       .where('trace_id', '=', traceId)
       .orderBy('time', 'asc')
       .execute();
+
+    return logs.map(log => ({
+      id: log.id,
+      time: log.time,
+      projectId: log.project_id,
+      service: log.service,
+      level: log.level,
+      message: log.message,
+      metadata: log.metadata,
+      traceId: log.trace_id,
+    }));
   }
 
   /**

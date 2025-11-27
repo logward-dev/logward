@@ -37,6 +37,7 @@ export default defineConfig({
                 singleThread: true, // Run tests sequentially to avoid DB conflicts
             },
         },
+        fileParallelism: false, // Ensure files run sequentially too
     },
     resolve: {
         alias: {

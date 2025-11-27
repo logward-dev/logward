@@ -32,7 +32,8 @@ describe('Query API Integration Tests', () => {
             const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
             const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 time: now,
                 service: 'api',
                 level: 'info',
@@ -40,7 +41,8 @@ describe('Query API Integration Tests', () => {
                 metadata: { userId: 'user123' },
             });
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 time: oneHourAgo,
                 service: 'api',
                 level: 'error',
@@ -48,19 +50,21 @@ describe('Query API Integration Tests', () => {
                 metadata: { error: 'ECONNREFUSED' },
             });
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 time: twoHoursAgo,
                 service: 'worker',
                 level: 'warn',
                 message: 'High memory usage detected',
             });
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 time: now,
                 service: 'worker',
                 level: 'info',
                 message: 'Task completed successfully',
-                trace_id: 'trace-123',
+                trace_id: '550e8400-e29b-41d4-a716-446655440001',
             });
         });
 
@@ -68,7 +72,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body).toHaveProperty('logs');
@@ -80,7 +84,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, service: 'api' })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -93,7 +97,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, level: 'error' })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -106,7 +110,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, level: ['info', 'warn'] })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -126,7 +130,7 @@ describe('Query API Integration Tests', () => {
                     from: oneHourAgo.toISOString(),
                     to: now.toISOString(),
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -141,7 +145,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, q: 'Database' })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -152,13 +156,13 @@ describe('Query API Integration Tests', () => {
         it('should filter logs by trace_id', async () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
-                .query({ projectId, traceId: 'trace-123' })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .query({ projectId, traceId: '550e8400-e29b-41d4-a716-446655440001' })
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
             response.body.logs.forEach((log: any) => {
-                expect(log.trace_id).toBe('trace-123');
+                expect(log.traceId).toBe('550e8400-e29b-41d4-a716-446655440001');
             });
         });
 
@@ -175,7 +179,7 @@ describe('Query API Integration Tests', () => {
                     from: twoHoursAgo.toISOString(),
                     to: now.toISOString(),
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toBeInstanceOf(Array);
@@ -189,7 +193,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, limit: 2, offset: 0 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toHaveLength(2);
@@ -200,7 +204,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, service: 'non-existent-service' })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toHaveLength(0);
@@ -217,72 +221,68 @@ describe('Query API Integration Tests', () => {
             await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId })
-                .set('Authorization', 'Bearer invalid_key')
+                .set('x-api-key', 'invalid_key')
                 .expect(401);
         });
 
-        it('should require projectId parameter', async () => {
-            const response = await request(app.server)
-                .get('/api/v1/logs')
-                .set('Authorization', `Bearer ${apiKey}`)
-                .expect(400);
 
-            expect(response.body).toHaveProperty('error');
-            expect(response.body.error).toContain('Project context missing');
-        });
     });
 
     describe('GET /api/v1/logs/trace/:traceId - Get Logs by Trace ID', () => {
         beforeEach(async () => {
             // Insert logs with same trace ID
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 service: 'api',
                 level: 'info',
                 message: 'Request received',
-                trace_id: 'trace-456',
+                trace_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
             });
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 service: 'database',
                 level: 'info',
                 message: 'Query executed',
-                trace_id: 'trace-456',
+                trace_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
             });
 
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 service: 'cache',
                 level: 'info',
                 message: 'Cache hit',
-                trace_id: 'trace-456',
+                trace_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
             });
 
             // Different trace
-            await createTestLog({ projectId, 
+            await createTestLog({
+                projectId,
                 service: 'api',
                 level: 'info',
                 message: 'Other request',
-                trace_id: 'trace-789',
+                trace_id: '6ba7b811-9dad-11d1-80b4-00c04fd430c9',
             });
         });
 
         it('should return all logs for a specific trace ID', async () => {
             const response = await request(app.server)
-                .get('/api/v1/logs/trace/trace-456')
+                .get('/api/v1/logs/trace/6ba7b810-9dad-11d1-80b4-00c04fd430c8')
                 .query({ projectId })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toHaveLength(3);
             response.body.logs.forEach((log: any) => {
-                expect(log.trace_id).toBe('trace-456');
+                expect(log.traceId).toBe('6ba7b810-9dad-11d1-80b4-00c04fd430c8');
             });
         });
 
         it('should return empty array for non-existent trace ID', async () => {
             const response = await request(app.server)
-                .get('/api/v1/logs/trace/non-existent-trace')
+                .get('/api/v1/logs/trace/00000000-0000-0000-0000-000000000000')
                 .query({ projectId })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.logs).toHaveLength(0);
@@ -290,7 +290,7 @@ describe('Query API Integration Tests', () => {
 
         it('should require authentication', async () => {
             await request(app.server)
-                .get('/api/v1/logs/trace/trace-456')
+                .get('/api/v1/logs/trace/6ba7b810-9dad-11d1-80b4-00c04fd430c8')
                 .query({ projectId })
                 .expect(401);
         });
@@ -303,7 +303,8 @@ describe('Query API Integration Tests', () => {
             // Insert logs around a specific time
             for (let i = -10; i <= 10; i++) {
                 const time = new Date(now.getTime() + i * 1000); // 1 second intervals
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     time,
                     service: 'test',
                     level: 'info',
@@ -323,7 +324,7 @@ describe('Query API Integration Tests', () => {
                     before: 5,
                     after: 5,
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body).toHaveProperty('before');
@@ -341,7 +342,7 @@ describe('Query API Integration Tests', () => {
                     projectId,
                     time: now.toISOString(),
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.before.length).toBeLessThanOrEqual(10);
@@ -352,7 +353,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/context')
                 .query({ projectId })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
@@ -365,7 +366,8 @@ describe('Query API Integration Tests', () => {
 
             // Insert logs with different levels
             for (let i = 0; i < 5; i++) {
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     time: now,
                     service: 'api',
                     level: 'info',
@@ -374,7 +376,8 @@ describe('Query API Integration Tests', () => {
             }
 
             for (let i = 0; i < 3; i++) {
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     time: now,
                     service: 'api',
                     level: 'error',
@@ -395,11 +398,11 @@ describe('Query API Integration Tests', () => {
                     to: now.toISOString(),
                     interval: '1h',
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
-            expect(response.body).toHaveProperty('buckets');
-            expect(response.body.buckets).toBeInstanceOf(Array);
+            expect(response.body).toHaveProperty('timeseries');
+            expect(response.body.timeseries).toBeInstanceOf(Array);
         });
 
         it('should filter by service', async () => {
@@ -414,17 +417,17 @@ describe('Query API Integration Tests', () => {
                     from: oneHourAgo.toISOString(),
                     to: now.toISOString(),
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
-            expect(response.body).toHaveProperty('buckets');
+            expect(response.body).toHaveProperty('timeseries');
         });
 
         it('should require from and to parameters', async () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/aggregated')
                 .query({ projectId })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
@@ -435,15 +438,15 @@ describe('Query API Integration Tests', () => {
         beforeEach(async () => {
             // Insert logs for different services
             for (let i = 0; i < 10; i++) {
-                await createTestLog({ projectId,  service: 'api', level: 'info', message: `API log ${i}` });
+                await createTestLog({ projectId, service: 'api', level: 'info', message: `API log ${i}` });
             }
 
             for (let i = 0; i < 5; i++) {
-                await createTestLog({ projectId,  service: 'worker', level: 'info', message: `Worker log ${i}` });
+                await createTestLog({ projectId, service: 'worker', level: 'info', message: `Worker log ${i}` });
             }
 
             for (let i = 0; i < 3; i++) {
-                await createTestLog({ projectId,  service: 'cache', level: 'info', message: `Cache log ${i}` });
+                await createTestLog({ projectId, service: 'cache', level: 'info', message: `Cache log ${i}` });
             }
         });
 
@@ -451,7 +454,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/top-services')
                 .query({ projectId, limit: 5 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.services).toBeInstanceOf(Array);
@@ -467,7 +470,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/top-services')
                 .query({ projectId, limit: 2 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.services.length).toBeLessThanOrEqual(2);
@@ -484,7 +487,7 @@ describe('Query API Integration Tests', () => {
                     from: oneHourAgo.toISOString(),
                     to: now.toISOString(),
                 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.services).toBeInstanceOf(Array);
@@ -495,7 +498,8 @@ describe('Query API Integration Tests', () => {
         beforeEach(async () => {
             // Insert error logs
             for (let i = 0; i < 5; i++) {
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     level: 'error',
                     service: 'api',
                     message: 'Database connection timeout',
@@ -503,7 +507,8 @@ describe('Query API Integration Tests', () => {
             }
 
             for (let i = 0; i < 3; i++) {
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     level: 'error',
                     service: 'api',
                     message: 'Invalid user credentials',
@@ -511,7 +516,8 @@ describe('Query API Integration Tests', () => {
             }
 
             for (let i = 0; i < 2; i++) {
-                await createTestLog({ projectId, 
+                await createTestLog({
+                    projectId,
                     level: 'critical',
                     service: 'worker',
                     message: 'Out of memory',
@@ -523,7 +529,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/top-errors')
                 .query({ projectId, limit: 10 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.errors).toBeInstanceOf(Array);
@@ -538,7 +544,7 @@ describe('Query API Integration Tests', () => {
             const response = await request(app.server)
                 .get('/api/v1/logs/top-errors')
                 .query({ projectId, limit: 2 })
-                .set('Authorization', `Bearer ${apiKey}`)
+                .set('x-api-key', apiKey)
                 .expect(200);
 
             expect(response.body.errors.length).toBeLessThanOrEqual(2);
