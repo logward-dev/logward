@@ -23,7 +23,15 @@
     "test:coverage": "node src/scripts/run-tests.mjs --coverage",
     "test:ci": "vitest run",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "load:smoke": "k6 run load-tests/smoke.js",
+    "load:ingestion": "k6 run load-tests/ingestion.js",
+    "load:query": "k6 run load-tests/query.js",
+    "load:e2e:smoke": "bash scripts/run-load-tests.sh smoke",
+    "load:e2e:ingestion": "bash scripts/run-load-tests.sh ingestion",
+    "load:e2e:query": "bash scripts/run-load-tests.sh query",
+    "load:e2e:all": "bash scripts/run-load-tests.sh all",
+    "seed:load-test": "tsx src/scripts/seed-load-test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

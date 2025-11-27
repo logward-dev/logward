@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { ingestRequestSchema, logSchema } from '@logward/shared';
 import { ingestionService } from './service.js';
+import { config } from '../../config/index.js';
 
 const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
   // Add parser for Fluent Bit's NDJSON format
@@ -20,8 +21,8 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/v1/ingest/single', {
     config: {
       rateLimit: {
-        max: 300, // 300 requests per minute per API key
-        timeWindow: '1 minute'
+        max: config.RATE_LIMIT_MAX, // configurable via RATE_LIMIT_MAX env var
+        timeWindow: config.RATE_LIMIT_WINDOW
       }
     },
     schema: {
@@ -114,8 +115,8 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/v1/ingest', {
     config: {
       rateLimit: {
-        max: 200, // 200 batch requests per minute per API key
-        timeWindow: '1 minute'
+        max: config.RATE_LIMIT_MAX, // configurable via RATE_LIMIT_MAX env var
+        timeWindow: config.RATE_LIMIT_WINDOW
       }
     },
     schema: {

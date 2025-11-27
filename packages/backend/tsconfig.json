@@ -23,6 +23,8 @@
     "node_modules",
     "dist",
     "tests",
+    "src/tests",
+    "src/**/*.test.ts",
     "migrations",
     "src/scripts/_deprecated"
   ]

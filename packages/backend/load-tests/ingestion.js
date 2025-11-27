@@ -8,6 +8,7 @@ const ingestionLatency = new Trend('ingestion_latency');
 const logsIngested = new Counter('logs_ingested');
 
 // Configuration
+// Default to port 3001 (docker-compose.test.yml exposes backend on 3001)
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const API_KEY = __ENV.API_KEY || 'your-api-key-here';
 

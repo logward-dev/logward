@@ -6,6 +6,7 @@ import { check, sleep } from 'k6';
  * Run: k6 run --env API_KEY=your-key smoke.js
  */
 
+// Default to port 3001 (docker-compose.test.yml exposes backend on 3001)
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const API_KEY = __ENV.API_KEY || 'your-api-key-here';
 

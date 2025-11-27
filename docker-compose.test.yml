@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres-test:
     image: timescale/timescaledb:latest-pg16
@@ -27,7 +25,7 @@ services:
     ports:
       - "6380:6379"
     healthcheck:
-      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "test_password", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -40,6 +38,44 @@ services:
     ports:
       - "1025:1025" # SMTP
       - "8025:8025" # API/UI
+    networks:
+      - logward-test-network
+
+  # Backend for E2E and load testing
+  backend-test:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: logward-backend-test
+    environment:
+      NODE_ENV: test
+      PORT: 8080
+      DATABASE_URL: postgresql://logward_test:test_password@postgres-test:5432/logward_test
+      DATABASE_HOST: postgres-test
+      DB_USER: logward_test
+      REDIS_URL: redis://:test_password@redis-test:6379
+      API_KEY_SECRET: test_secret_key_32_chars_long!!!
+      SMTP_HOST: mailhog-test
+      SMTP_PORT: 1025
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      SMTP_FROM: test@logward.dev
+      # Higher rate limits for load testing (100 req/s = 6000/min, use 100000 for safety)
+      RATE_LIMIT_MAX: 100000
+      RATE_LIMIT_WINDOW: 60000
+    ports:
+      - "3001:8080"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - logward-test-network
 
