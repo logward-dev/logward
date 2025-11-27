@@ -128,7 +128,7 @@ export async function createTestApiKey(overrides: {
     const name = overrides.name || 'Test API Key';
     const key = `lp_test_${crypto.randomBytes(16).toString('hex')}`;
 
-    // Hash API key using SHA-256 (same as apiKeysService)
+    // Hash API key using SHA-256 (same as apiKeysService.verifyApiKey)
     const keyHash = crypto.createHash('sha256').update(key).digest('hex');
 
     const apiKey = await db
