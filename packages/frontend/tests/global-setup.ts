@@ -1,4 +1,4 @@
-import { FullConfig } from '@playwright/test';
+import type { FullConfig } from '@playwright/test';
 
 const TEST_API_URL = process.env.TEST_API_URL || 'http://localhost:3001';
 const TEST_FRONTEND_URL = process.env.TEST_FRONTEND_URL || 'http://localhost:3002';
