@@ -91,15 +91,6 @@ jobs:
           RATE_LIMIT_WINDOW: 60000
         run: pnpm test:ci:coverage
 
-      - name: Debug - List coverage files
-        run: |
-          echo "=== Coverage directory contents ==="
-          ls -la packages/backend/coverage/ || echo "Coverage directory does not exist"
-          echo "=== Looking for lcov.info ==="
-          find . -name "lcov.info" -type f 2>/dev/null || echo "No lcov.info found"
-          echo "=== Looking for coverage-final.json ==="
-          find . -name "coverage-final.json" -type f 2>/dev/null || echo "No coverage-final.json found"
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
