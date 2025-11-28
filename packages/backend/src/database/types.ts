@@ -15,6 +15,7 @@ export interface LogsTable {
   message: string;
   metadata: ColumnType<Record<string, unknown> | null, Record<string, unknown> | null, Record<string, unknown> | null>;
   trace_id: string | null;
+  span_id: string | null;
   created_at: Generated<Timestamp>;
 }
 

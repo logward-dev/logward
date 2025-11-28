@@ -9,6 +9,7 @@ export const logSchema = z.object({
   message: z.string().min(1),
   metadata: z.record(z.unknown()).optional(),
   trace_id: z.string().uuid().optional(),
+  span_id: z.string().regex(/^[a-f0-9]{16}$/i).optional(),
 });
 
 export const ingestRequestSchema = z.object({
