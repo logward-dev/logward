@@ -180,7 +180,7 @@ jobs:
 
       - name: Start test infrastructure
         run: |
-          docker-compose -f docker-compose.test.yml up -d
+          docker compose -f docker-compose.test.yml up -d --build
           # Wait for services to be healthy
           echo "Waiting for services to be ready..."
           timeout 120 bash -c 'until curl -s http://localhost:3001/health > /dev/null; do sleep 2; done'
@@ -214,7 +214,7 @@ jobs:
 
       - name: Stop test infrastructure
         if: always()
-        run: docker-compose -f docker-compose.test.yml down -v
+        run: docker compose -f docker-compose.test.yml down -v
 
   # ====================
   # Build Docker Images
