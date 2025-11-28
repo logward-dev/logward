@@ -272,35 +272,32 @@ export class TracesService {
     nodes: Array<{ id: string; name: string; callCount: number }>;
     edges: Array<{ source: string; target: string; callCount: number }>;
   }> {
+    // Use raw SQL for complex self-join with aliased tables
+    // Build time filter clause
+    const timeFilter = from && to
+      ? sql`AND child.start_time >= ${from} AND child.start_time <= ${to}`
+      : from
+        ? sql`AND child.start_time >= ${from}`
+        : to
+          ? sql`AND child.start_time <= ${to}`
+          : sql``;
 
-    let query = db
-      .selectFrom('spans as child')
-      .innerJoin('spans as parent', (join) =>
-        join
-          .onRef('child.parent_span_id', '=', 'parent.span_id')
-          .onRef('child.trace_id', '=', 'parent.trace_id')
-      )
-      .select([
-        'parent.service_name as source_service',
-        'child.service_name as target_service',
-        db.fn.count<number>('child.span_id').as('call_count'),
-      ])
-      .where('child.project_id', '=', projectId)
+    const result = await sql<{ source_service: string; target_service: string; call_count: string }>`
+      SELECT
+        parent.service_name as source_service,
+        child.service_name as target_service,
+        COUNT(child.span_id) as call_count
+      FROM spans child
+      INNER JOIN spans parent
+        ON child.parent_span_id = parent.span_id
+        AND child.trace_id = parent.trace_id
+      WHERE child.project_id = ${projectId}
+        AND child.service_name <> parent.service_name
+        ${timeFilter}
+      GROUP BY parent.service_name, child.service_name
+    `.execute(db);
 
-      .where((eb) =>
-        eb.ref('child.service_name').$notEquals(eb.ref('parent.service_name'))
-      )
-      .groupBy(['parent.service_name', 'child.service_name']);
-
-    if (from) {
-      query = query.where('child.start_time', '>=', from);
-    }
-
-    if (to) {
-      query = query.where('child.start_time', '<=', to);
-    }
-
-    const dependencies = await query.execute();
+    const dependencies = result.rows;
 
 
     const serviceCallCounts = new Map<string, number>();

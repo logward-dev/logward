@@ -370,7 +370,15 @@
                     flattenTree(spanTree).find(s => s.span_id === span.span_id)?.children?.length > 0}
                   <div
                     class="flex items-center hover:bg-muted/50 rounded cursor-pointer py-1"
+                    role="button"
+                    tabindex="0"
                     onclick={() => selectedSpan = selectedSpan?.span_id === span.span_id ? null : span}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectedSpan = selectedSpan?.span_id === span.span_id ? null : span;
+                      }
+                    }}
                   >
                     <div
                       class="w-[300px] shrink-0 pr-4 flex items-center gap-1"
