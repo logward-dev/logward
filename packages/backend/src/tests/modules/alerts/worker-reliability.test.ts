@@ -9,7 +9,11 @@ import { alertsService } from '../../../modules/alerts/service.js';
 import { processAlertNotification, AlertNotificationData } from '../../../queue/jobs/alert-notification.js';
 
 describe('Alert Worker Reliability', () => {
+    let originalFetch: typeof global.fetch;
+
     beforeEach(async () => {
+        originalFetch = global.fetch;
+
         await db.deleteFrom('logs').execute();
         await db.deleteFrom('alert_history').execute();
         await db.deleteFrom('alert_rules').execute();
@@ -23,11 +27,29 @@ describe('Alert Worker Reliability', () => {
         }
     });
 
+    afterEach(() => {
+        global.fetch = originalFetch;
+    });
+
     describe('Webhook Notifications', () => {
         it('should send webhook notification successfully', async () => {
             const { organization, project } = await createTestContext();
 
-            // Create rule with webhook - use httpbin.org for testing
+            // Mock fetch to simulate successful webhook
+            global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+                // Allow MailHog requests to pass through
+                if (url.includes('localhost:8025')) {
+                    return originalFetch(url, options);
+                }
+                // Mock webhook response
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve({ success: true }),
+                });
+            }) as typeof fetch;
+
+            // Create rule with webhook
             const rule = await db
                 .insertInto('alert_rules')
                 .values({
@@ -40,7 +62,7 @@ describe('Alert Worker Reliability', () => {
                     threshold: 1,
                     enabled: true,
                     email_recipients: [],
-                    webhook_url: 'https://httpbin.org/post',
+                    webhook_url: 'https://example.com/webhook',
                     metadata: null,
                 })
                 .returningAll()
