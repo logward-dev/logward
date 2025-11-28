@@ -25,6 +25,7 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import Copy from "@lucide/svelte/icons/copy";
   import Check from "@lucide/svelte/icons/check";
+  import FileText from "@lucide/svelte/icons/file-text";
 
   interface SpanNode extends SpanRecord {
     children: SpanNode[];
@@ -250,6 +251,15 @@
             {:else}
               <Copy class="w-4 h-4" />
             {/if}
+          </Button>
+          <span class="mx-2 text-muted-foreground">|</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => goto(`/search?traceId=${traceId}&project=${projectId}`)}
+          >
+            <FileText class="w-4 h-4 mr-2" />
+            View Related Logs
           </Button>
         </div>
       </div>
@@ -481,6 +491,17 @@
                     <p class="font-mono text-sm">{formatDateTime(selectedSpan.end_time)}</p>
                   </div>
                 </div>
+              </div>
+
+              <!-- View Logs Link -->
+              <div class="mt-6 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onclick={() => goto(`/search?traceId=${traceId}&project=${projectId}`)}
+                >
+                  <FileText class="w-4 h-4 mr-2" />
+                  View Logs for this Trace
+                </Button>
               </div>
 
               {#if selectedSpan.attributes && Object.keys(selectedSpan.attributes).length > 0}

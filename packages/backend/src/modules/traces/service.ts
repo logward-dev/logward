@@ -1,4 +1,5 @@
 import { db } from '../../database/index.js';
+import { sql } from 'kysely';
 import type { TransformedSpan, AggregatedTrace } from '../otlp/trace-transformer.js';
 import type { SpanKind, SpanStatusCode } from '../../database/types.js';
 
@@ -58,29 +59,40 @@ export class TracesService {
       return 0;
     }
 
-    // Insert spans
-    const dbSpans = spans.map((span) => ({
-      time: new Date(span.start_time),
-      span_id: span.span_id,
-      trace_id: span.trace_id,
-      parent_span_id: span.parent_span_id || null,
-      organization_id: organizationId,
-      project_id: projectId,
-      service_name: span.service_name,
-      operation_name: span.operation_name,
-      start_time: new Date(span.start_time),
-      end_time: new Date(span.end_time),
-      duration_ms: span.duration_ms,
-      kind: span.kind || null,
-      status_code: span.status_code || null,
-      status_message: span.status_message || null,
-      attributes: span.attributes || null,
-      events: (span.events as unknown) as Array<Record<string, unknown>> | null,
-      links: (span.links as unknown) as Array<Record<string, unknown>> | null,
-      resource_attributes: span.resource_attributes || null,
-    }));
+    // Insert spans one at a time to handle JSONB properly
+    for (const span of spans) {
+      const attributesJson = span.attributes ? JSON.stringify(span.attributes) : null;
+      const eventsJson = span.events ? JSON.stringify(span.events) : null;
+      const linksJson = span.links ? JSON.stringify(span.links) : null;
+      const resourceAttributesJson = span.resource_attributes ? JSON.stringify(span.resource_attributes) : null;
 
-    await db.insertInto('spans').values(dbSpans).execute();
+      await sql`
+        INSERT INTO spans (
+          time, span_id, trace_id, parent_span_id, organization_id, project_id,
+          service_name, operation_name, start_time, end_time, duration_ms,
+          kind, status_code, status_message, attributes, events, links, resource_attributes
+        ) VALUES (
+          ${new Date(span.start_time)},
+          ${span.span_id},
+          ${span.trace_id},
+          ${span.parent_span_id || null},
+          ${organizationId},
+          ${projectId},
+          ${span.service_name},
+          ${span.operation_name},
+          ${new Date(span.start_time)},
+          ${new Date(span.end_time)},
+          ${span.duration_ms},
+          ${span.kind || null},
+          ${span.status_code || null},
+          ${span.status_message || null},
+          ${attributesJson}::jsonb,
+          ${eventsJson}::jsonb,
+          ${linksJson}::jsonb,
+          ${resourceAttributesJson}::jsonb
+        )
+      `.execute(db);
+    }
 
     for (const [, trace] of traces) {
       await this.upsertTrace(trace, projectId, organizationId);
@@ -254,6 +266,68 @@ export class TracesService {
       .execute();
 
     return result.map((r) => r.service_name);
+  }
+
+  async getServiceDependencies(projectId: string, from?: Date, to?: Date): Promise<{
+    nodes: Array<{ id: string; name: string; callCount: number }>;
+    edges: Array<{ source: string; target: string; callCount: number }>;
+  }> {
+
+    let query = db
+      .selectFrom('spans as child')
+      .innerJoin('spans as parent', (join) =>
+        join
+          .onRef('child.parent_span_id', '=', 'parent.span_id')
+          .onRef('child.trace_id', '=', 'parent.trace_id')
+      )
+      .select([
+        'parent.service_name as source_service',
+        'child.service_name as target_service',
+        db.fn.count<number>('child.span_id').as('call_count'),
+      ])
+      .where('child.project_id', '=', projectId)
+
+      .where((eb) =>
+        eb.ref('child.service_name').$notEquals(eb.ref('parent.service_name'))
+      )
+      .groupBy(['parent.service_name', 'child.service_name']);
+
+    if (from) {
+      query = query.where('child.start_time', '>=', from);
+    }
+
+    if (to) {
+      query = query.where('child.start_time', '<=', to);
+    }
+
+    const dependencies = await query.execute();
+
+
+    const serviceCallCounts = new Map<string, number>();
+    const edges: Array<{ source: string; target: string; callCount: number }> = [];
+
+    for (const dep of dependencies) {
+      const source = dep.source_service;
+      const target = dep.target_service;
+      const count = Number(dep.call_count);
+
+      serviceCallCounts.set(source, (serviceCallCounts.get(source) || 0) + count);
+      serviceCallCounts.set(target, (serviceCallCounts.get(target) || 0) + count);
+
+      edges.push({
+        source,
+        target,
+        callCount: count,
+      });
+    }
+
+    const nodes = Array.from(serviceCallCounts.entries()).map(([name, callCount]) => ({
+      id: name,
+      name,
+      callCount,
+    }));
+
+    return { nodes, edges };
   }
 
   async getStats(projectId: string, from?: Date, to?: Date) {

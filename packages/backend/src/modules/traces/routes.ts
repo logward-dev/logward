@@ -199,6 +199,51 @@ const tracesRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  fastify.get('/api/v1/traces/dependencies', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string' },
+          from: { type: 'string', format: 'date-time' },
+          to: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+    handler: async (request: any, reply) => {
+      const { projectId: queryProjectId, from, to } = request.query as {
+        projectId?: string;
+        from?: string;
+        to?: string;
+      };
+
+      const projectId = queryProjectId || request.projectId;
+
+      if (!projectId) {
+        return reply.code(400).send({
+          error: 'Project context missing - provide projectId query parameter',
+        });
+      }
+
+      if (request.user?.id) {
+        const hasAccess = await verifyProjectAccess(projectId, request.user.id);
+        if (!hasAccess) {
+          return reply.code(403).send({
+            error: 'Access denied - you do not have access to this project',
+          });
+        }
+      }
+
+      const dependencies = await tracesService.getServiceDependencies(
+        projectId,
+        from ? new Date(from) : undefined,
+        to ? new Date(to) : undefined
+      );
+
+      return dependencies;
+    },
+  });
+
   fastify.get('/api/v1/traces/stats', {
     schema: {
       querystring: {

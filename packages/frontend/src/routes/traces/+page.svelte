@@ -4,7 +4,8 @@
   import { currentOrganization } from "$lib/stores/organization";
   import { authStore } from "$lib/stores/auth";
   import { ProjectsAPI } from "$lib/api/projects";
-  import { tracesAPI, type TraceRecord, type TraceStats } from "$lib/api/traces";
+  import { tracesAPI, type TraceRecord, type TraceStats, type ServiceDependencies } from "$lib/api/traces";
+  import ServiceMap from "$lib/components/ServiceMap.svelte";
   import type { Project } from "@logward/shared";
   import Button from "$lib/components/ui/button/button.svelte";
   import Input from "$lib/components/ui/input/input.svelte";
@@ -36,11 +37,14 @@
   import AlertCircle from "@lucide/svelte/icons/alert-circle";
   import Timer from "@lucide/svelte/icons/timer";
   import Layers from "@lucide/svelte/icons/layers";
+  import Network from "@lucide/svelte/icons/network";
 
   let token = $state<string | null>(null);
   let projects = $state<Project[]>([]);
   let traces = $state<TraceRecord[]>([]);
   let stats = $state<TraceStats | null>(null);
+  let dependencies = $state<ServiceDependencies | null>(null);
+  let showServiceMap = $state(false);
   let totalTraces = $state(0);
   let isLoading = $state(false);
   let availableServices = $state<string[]>([]);
@@ -165,6 +169,29 @@
     } catch (e) {
       console.error("Failed to load services:", e);
       availableServices = [];
+    }
+  }
+
+  async function loadDependencies() {
+    if (!selectedProject) {
+      dependencies = null;
+      return;
+    }
+
+    try {
+      const timeRange = getTimeRange(
+        timeRangeType,
+        customFromTime,
+        customToTime,
+      );
+      dependencies = await tracesAPI.getDependencies(
+        selectedProject,
+        timeRange.from.toISOString(),
+        timeRange.to.toISOString()
+      );
+    } catch (e) {
+      console.error("Failed to load dependencies:", e);
+      dependencies = null;
     }
   }
 
@@ -325,6 +352,43 @@
           </Card>
         </div>
       {/if}
+
+      <!-- Service Map Section -->
+      <Card class="mb-6">
+        <CardHeader class="flex flex-row items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Network class="w-5 h-5 text-muted-foreground" />
+            <CardTitle>Service Map</CardTitle>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => {
+              showServiceMap = !showServiceMap;
+              if (showServiceMap && !dependencies) {
+                loadDependencies();
+              }
+            }}
+          >
+            {showServiceMap ? "Hide" : "Show"} Service Map
+          </Button>
+        </CardHeader>
+        {#if showServiceMap}
+          <CardContent>
+            {#if dependencies && (dependencies.nodes.length > 0 || dependencies.edges.length > 0)}
+              <ServiceMap {dependencies} height="400px" />
+            {:else if dependencies}
+              <div class="flex items-center justify-center h-64 text-muted-foreground">
+                <p>No inter-service calls detected. Service dependencies are extracted from parent-child span relationships across different services.</p>
+              </div>
+            {:else}
+              <div class="flex items-center justify-center h-64">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            {/if}
+          </CardContent>
+        {/if}
+      </Card>
 
       <Card class="mb-6">
         <CardHeader>

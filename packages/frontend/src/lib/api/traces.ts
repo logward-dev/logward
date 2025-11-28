@@ -54,6 +54,23 @@ export interface TraceStats {
   error_rate: number;
 }
 
+export interface ServiceDependencyNode {
+  id: string;
+  name: string;
+  callCount: number;
+}
+
+export interface ServiceDependencyEdge {
+  source: string;
+  target: string;
+  callCount: number;
+}
+
+export interface ServiceDependencies {
+  nodes: ServiceDependencyNode[];
+  edges: ServiceDependencyEdge[];
+}
+
 const API_BASE_URL = `${PUBLIC_API_URL}/api/v1`;
 
 export class TracesAPI {
@@ -171,6 +188,26 @@ export class TracesAPI {
 
     if (!response.ok) {
       throw new Error(`Failed to fetch trace stats: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  async getDependencies(projectId: string, from?: string, to?: string): Promise<ServiceDependencies> {
+    const params = new URLSearchParams();
+    params.append('projectId', projectId);
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+
+    const url = `${API_BASE_URL}/traces/dependencies?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch service dependencies: ${response.statusText}`);
     }
 
     return response.json();
