@@ -193,6 +193,9 @@ export async function createTestSigmaRule(overrides: {
     enabled?: boolean;
     logsource?: any;
     detection?: any;
+    emailRecipients?: string[];
+    webhookUrl?: string;
+    sigmaId?: string;
 } = {}) {
     // Create organization if not provided
     let organizationId = overrides.organizationId;
@@ -203,12 +206,14 @@ export async function createTestSigmaRule(overrides: {
 
     const title = overrides.title || `Test Sigma Rule ${Date.now()}`;
     const level = overrides.level || 'medium';
+    const sigmaId = overrides.sigmaId || `sigma-${crypto.randomUUID()}`;
 
     const sigmaRule = await db
         .insertInto('sigma_rules')
         .values({
             organization_id: organizationId,
             project_id: overrides.projectId || null,
+            sigma_id: sigmaId,
             title,
             description: overrides.description || 'Test sigma rule',
             level,
@@ -222,8 +227,8 @@ export async function createTestSigmaRule(overrides: {
                 },
                 condition: 'selection',
             },
-            email_recipients: [],
-            webhook_url: null,
+            email_recipients: overrides.emailRecipients || [],
+            webhook_url: overrides.webhookUrl || null,
             alert_rule_id: null,
             conversion_status: 'success',
             conversion_notes: 'Test rule created by factory',
