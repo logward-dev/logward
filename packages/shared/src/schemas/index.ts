@@ -8,7 +8,7 @@ export const logSchema = z.object({
   level: logLevelSchema,
   message: z.string().min(1),
   metadata: z.record(z.unknown()).optional(),
-  trace_id: z.string().uuid().optional(),
+  trace_id: z.string().optional(),
   span_id: z.string().regex(/^[a-f0-9]{16}$/i).optional(),
 });
 

@@ -104,7 +104,7 @@ export interface TransformedLog {
   level: LogWardLevel;
   message: string;
   metadata?: Record<string, unknown>;
-  trace_id?: string; // UUID format
+  trace_id?: string; // Any string format (OTLP uses 32 hex chars)
   span_id?: string; // 16 hex chars
 }
 
@@ -175,7 +175,7 @@ export function transformLogRecord(
         'otel.severity_text': record.severityText,
       }),
     },
-    trace_id: hexToUuid(record.traceId),
+    trace_id: normalizeTraceId(record.traceId),
     span_id: record.spanId || undefined,
   };
 }
@@ -220,25 +220,24 @@ export function nanosToIso(nanos?: string | bigint): string {
 }
 
 /**
- * Convert OTLP hex trace_id (32 chars) to UUID format.
- * OTLP trace_id is 16 bytes = 32 hex chars.
- * UUID format: 8-4-4-4-12
+ * Normalize OTLP trace_id.
+ * Returns the trace_id as-is if valid, undefined otherwise.
+ * OTLP trace_id is typically 16 bytes = 32 hex chars.
  *
- * @param hex - Hex-encoded trace ID (32 chars)
- * @returns UUID string or undefined if invalid
+ * @param traceId - Trace ID string
+ * @returns Trace ID string or undefined if invalid/empty
  */
-export function hexToUuid(hex?: string): string | undefined {
-  if (!hex || hex.length !== 32) {
+export function normalizeTraceId(traceId?: string): string | undefined {
+  if (!traceId) {
     return undefined;
   }
 
-  // Check if all zeros (invalid trace_id)
-  if (/^0+$/.test(hex)) {
+  // Check if all zeros (invalid trace_id per OTLP spec)
+  if (/^0+$/.test(traceId)) {
     return undefined;
   }
 
-  // Format: 8-4-4-4-12
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  return traceId;
 }
 
 /**

@@ -4,7 +4,7 @@ import {
   transformLogRecord,
   extractServiceName,
   nanosToIso,
-  hexToUuid,
+  normalizeTraceId,
   extractMessage,
   attributesToRecord,
   anyValueToJs,
@@ -60,7 +60,7 @@ describe('OTLP Transformer', () => {
         service: 'test-service',
         level: 'error',
         message: 'Test error message',
-        trace_id: '0af76519-16cd-43dd-8448-eb211c80319c',
+        trace_id: '0af7651916cd43dd8448eb211c80319c',
         span_id: 'b7ad6b7169203331',
       });
       expect(result[0].metadata).toMatchObject({
@@ -191,7 +191,7 @@ describe('OTLP Transformer', () => {
       expect(result.service).toBe('test-service');
       expect(result.level).toBe('error');
       expect(result.message).toBe('Error message');
-      expect(result.trace_id).toBe('a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6');
+      expect(result.trace_id).toBe('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6');
       expect(result.span_id).toBe('1234567890abcdef');
       expect(result.metadata).toMatchObject({
         'user.id': '123',
@@ -286,34 +286,36 @@ describe('OTLP Transformer', () => {
     });
   });
 
-  describe('hexToUuid', () => {
-    it('should convert 32 char hex to UUID format', () => {
-      const hex = '0af7651916cd43dd8448eb211c80319c';
-      const result = hexToUuid(hex);
-      expect(result).toBe('0af76519-16cd-43dd-8448-eb211c80319c');
+  describe('normalizeTraceId', () => {
+    it('should return trace_id as-is', () => {
+      const traceId = '0af7651916cd43dd8448eb211c80319c';
+      const result = normalizeTraceId(traceId);
+      expect(result).toBe('0af7651916cd43dd8448eb211c80319c');
     });
 
-    it('should return undefined for invalid length', () => {
-      expect(hexToUuid('0af7651916cd43dd')).toBeUndefined();
-      expect(hexToUuid('0af7651916cd43dd8448eb211c80319c00')).toBeUndefined();
+    it('should accept any string format', () => {
+      expect(normalizeTraceId('short-trace')).toBe('short-trace');
+      expect(normalizeTraceId('very-long-trace-id-string-12345')).toBe('very-long-trace-id-string-12345');
+      expect(normalizeTraceId('custom-format-123')).toBe('custom-format-123');
     });
 
     it('should return undefined for empty string', () => {
-      expect(hexToUuid('')).toBeUndefined();
+      expect(normalizeTraceId('')).toBeUndefined();
     });
 
     it('should return undefined for undefined', () => {
-      expect(hexToUuid(undefined)).toBeUndefined();
+      expect(normalizeTraceId(undefined)).toBeUndefined();
     });
 
     it('should return undefined for all zeros', () => {
-      expect(hexToUuid('00000000000000000000000000000000')).toBeUndefined();
+      expect(normalizeTraceId('00000000000000000000000000000000')).toBeUndefined();
+      expect(normalizeTraceId('0000')).toBeUndefined();
     });
 
     it('should handle lowercase hex', () => {
-      const hex = 'abcdef0123456789abcdef0123456789';
-      const result = hexToUuid(hex);
-      expect(result).toBe('abcdef01-2345-6789-abcd-ef0123456789');
+      const traceId = 'abcdef0123456789abcdef0123456789';
+      const result = normalizeTraceId(traceId);
+      expect(result).toBe('abcdef0123456789abcdef0123456789');
     });
   });
 
