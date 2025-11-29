@@ -130,15 +130,17 @@ describe('Input Validation - Zod Schemas', () => {
             expect(result.success).toBe(false);
         });
 
-        it('should reject log with invalid trace_id format', () => {
-            const invalidTraceIds = [
+        it('should accept trace_id in any string format', () => {
+            const validTraceIds = [
                 'not-a-uuid',
                 '123456',
                 'abc-def-ghi',
-                '',
+                '0af7651916cd43dd8448eb211c80319c', // OTLP hex format
+                '550e8400-e29b-41d4-a716-446655440000', // UUID format
+                'custom-trace-format-12345',
             ];
 
-            for (const traceId of invalidTraceIds) {
+            for (const traceId of validTraceIds) {
                 const log = {
                     time: '2024-01-15T10:30:00.000Z',
                     service: 'api',
@@ -148,7 +150,7 @@ describe('Input Validation - Zod Schemas', () => {
                 };
 
                 const result = logSchema.safeParse(log);
-                expect(result.success).toBe(false);
+                expect(result.success).toBe(true);
             }
         });
 

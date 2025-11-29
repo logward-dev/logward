@@ -56,6 +56,7 @@
                 { title: "Python", href: "/docs/sdks/python" },
                 { title: "PHP", href: "/docs/sdks/php" },
                 { title: "Kotlin", href: "/docs/sdks/kotlin" },
+                { title: "OpenTelemetry", href: "/docs/opentelemetry" },
             ],
         },
         {

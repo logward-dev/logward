@@ -60,7 +60,6 @@
   let isLoading = $state(false);
   let logsContainer = $state<HTMLDivElement | null>(null);
 
-  // Filters
   let searchQuery = $state("");
   let traceId = $state("");
   let selectedProjects = $state<string[]>([]);
@@ -75,20 +74,28 @@
     token = state.token;
   });
 
-  // Time range filters
   type TimeRangeType = "last_hour" | "last_24h" | "last_7d" | "custom";
   let timeRangeType = $state<TimeRangeType>("last_24h");
   let customFromTime = $state("");
   let customToTime = $state("");
 
-  // Pagination
   let pageSize = $state(25);
 
   let lastLoadedOrg = $state<string | null>(null);
 
-  // Log context dialog
   let contextDialogOpen = $state(false);
   let selectedLogForContext = $state<LogEntry | null>(null);
+
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function debouncedSearch() {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+    searchDebounceTimer = setTimeout(() => {
+      applyFilters();
+    }, 300);
+  }
 
   onMount(() => {
     if ($currentOrganization) {
@@ -96,7 +103,6 @@
     }
   });
 
-  // Reload projects when organization changes
   $effect(() => {
     if (!$currentOrganization) {
       projects = [];
@@ -111,7 +117,6 @@
     lastLoadedOrg = $currentOrganization.id;
   });
 
-  // Helper function to convert ISO date to datetime-local format
   function formatDateForInput(isoString: string): string {
     try {
       const date = new Date(isoString);
@@ -126,41 +131,47 @@
     }
   }
 
-  // Initialize filters from URL parameters
+  let urlParamsProcessed = $state(false);
+
   $effect(() => {
-    if (!browser || !$page.url.searchParams) return;
+    if (!browser || !$page.url.searchParams || urlParamsProcessed) return;
 
     const params = $page.url.searchParams;
+    let shouldLoadLogs = false;
 
-    // Read project filter
     const projectParam = params.get("project");
     if (projectParam && selectedProjects.length === 0) {
       selectedProjects = [projectParam];
+      shouldLoadLogs = true;
     }
 
-    // Read service filter
     const serviceParam = params.get("service");
     if (serviceParam && selectedServices.length === 0) {
       selectedServices = [serviceParam];
     }
 
-    // Read level filter (comma-separated)
     const levelParam = params.get("level");
     if (levelParam && selectedLevels.length === 0) {
       selectedLevels = levelParam.split(",").filter(Boolean);
     }
 
-    // Read time range
+    const traceIdParam = params.get("traceId");
+    if (traceIdParam && !traceId) {
+      traceId = traceIdParam;
+      shouldLoadLogs = true;
+    }
+
     const fromParam = params.get("from");
     const toParam = params.get("to");
     if (fromParam && toParam && !customFromTime && !customToTime) {
       timeRangeType = "custom";
       customFromTime = formatDateForInput(fromParam);
       customToTime = formatDateForInput(toParam);
-      // Trigger log loading with these filters
-      if (selectedProjects.length > 0) {
-        loadLogs();
-      }
+    }
+
+    if (shouldLoadLogs && selectedProjects.length > 0) {
+      urlParamsProcessed = true;
+      loadLogs();
     }
   });
 
@@ -174,7 +185,6 @@
       const response = await projectsAPI.getProjects($currentOrganization.id);
       projects = response.projects;
 
-      // Auto-select all projects if none selected
       if (projects.length > 0 && selectedProjects.length === 0) {
         selectedProjects = projects.map((p) => p.id);
         loadLogs();
@@ -267,12 +277,10 @@
     stopLiveTail();
   });
 
-  // Get unique services from logs (excluding null/undefined)
   let availableServices = $derived([
     ...new Set(logs.map((log) => log.service).filter(Boolean)),
   ] as string[]);
 
-  // Calculate time range (moved to a function to avoid constant recalculation)
   function getTimeRange(
     type: TimeRangeType,
     customFrom: string,
@@ -304,23 +312,15 @@
     return { from, to: now };
   }
 
-  // Since we're using server-side pagination, we don't need client-side filtering
-  // The logs array already contains the filtered and paginated results from the server
-  // Exception: Live tail mode shows all logs in memory (not paginated)
   let paginatedLogs = $derived(logs);
   let filteredLogs = $derived(logs);
 
-  // Calculate total pages based on server total
-  // In live tail mode, use logs.length as total since we're not paginating
   let effectiveTotalLogs = $derived(liveTail ? logs.length : totalLogs);
 
-  // Live tail watch
   $effect(() => {
-    // Auto-select first project if multiple are selected when enabling live tail
     if (liveTail && selectedProjects.length > 1) {
       const firstProject = selectedProjects[0];
       selectedProjects = [firstProject];
-      // Show info message
       const project = projects.find((p) => p.id === firstProject);
       toastStore.info(
         `Live Tail works with one project at a time. Automatically selected: ${project?.name || "Project"}`,
@@ -332,22 +332,18 @@
       const wasLiveTail = liveTailConnectionKey !== null;
       stopLiveTail();
       liveTailConnectionKey = null;
-      // Reload logs when live tail is disabled
       if (wasLiveTail && selectedProjects.length > 0) {
         loadLogs();
       }
       return;
     }
 
-    // Generate connection key based on project and filters (live tail only works with single project)
     const connectionKey = `${selectedProjects[0]}-${selectedServices.join(",")}-${selectedLevels.join(",")}`;
 
-    // Only reconnect if connection key changed
     if (connectionKey === liveTailConnectionKey) {
       return;
     }
 
-    // Disconnect existing and connect with new filters
     stopLiveTail();
     startLiveTail();
     liveTailConnectionKey = connectionKey;
@@ -370,13 +366,10 @@
         try {
           const data = JSON.parse(event.data);
           if (data.type === "logs") {
-            // Add new logs to the list
             const newLogs = data.logs;
 
-            // Keep max 100 logs in memory to prevent memory leak
             logs = [...newLogs, ...logs].slice(0, 100);
 
-            // Auto-scroll to top
             if (logsContainer) {
               setTimeout(
                 () => logsContainer?.scrollTo({ top: 0, behavior: "smooth" }),
@@ -547,6 +540,7 @@
                 type="search"
                 placeholder="Search in messages..."
                 bind:value={searchQuery}
+                oninput={debouncedSearch}
               />
             </div>
 
@@ -557,6 +551,7 @@
                 type="text"
                 placeholder="Filter by trace ID..."
                 bind:value={traceId}
+                oninput={debouncedSearch}
               />
             </div>
 

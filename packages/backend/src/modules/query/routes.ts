@@ -127,7 +127,7 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
       params: {
         type: 'object',
         properties: {
-          traceId: { type: 'string', format: 'uuid' },
+          traceId: { type: 'string' },
         },
         required: ['traceId'],
       },

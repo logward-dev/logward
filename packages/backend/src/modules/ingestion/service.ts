@@ -21,6 +21,7 @@ export class IngestionService {
       message: log.message,
       metadata: log.metadata || null,
       trace_id: log.trace_id || null,
+      span_id: (log as { span_id?: string }).span_id || null,
     }));
 
     // Insert logs in batch
@@ -46,6 +47,7 @@ export class IngestionService {
         message: log.message,
         metadata: log.metadata,
         traceId: log.trace_id,
+        spanId: log.span_id,
       }));
 
       await publisher.publish('logs:new', JSON.stringify({

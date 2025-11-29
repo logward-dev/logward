@@ -15,6 +15,8 @@ import { apiKeysRoutes } from './modules/api-keys/routes.js';
 import dashboardRoutes from './modules/dashboard/routes.js';
 import { sigmaRoutes } from './modules/sigma/routes.js';
 import { adminRoutes } from './modules/admin/index.js';
+import { otlpRoutes, otlpTraceRoutes } from './modules/otlp/index.js';
+import { tracesRoutes } from './modules/traces/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
 import { initializeInternalLogging, shutdownInternalLogging } from './utils/internal-logger.js';
 import websocketPlugin from './plugins/websocket.js';
@@ -26,6 +28,7 @@ const HOST = config.HOST;
 export async function build(opts = {}) {
   const fastify = Fastify({
     logger: true,
+    bodyLimit: 10 * 1024 * 1024, // 10MB for large OTLP batches
     ...opts,
   });
 
@@ -64,7 +67,7 @@ export async function build(opts = {}) {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.1.0',
+      version: '0.2.0',
     };
   });
 
@@ -102,6 +105,13 @@ export async function build(opts = {}) {
   await fastify.register(ingestionRoutes);
   await fastify.register(queryRoutes);
 
+  // Register OTLP routes (OpenTelemetry Protocol - require API key)
+  await fastify.register(otlpRoutes);
+  await fastify.register(otlpTraceRoutes);
+
+  // Register traces API routes (require API key or session auth)
+  await fastify.register(tracesRoutes);
+
   // Register WebSocket support
   await fastify.register(websocketPlugin);
   await fastify.register(websocketRoutes);
@@ -138,9 +148,6 @@ async function start() {
 // Start the server directly when this file is run
 import { fileURLToPath } from 'url';
 
-// ... (existing imports)
-
-// Check if this file is the main module
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   start();
 }

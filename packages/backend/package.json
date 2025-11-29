@@ -1,6 +1,6 @@
 {
   "name": "@logward/backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "LogWard Backend API",
   "type": "module",
@@ -52,6 +52,7 @@
     "kysely": "^0.27.4",
     "nodemailer": "^6.9.14",
     "pg": "^8.12.0",
+    "protobufjs": "^7.5.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {

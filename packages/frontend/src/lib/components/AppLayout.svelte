@@ -25,6 +25,7 @@
   import FileText from "@lucide/svelte/icons/file-text";
   import FolderKanban from "@lucide/svelte/icons/folder-kanban";
   import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
+  import GitBranch from "@lucide/svelte/icons/git-branch";
   import Bell from "@lucide/svelte/icons/bell";
   import Building2 from "@lucide/svelte/icons/building-2";
   import Settings from "@lucide/svelte/icons/settings";
@@ -192,6 +193,7 @@
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Projects", href: "/projects", icon: FolderKanban },
     { label: "Logs", href: "/search", icon: FileText },
+    { label: "Traces", href: "/traces", icon: GitBranch },
     { label: "Alerts", href: "/alerts", icon: AlertTriangle },
     { label: "Docs", href: "/docs", icon: Book },
     { label: "Settings", href: "/organization/settings", icon: Settings },
