@@ -14,6 +14,7 @@
 
   <a href="https://github.com/logward-dev/logward/actions/workflows/ci.yml"><img src="https://github.com/logward-dev/logward/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/logward-dev/logward"><img src="https://codecov.io/gh/logward-dev/logward/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status">
   <img src="https://img.shields.io/badge/cloud-free_during_alpha-success.svg" alt="Free Cloud">
@@ -40,9 +41,16 @@ Designed for developers and European SMBs who need **GDPR compliance**, **data o
 
 ---
 
-## 📸 Dashboard Preview
+## 📸 Screenshots
 
-![LogWard Dashboard](docs/images/dashboard.png)
+### Logs Explorer
+![LogWard Logs](docs/images/logs.png)
+
+### Distributed Tracing
+![LogWard Traces](docs/images/traces.png)
+
+### Alerts & Notifications
+![LogWard Alerts](docs/images/alerts.png)
 
 ---
 
@@ -99,8 +107,9 @@ We have ready-to-use SDKs for the most popular languages.
 | **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](#) |
 | **Docker** | ✅ Ready | Use Fluent Bit / Syslog driver |
 | **HTTP** | ✅ Ready | [API Reference](#) |
+| **OpenTelemetry** | ✅ Ready | OTLP endpoint (logs + traces) |
 
-> **Note:** Go (Golang) support is coming soon. Use the HTTP API for now.
+> **Note:** Go (Golang) support is coming soon. Use the HTTP API or OpenTelemetry SDK for now.
 
 ---
 
@@ -113,6 +122,8 @@ We have ready-to-use SDKs for the most popular languages.
 * ✅ **Alerting:** Get notified via Email or Webhook (Slack/Discord) on error spikes.
 * ✅ **Retention Policy:** Automatic cleanup of old logs via TimescaleDB.
 * ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs, effectively turning LogWard into a lightweight SIEM for threat detection.
+* ✅ **OpenTelemetry Support:** Native OTLP ingestion for logs and traces (protobuf + JSON).
+* ✅ **Distributed Tracing:** Trace viewer with span timeline, service dependencies graph, and trace-to-logs correlation.
 
 ---
 
