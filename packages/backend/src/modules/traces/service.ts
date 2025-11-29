@@ -59,41 +59,71 @@ export class TracesService {
       return 0;
     }
 
-    // Insert spans one at a time to handle JSONB properly
-    for (const span of spans) {
-      const attributesJson = span.attributes ? JSON.stringify(span.attributes) : null;
-      const eventsJson = span.events ? JSON.stringify(span.events) : null;
-      const linksJson = span.links ? JSON.stringify(span.links) : null;
-      const resourceAttributesJson = span.resource_attributes ? JSON.stringify(span.resource_attributes) : null;
+    const times: Date[] = [];
+    const spanIds: string[] = [];
+    const traceIds: string[] = [];
+    const parentSpanIds: (string | null)[] = [];
+    const serviceNames: string[] = [];
+    const operationNames: string[] = [];
+    const startTimes: Date[] = [];
+    const endTimes: Date[] = [];
+    const durationMsValues: number[] = [];
+    const kinds: (string | null)[] = [];
+    const statusCodes: (string | null)[] = [];
+    const statusMessages: (string | null)[] = [];
+    const attributesJsons: (string | null)[] = [];
+    const eventsJsons: (string | null)[] = [];
+    const linksJsons: (string | null)[] = [];
+    const resourceAttributesJsons: (string | null)[] = [];
 
-      await sql`
-        INSERT INTO spans (
-          time, span_id, trace_id, parent_span_id, organization_id, project_id,
-          service_name, operation_name, start_time, end_time, duration_ms,
-          kind, status_code, status_message, attributes, events, links, resource_attributes
-        ) VALUES (
-          ${new Date(span.start_time)},
-          ${span.span_id},
-          ${span.trace_id},
-          ${span.parent_span_id || null},
-          ${organizationId},
-          ${projectId},
-          ${span.service_name},
-          ${span.operation_name},
-          ${new Date(span.start_time)},
-          ${new Date(span.end_time)},
-          ${span.duration_ms},
-          ${span.kind || null},
-          ${span.status_code || null},
-          ${span.status_message || null},
-          ${attributesJson}::jsonb,
-          ${eventsJson}::jsonb,
-          ${linksJson}::jsonb,
-          ${resourceAttributesJson}::jsonb
-        )
-      `.execute(db);
+    for (const span of spans) {
+      times.push(new Date(span.start_time));
+      spanIds.push(span.span_id);
+      traceIds.push(span.trace_id);
+      parentSpanIds.push(span.parent_span_id || null);
+      serviceNames.push(span.service_name);
+      operationNames.push(span.operation_name);
+      startTimes.push(new Date(span.start_time));
+      endTimes.push(new Date(span.end_time));
+      durationMsValues.push(span.duration_ms);
+      kinds.push(span.kind || null);
+      statusCodes.push(span.status_code || null);
+      statusMessages.push(span.status_message || null);
+      attributesJsons.push(span.attributes ? JSON.stringify(span.attributes) : null);
+      eventsJsons.push(span.events ? JSON.stringify(span.events) : null);
+      linksJsons.push(span.links ? JSON.stringify(span.links) : null);
+      resourceAttributesJsons.push(span.resource_attributes ? JSON.stringify(span.resource_attributes) : null);
     }
 
+    // Batch insert using UNNEST - single query for all spans
+    await sql`
+      INSERT INTO spans (
+        time, span_id, trace_id, parent_span_id, organization_id, project_id,
+        service_name, operation_name, start_time, end_time, duration_ms,
+        kind, status_code, status_message, attributes, events, links, resource_attributes
+      )
+      SELECT
+        unnest(${times}::timestamptz[]),
+        unnest(${spanIds}::text[]),
+        unnest(${traceIds}::text[]),
+        unnest(${parentSpanIds}::text[]),
+        ${organizationId},
+        ${projectId},
+        unnest(${serviceNames}::text[]),
+        unnest(${operationNames}::text[]),
+        unnest(${startTimes}::timestamptz[]),
+        unnest(${endTimes}::timestamptz[]),
+        unnest(${durationMsValues}::integer[]),
+        unnest(${kinds}::text[]),
+        unnest(${statusCodes}::text[]),
+        unnest(${statusMessages}::text[]),
+        unnest(${attributesJsons}::jsonb[]),
+        unnest(${eventsJsons}::jsonb[]),
+        unnest(${linksJsons}::jsonb[]),
+        unnest(${resourceAttributesJsons}::jsonb[])
+    `.execute(db);
+
+    // Batch upsert traces
     for (const [, trace] of traces) {
       await this.upsertTrace(trace, projectId, organizationId);
     }

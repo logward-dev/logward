@@ -353,9 +353,8 @@
         </div>
       {/if}
 
-      <!-- Service Map Section -->
       <Card class="mb-6">
-        <CardHeader class="flex flex-row items-center justify-between">
+        <CardHeader class="flex flex-row items-center justify-between pb-4">
           <div class="flex items-center gap-2">
             <Network class="w-5 h-5 text-muted-foreground" />
             <CardTitle>Service Map</CardTitle>
@@ -373,8 +372,8 @@
             {showServiceMap ? "Hide" : "Show"} Service Map
           </Button>
         </CardHeader>
-        {#if showServiceMap}
-          <CardContent>
+        <CardContent class="pt-0">
+          {#if showServiceMap}
             {#if dependencies && (dependencies.nodes.length > 0 || dependencies.edges.length > 0)}
               <ServiceMap {dependencies} height="400px" />
             {:else if dependencies}
@@ -386,8 +385,8 @@
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             {/if}
-          </CardContent>
-        {/if}
+          {/if}
+        </CardContent>
       </Card>
 
       <Card class="mb-6">

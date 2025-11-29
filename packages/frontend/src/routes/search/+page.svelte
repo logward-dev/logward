@@ -86,6 +86,17 @@
   let contextDialogOpen = $state(false);
   let selectedLogForContext = $state<LogEntry | null>(null);
 
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function debouncedSearch() {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+    searchDebounceTimer = setTimeout(() => {
+      applyFilters();
+    }, 300);
+  }
+
   onMount(() => {
     if ($currentOrganization) {
       loadProjects();
@@ -120,14 +131,18 @@
     }
   }
 
+  let urlParamsProcessed = $state(false);
+
   $effect(() => {
-    if (!browser || !$page.url.searchParams) return;
+    if (!browser || !$page.url.searchParams || urlParamsProcessed) return;
 
     const params = $page.url.searchParams;
+    let shouldLoadLogs = false;
 
     const projectParam = params.get("project");
     if (projectParam && selectedProjects.length === 0) {
       selectedProjects = [projectParam];
+      shouldLoadLogs = true;
     }
 
     const serviceParam = params.get("service");
@@ -143,6 +158,7 @@
     const traceIdParam = params.get("traceId");
     if (traceIdParam && !traceId) {
       traceId = traceIdParam;
+      shouldLoadLogs = true;
     }
 
     const fromParam = params.get("from");
@@ -151,9 +167,11 @@
       timeRangeType = "custom";
       customFromTime = formatDateForInput(fromParam);
       customToTime = formatDateForInput(toParam);
-      if (selectedProjects.length > 0) {
-        loadLogs();
-      }
+    }
+
+    if (shouldLoadLogs && selectedProjects.length > 0) {
+      urlParamsProcessed = true;
+      loadLogs();
     }
   });
 
@@ -522,6 +540,7 @@
                 type="search"
                 placeholder="Search in messages..."
                 bind:value={searchQuery}
+                oninput={debouncedSearch}
               />
             </div>
 
@@ -532,6 +551,7 @@
                 type="text"
                 placeholder="Filter by trace ID..."
                 bind:value={traceId}
+                oninput={debouncedSearch}
               />
             </div>
 

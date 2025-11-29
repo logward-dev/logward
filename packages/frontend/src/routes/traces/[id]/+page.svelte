@@ -295,10 +295,10 @@
           <Card>
             <CardContent class="pt-6">
               <div class="flex items-center gap-3">
-                <Clock class="w-5 h-5 text-muted-foreground" />
-                <div>
+                <Clock class="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                <div class="min-w-0">
                   <p class="text-sm text-muted-foreground">Start Time</p>
-                  <p class="font-medium text-sm">{formatDateTime(trace.start_time)}</p>
+                  <p class="font-medium text-sm whitespace-nowrap">{formatDateTime(trace.start_time)}</p>
                 </div>
               </div>
             </CardContent>

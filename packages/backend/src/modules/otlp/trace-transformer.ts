@@ -7,7 +7,7 @@
  */
 
 import type { SpanKind, SpanStatusCode } from '../../database/types.js';
-import { attributesToRecord, type OtlpKeyValue } from './transformer.js';
+import { attributesToRecord, sanitizeForPostgres, type OtlpKeyValue } from './transformer.js';
 
 // ============================================================================
 // OTLP Trace Type Definitions
@@ -239,13 +239,13 @@ export function transformSpan(
     span_id: span.spanId,
     parent_span_id: span.parentSpanId || undefined,
     service_name: serviceName,
-    operation_name: span.name || 'unknown',
+    operation_name: sanitizeForPostgres(span.name || 'unknown'),
     start_time: startTime,
     end_time: endTime,
     duration_ms: durationMs,
     kind: mapSpanKind(span.kind),
     status_code: mapStatusCode(span.status?.code),
-    status_message: span.status?.message || undefined,
+    status_message: span.status?.message ? sanitizeForPostgres(span.status.message) : undefined,
     attributes: attributesToRecord(span.attributes),
     events: transformEvents(span.events),
     links: transformLinks(span.links),
@@ -322,7 +322,7 @@ export function extractServiceName(attributes?: OtlpKeyValue[]): string {
 
   const serviceAttr = attributes.find((attr) => attr.key === 'service.name');
   if (serviceAttr?.value?.stringValue) {
-    return serviceAttr.value.stringValue;
+    return sanitizeForPostgres(serviceAttr.value.stringValue);
   }
 
   return 'unknown';
@@ -411,7 +411,7 @@ export function transformEvents(events?: OtlpSpanEvent[]): TransformedSpanEvent[
 
   return events.map((event) => ({
     time: nanosToIso(event.timeUnixNano),
-    name: event.name || 'event',
+    name: sanitizeForPostgres(event.name || 'event'),
     attributes: event.attributes ? attributesToRecord(event.attributes) : undefined,
   }));
 }

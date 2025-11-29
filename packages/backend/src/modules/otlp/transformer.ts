@@ -185,6 +185,15 @@ export function transformLogRecord(
 // ============================================================================
 
 /**
+ * Sanitize string for PostgreSQL TEXT columns.
+ * PostgreSQL cannot store null bytes (\x00) in TEXT columns.
+ */
+export function sanitizeForPostgres(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x00/g, '');
+}
+
+/**
  * Extract service name from resource attributes.
  * Falls back to 'unknown' if not found.
  */
@@ -193,7 +202,7 @@ export function extractServiceName(attributes?: OtlpKeyValue[]): string {
 
   const serviceAttr = attributes.find((attr) => attr.key === 'service.name');
   if (serviceAttr?.value?.stringValue) {
-    return serviceAttr.value.stringValue;
+    return sanitizeForPostgres(serviceAttr.value.stringValue);
   }
 
   return 'unknown';
@@ -251,7 +260,7 @@ export function extractMessage(body?: OtlpAnyValue): string {
 
   // String value (most common)
   if (body.stringValue !== undefined) {
-    return body.stringValue;
+    return sanitizeForPostgres(body.stringValue);
   }
 
   // Integer value
@@ -312,7 +321,7 @@ export function attributesToRecord(
 export function anyValueToJs(value?: OtlpAnyValue): unknown {
   if (!value) return null;
 
-  if (value.stringValue !== undefined) return value.stringValue;
+  if (value.stringValue !== undefined) return sanitizeForPostgres(value.stringValue);
   if (value.boolValue !== undefined) return value.boolValue;
   if (value.intValue !== undefined) {
     // int64 may be string in JSON

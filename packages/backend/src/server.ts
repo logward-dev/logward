@@ -28,6 +28,7 @@ const HOST = config.HOST;
 export async function build(opts = {}) {
   const fastify = Fastify({
     logger: true,
+    bodyLimit: 10 * 1024 * 1024, // 10MB for large OTLP batches
     ...opts,
   });
 
