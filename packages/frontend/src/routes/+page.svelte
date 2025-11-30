@@ -110,7 +110,6 @@
 </svelte:head>
 
 <div class="min-h-screen bg-background overflow-hidden">
-  <!-- Header -->
   <header class="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
     <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
       <a href="/" class="flex items-center gap-2">
@@ -121,15 +120,15 @@
         <a href="/docs" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
           Docs
         </a>
-        <a href="https://github.com/logward-dev/logward" target="_blank" rel="noopener noreferrer" class="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-          <Github class="w-4 h-4" />
+        <a href="https://github.com/logward-dev/logward" target="_blank" rel="noopener noreferrer" class="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1" aria-label="View LogWard on GitHub (opens in new tab)">
+          <Github class="w-4 h-4" aria-hidden="true" />
           GitHub
         </a>
       </nav>
 
       <div class="flex items-center gap-3">
         {#if checkingAuth}
-          <div class="w-20 h-9 bg-muted animate-pulse rounded-md"></div>
+          <div class="w-20 h-9 bg-muted animate-pulse rounded-md" aria-hidden="true"></div>
         {:else if isAuthenticated}
           <Button href="/dashboard">
             Dashboard
@@ -148,23 +147,22 @@
     </div>
   </header>
 
-  <!-- Hero Section with Dashboard Preview -->
-  <section class="relative py-16 md:py-24 px-6">
-    <!-- Background gradient -->
-    <div class="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none"></div>
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none"></div>
+  <main>
+  <section class="relative py-16 md:py-24 px-6" aria-labelledby="hero-heading">
+    <div class="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>
 
     <div class="max-w-6xl mx-auto relative">
       <div class="text-center mb-12">
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-          <span class="relative flex h-2 w-2">
+          <span class="relative flex h-2 w-2" aria-hidden="true">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
             <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
           </span>
           Free during Alpha
         </div>
 
-        <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6">
+        <h1 id="hero-heading" class="text-4xl md:text-6xl font-bold tracking-tight mb-6">
           Privacy-first Log Management.
           <span class="text-primary">Open Source.</span>
         </h1>
@@ -192,14 +190,10 @@
         </div>
       </div>
 
-      <!-- Dashboard Mockup -->
-      <div class="relative mx-auto max-w-5xl">
-        <!-- Glow effect -->
-        <div class="absolute -inset-4 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20 rounded-2xl blur-2xl opacity-50"></div>
+      <figure class="relative mx-auto max-w-5xl" role="img" aria-label="LogWard dashboard preview showing log statistics, volume chart, and recent logs table">
+        <div class="absolute -inset-4 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20 rounded-2xl blur-2xl opacity-50" aria-hidden="true"></div>
 
-        <!-- Browser window -->
-        <div class="relative rounded-xl border border-border bg-card shadow-2xl overflow-hidden">
-          <!-- Browser header -->
+        <div class="relative rounded-xl border border-border bg-card shadow-2xl overflow-hidden" aria-hidden="true">
           <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/50">
             <div class="flex gap-1.5">
               <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
@@ -214,9 +208,7 @@
             <div class="w-16"></div>
           </div>
 
-          <!-- Dashboard content -->
           <div class="p-4 md:p-6 bg-background">
-            <!-- Stats row -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
               {#each mockStats as stat}
                 {@const Icon = stat.icon}
@@ -233,7 +225,6 @@
               {/each}
             </div>
 
-            <!-- Chart mockup -->
             <div class="rounded-lg border border-border bg-card p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
                 <span class="font-medium text-sm">Log Volume (24h)</span>
@@ -241,8 +232,7 @@
                   <span class="px-2 py-0.5 rounded text-xs bg-primary/10 text-primary">Live</span>
                 </div>
               </div>
-              <!-- Chart bars -->
-              <div class="flex items-end gap-1 h-24">
+              <div class="flex items-end gap-1 h-24" role="img" aria-label="Bar chart showing log volume over 24 hours">
                 {#each [40, 55, 45, 60, 50, 70, 65, 80, 75, 90, 85, 95, 88, 92, 78, 82, 70, 65, 75, 80, 85, 90, 88, 95] as height, i}
                   <div
                     class="flex-1 rounded-t transition-all duration-300 {i >= 22 ? 'bg-primary' : 'bg-primary/30'}"
@@ -257,7 +247,6 @@
               </div>
             </div>
 
-            <!-- Logs table mockup -->
             <div class="rounded-lg border border-border bg-card overflow-hidden">
               <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                 <span class="font-medium text-sm">Recent Logs</span>
@@ -276,21 +265,19 @@
             </div>
           </div>
         </div>
-      </div>
+      </figure>
     </div>
   </section>
 
-  <!-- Why LogWard Section -->
-  <section class="py-24 px-6 relative overflow-hidden">
-    <!-- Decorative background -->
-    <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5"></div>
-    <div class="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
-    <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
+  <section class="py-24 px-6 relative overflow-hidden" aria-labelledby="why-logward-heading">
+    <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5" aria-hidden="true"></div>
+    <div class="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" aria-hidden="true"></div>
+    <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" aria-hidden="true"></div>
 
     <div class="max-w-6xl mx-auto relative">
       <div class="text-center mb-16">
         <span class="text-primary font-medium text-sm uppercase tracking-wider">Why Choose Us</span>
-        <h2 class="text-3xl md:text-4xl font-bold mt-2 mb-4">Built Different</h2>
+        <h2 id="why-logward-heading" class="text-3xl md:text-4xl font-bold mt-2 mb-4">Built Different</h2>
         <p class="text-muted-foreground max-w-2xl mx-auto text-lg">
           For developers and European SMBs who need data ownership
           without ElasticSearch complexity.
@@ -300,9 +287,9 @@
       <div class="grid md:grid-cols-2 gap-6">
         {#each features as feature, i}
           {@const Icon = feature.icon}
-          <div class="group p-8 rounded-2xl border border-border bg-card/80 backdrop-blur-sm hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
+          <article class="group p-8 rounded-2xl border border-border bg-card/80 backdrop-blur-sm hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
             <div class="flex items-start gap-5">
-              <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform" aria-hidden="true">
                 <Icon class="w-7 h-7 text-primary" />
               </div>
               <div>
@@ -310,46 +297,42 @@
                 <p class="text-muted-foreground">{feature.description}</p>
               </div>
             </div>
-          </div>
+          </article>
         {/each}
       </div>
     </div>
   </section>
 
-  <!-- How it works Section -->
-  <section class="py-24 px-6 bg-muted/30">
+  <section class="py-24 px-6 bg-muted/30" aria-labelledby="quickstart-heading">
     <div class="max-w-6xl mx-auto">
       <div class="grid lg:grid-cols-2 gap-12 items-center">
-        <!-- Left side: Steps -->
         <div>
           <span class="text-primary font-medium text-sm uppercase tracking-wider">Quick Start</span>
-          <h2 class="text-3xl md:text-4xl font-bold mt-2 mb-4">Get started in minutes</h2>
+          <h2 id="quickstart-heading" class="text-3xl md:text-4xl font-bold mt-2 mb-4">Get started in minutes</h2>
           <p class="text-muted-foreground mb-10 text-lg">
             From zero to production-ready log management.
           </p>
 
-          <div class="space-y-6">
+          <ol class="space-y-6 list-none p-0 m-0">
             {#each steps as step, i}
               {@const Icon = step.icon}
-              <div class="flex items-start gap-4">
-                <div class="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 font-bold">
+              <li class="flex items-start gap-4">
+                <span class="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 font-bold" aria-hidden="true">
                   {i + 1}
-                </div>
+                </span>
                 <div class="pt-1">
                   <h3 class="font-semibold mb-1">{step.title}</h3>
                   <p class="text-sm text-muted-foreground">{step.description}</p>
                 </div>
-              </div>
+              </li>
             {/each}
-          </div>
+          </ol>
         </div>
 
-        <!-- Right side: Code example -->
-        <div class="relative">
-          <div class="absolute -inset-4 bg-gradient-to-r from-primary/10 to-primary/5 rounded-2xl blur-xl"></div>
+        <figure class="relative" aria-label="Code example showing how to use the LogWard SDK">
+          <div class="absolute -inset-4 bg-gradient-to-r from-primary/10 to-primary/5 rounded-2xl blur-xl" aria-hidden="true"></div>
           <div class="relative rounded-xl border border-border bg-[#0d1117] shadow-2xl overflow-hidden">
-            <!-- Terminal header -->
-            <div class="flex items-center gap-2 px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+            <div class="flex items-center gap-2 px-4 py-3 bg-[#161b22] border-b border-[#30363d]" aria-hidden="true">
               <div class="flex gap-1.5">
                 <div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
                 <div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
@@ -357,8 +340,7 @@
               </div>
               <span class="text-xs text-[#8b949e] ml-2 font-mono">app.ts</span>
             </div>
-            <!-- Code content -->
-            <div class="p-5 font-mono text-sm leading-relaxed overflow-x-auto">
+            <pre class="p-5 font-mono text-sm leading-relaxed overflow-x-auto m-0" role="code" aria-label="TypeScript code example"><code>
               <div class="text-[#8b949e]">// Install: npm install @logward/sdk</div>
               <div class="mt-3">
                 <span class="text-[#ff7b72]">import</span>
@@ -394,19 +376,18 @@
                 plan: <span class="text-[#a5d6ff]">'pro'</span>
               </div>
               <div class="text-[#c9d1d9]">{'}'})</div>
-            </div>
+            </code></pre>
           </div>
-        </div>
+        </figure>
       </div>
     </div>
   </section>
 
-  <!-- SDKs Section -->
-  <section class="py-24 px-6">
+  <section class="py-24 px-6" aria-labelledby="sdks-heading">
     <div class="max-w-6xl mx-auto">
       <div class="text-center mb-12">
         <span class="text-primary font-medium text-sm uppercase tracking-wider">Integrations</span>
-        <h2 class="text-3xl md:text-4xl font-bold mt-2 mb-4">Works with your stack</h2>
+        <h2 id="sdks-heading" class="text-3xl md:text-4xl font-bold mt-2 mb-4">Works with your stack</h2>
         <p class="text-muted-foreground text-lg max-w-2xl mx-auto">
           Native SDKs with retry logic and circuit breakers. Or use OpenTelemetry.
         </p>
@@ -434,7 +415,7 @@
           <div class="text-xs text-muted-foreground mt-1">gradle</div>
         </a>
         <a href="/docs/sdks/opentelemetry" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
-          <div class="w-12 h-12 mx-auto mb-3 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div class="w-12 h-12 mx-auto mb-3 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform" aria-hidden="true">
             <GitBranch class="w-7 h-7 text-primary" />
           </div>
           <span class="font-medium">OpenTelemetry</span>
@@ -444,19 +425,17 @@
     </div>
   </section>
 
-  <!-- CTA Section -->
-  <section class="py-24 px-6 relative overflow-hidden">
-    <!-- Gradient background -->
-    <div class="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl opacity-30"></div>
+  <section class="py-24 px-6 relative overflow-hidden" aria-labelledby="cta-heading">
+    <div class="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent" aria-hidden="true"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 rounded-full blur-3xl opacity-30" aria-hidden="true"></div>
 
     <div class="max-w-4xl mx-auto text-center relative">
       <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-        <Euro class="w-4 h-4" />
+        <Euro class="w-4 h-4" aria-hidden="true" />
         No credit card required
       </div>
 
-      <h2 class="text-3xl md:text-5xl font-bold mb-6">Ready to own your logs?</h2>
+      <h2 id="cta-heading" class="text-3xl md:text-5xl font-bold mb-6">Ready to own your logs?</h2>
       <p class="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
         Start with the free cloud or deploy on your own infrastructure.
         No vendor lock-in. Export anytime.
@@ -474,8 +453,8 @@
             <ArrowRight class="w-5 h-5 ml-2" />
           </Button>
         {/if}
-        <Button size="lg" variant="outline" class="text-lg px-8 py-6" href="https://github.com/logward-dev/logward" target="_blank">
-          <Github class="w-5 h-5 mr-2" />
+        <Button size="lg" variant="outline" class="text-lg px-8 py-6" href="https://github.com/logward-dev/logward" target="_blank" aria-label="Star LogWard on GitHub (opens in new tab)">
+          <Github class="w-5 h-5 mr-2" aria-hidden="true" />
           Star on GitHub
         </Button>
       </div>
@@ -485,12 +464,11 @@
       </p>
     </div>
   </section>
+  </main>
 
-  <!-- Footer -->
   <footer class="py-12 px-6 border-t border-border bg-card/30">
     <div class="max-w-6xl mx-auto">
       <div class="grid md:grid-cols-4 gap-8 mb-8">
-        <!-- Brand -->
         <div class="md:col-span-2">
           <img src="/logo/white.svg" alt="LogWard" class="h-8 w-auto mb-4" />
           <p class="text-sm text-muted-foreground max-w-xs">
@@ -498,25 +476,23 @@
           </p>
         </div>
 
-        <!-- Product -->
-        <div>
+        <nav aria-label="Product links">
           <h4 class="font-semibold mb-4">Product</h4>
           <ul class="space-y-2">
             <li><a href="/docs" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Documentation</a></li>
             <li><a href="/docs/getting-started" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Getting Started</a></li>
             <li><a href="/docs/sdks" class="text-sm text-muted-foreground hover:text-foreground transition-colors">SDKs</a></li>
           </ul>
-        </div>
+        </nav>
 
-        <!-- Company -->
-        <div>
+        <nav aria-label="Open source links">
           <h4 class="font-semibold mb-4">Open Source</h4>
           <ul class="space-y-2">
             <li><a href="https://github.com/logward-dev/logward" target="_blank" rel="noopener noreferrer" class="text-sm text-muted-foreground hover:text-foreground transition-colors">GitHub</a></li>
             <li><a href="https://github.com/logward-dev/logward/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="text-sm text-muted-foreground hover:text-foreground transition-colors">AGPLv3 License</a></li>
             <li><a href="https://github.com/logward-dev/logward/issues" target="_blank" rel="noopener noreferrer" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Report Issue</a></li>
           </ul>
-        </div>
+        </nav>
       </div>
 
       <div class="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
@@ -525,8 +501,8 @@
         </p>
         <div class="flex items-center gap-2 text-sm text-muted-foreground">
           <span class="flex items-center gap-1">
-            <span class="w-2 h-2 rounded-full bg-green-500"></span>
-            All systems operational
+            <span class="w-2 h-2 rounded-full bg-green-500" aria-hidden="true"></span>
+            <span role="status">All systems operational</span>
           </span>
         </div>
       </div>
