@@ -340,43 +340,16 @@
               </div>
               <span class="text-xs text-[#8b949e] ml-2 font-mono">app.ts</span>
             </div>
-            <pre class="p-5 font-mono text-sm leading-relaxed overflow-x-auto m-0" role="code" aria-label="TypeScript code example"><code>
-              <div class="text-[#8b949e]">// Install: npm install @logward/sdk</div>
-              <div class="mt-3">
-                <span class="text-[#ff7b72]">import</span>
-                <span class="text-[#c9d1d9]"> {'{'} LogWard {'}'} </span>
-                <span class="text-[#ff7b72]">from</span>
-                <span class="text-[#a5d6ff]"> '@logward/sdk'</span>
-              </div>
-              <div class="mt-4">
-                <span class="text-[#ff7b72]">const</span>
-                <span class="text-[#c9d1d9]"> logger = </span>
-                <span class="text-[#ff7b72]">new</span>
-                <span class="text-[#d2a8ff]"> LogWard</span>
-                <span class="text-[#c9d1d9]">({'{'}</span>
-              </div>
-              <div class="text-[#c9d1d9] pl-4">
-                apiKey: <span class="text-[#a5d6ff]">'lw_xxxx'</span>,
-              </div>
-              <div class="text-[#c9d1d9] pl-4">
-                service: <span class="text-[#a5d6ff]">'my-api'</span>
-              </div>
-              <div class="text-[#c9d1d9]">{'}'})</div>
-              <div class="mt-4">
-                <span class="text-[#c9d1d9]">logger.</span>
-                <span class="text-[#d2a8ff]">info</span>
-                <span class="text-[#c9d1d9]">(</span>
-                <span class="text-[#a5d6ff]">'User signed up'</span>
-                <span class="text-[#c9d1d9]">, {'{'}</span>
-              </div>
-              <div class="text-[#c9d1d9] pl-4">
-                userId: <span class="text-[#a5d6ff]">'usr_123'</span>,
-              </div>
-              <div class="text-[#c9d1d9] pl-4">
-                plan: <span class="text-[#a5d6ff]">'pro'</span>
-              </div>
-              <div class="text-[#c9d1d9]">{'}'})</div>
-            </code></pre>
+            <pre class="p-5 font-mono text-sm leading-relaxed overflow-x-auto m-0" role="code" aria-label="TypeScript code example"><code><div class="text-[#8b949e]">// Install: npm install @logward/sdk</div>
+<div class="mt-3"><span class="text-[#ff7b72]">import</span><span class="text-[#c9d1d9]"> {'{'} LogWard {'}'} </span><span class="text-[#ff7b72]">from</span><span class="text-[#a5d6ff]"> '@logward/sdk'</span></div>
+<div class="mt-4"><span class="text-[#ff7b72]">const</span><span class="text-[#c9d1d9]"> logger = </span><span class="text-[#ff7b72]">new</span><span class="text-[#d2a8ff]"> LogWard</span><span class="text-[#c9d1d9]">({'{'}</span></div>
+<div class="text-[#c9d1d9] pl-4">apiKey: <span class="text-[#a5d6ff]">'lw_xxxx'</span>,</div>
+<div class="text-[#c9d1d9] pl-4">service: <span class="text-[#a5d6ff]">'my-api'</span></div>
+<div class="text-[#c9d1d9]">{'}'})</div>
+<div class="mt-4"><span class="text-[#c9d1d9]">logger.</span><span class="text-[#d2a8ff]">info</span><span class="text-[#c9d1d9]">(</span><span class="text-[#a5d6ff]">'User signed up'</span><span class="text-[#c9d1d9]">, {'{'}</span></div>
+<div class="text-[#c9d1d9] pl-4">userId: <span class="text-[#a5d6ff]">'usr_123'</span>,</div>
+<div class="text-[#c9d1d9] pl-4">plan: <span class="text-[#a5d6ff]">'pro'</span></div>
+<div class="text-[#c9d1d9]">{'}'})</div></code></pre>
           </div>
         </figure>
       </div>
