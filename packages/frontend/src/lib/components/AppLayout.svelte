@@ -194,13 +194,16 @@
     { label: "Projects", href: "/dashboard/projects", icon: FolderKanban },
     { label: "Logs", href: "/dashboard/search", icon: FileText },
     { label: "Traces", href: "/dashboard/traces", icon: GitBranch },
-    { label: "Traces", href: "/traces", icon: GitBranch },
     { label: "Alerts", href: "/dashboard/alerts", icon: AlertTriangle },
     { label: "Docs", href: "/docs", icon: Book },
     { label: "Settings", href: "/dashboard/settings", icon: Settings },
   ];
 
   function isActive(href: string): boolean {
+    // Exact match for /dashboard to prevent it being always active
+    if (href === "/dashboard") {
+      return $page.url.pathname === href;
+    }
     return (
       $page.url.pathname === href || $page.url.pathname.startsWith(href + "/")
     );
@@ -361,7 +364,7 @@
                         notification.type === "alert" &&
                         notification.organizationSlug
                       ) {
-                        goto(`/alerts`);
+                        goto(`/dashboard/alerts`);
                       }
                     }}
                     class="cursor-pointer flex-col items-start gap-2 px-4 py-3 mb-1 relative group hover:bg-accent/30 transition-colors {!notification.read

@@ -280,7 +280,7 @@
 
   function viewTrace(traceId: string) {
     if (selectedProject) {
-      goto(`/traces/${traceId}?projectId=${selectedProject}`);
+      goto(`/dashboard/traces/${traceId}?projectId=${selectedProject}`);
     }
   }
 </script>

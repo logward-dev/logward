@@ -70,7 +70,7 @@
 
 	// Handle tab change
 	function handleTabChange(tab: string) {
-		const basePath = `/projects/${projectId}`;
+		const basePath = `/dashboard/projects/${projectId}`;
 		if (tab === 'logs') {
 			goto(basePath);
 		} else {

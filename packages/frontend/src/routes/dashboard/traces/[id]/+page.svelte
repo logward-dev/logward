@@ -252,7 +252,7 @@
           <Button
             variant="outline"
             size="sm"
-            onclick={() => goto(`/search?traceId=${traceId}&project=${projectId}`)}
+            onclick={() => goto(`/dashboard/search?traceId=${traceId}&project=${projectId}`)}
           >
             <FileText class="w-4 h-4 mr-2" />
             View Related Logs
@@ -501,7 +501,7 @@
               <div class="mt-6 pt-4 border-t">
                 <Button
                   variant="outline"
-                  onclick={() => goto(`/search?traceId=${traceId}&project=${projectId}`)}
+                  onclick={() => goto(`/dashboard/search?traceId=${traceId}&project=${projectId}`)}
                 >
                   <FileText class="w-4 h-4 mr-2" />
                   View Logs for this Trace
