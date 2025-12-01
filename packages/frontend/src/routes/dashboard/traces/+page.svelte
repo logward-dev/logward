@@ -36,6 +36,7 @@
   import Timer from "@lucide/svelte/icons/timer";
   import Layers from "@lucide/svelte/icons/layers";
   import Network from "@lucide/svelte/icons/network";
+  import EmptyTraces from "$lib/components/EmptyTraces.svelte";
 
   let token = $state<string | null>(null);
   let projects = $state<Project[]>([]);
@@ -535,13 +536,7 @@
         </CardHeader>
         <CardContent>
           {#if traces.length === 0}
-            <div class="text-center py-12">
-              <GitBranch class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p class="text-muted-foreground">No traces found</p>
-              <p class="text-sm text-muted-foreground mt-2">
-                Send traces using the OTLP endpoint to see them here
-              </p>
-            </div>
+            <EmptyTraces />
           {:else}
             <div class="rounded-md border">
               <Table>

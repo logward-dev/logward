@@ -31,6 +31,7 @@
   import * as Popover from "$lib/components/ui/popover";
   import Switch from "$lib/components/ui/switch/switch.svelte";
   import LogContextDialog from "$lib/components/LogContextDialog.svelte";
+  import EmptyLogs from "$lib/components/EmptyLogs.svelte";
   import FileJson from "@lucide/svelte/icons/file-json";
   import FileText from "@lucide/svelte/icons/file-text";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
@@ -946,9 +947,7 @@
         </CardHeader>
         <CardContent>
           {#if paginatedLogs.length === 0}
-            <div class="text-center py-12">
-              <p class="text-muted-foreground">No logs found</p>
-            </div>
+            <EmptyLogs />
           {:else}
             <div class="rounded-md border">
               <Table>

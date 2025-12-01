@@ -7,6 +7,7 @@
   import LogsChart from '$lib/components/dashboard/LogsChart.svelte';
   import TopServicesWidget from '$lib/components/dashboard/TopServicesWidget.svelte';
   import RecentErrorsWidget from '$lib/components/dashboard/RecentErrorsWidget.svelte';
+  import EmptyDashboard from '$lib/components/dashboard/EmptyDashboard.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
 
   import Activity from '@lucide/svelte/icons/activity';
@@ -91,6 +92,14 @@
     }
     return throughput.toFixed(1) + '/s';
   }
+
+  // Check if dashboard has no data (new user or no logs)
+  let isEmpty = $derived(
+    stats !== null &&
+    stats.totalLogsToday.value === 0 &&
+    stats.activeServices.value === 0 &&
+    chartData.length === 0
+  );
 </script>
 
 <div class="container mx-auto space-y-6 p-6">
@@ -119,6 +128,8 @@
             Retry
           </button>
         </div>
+      {:else if isEmpty}
+        <EmptyDashboard />
       {:else if stats}
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatsCard
