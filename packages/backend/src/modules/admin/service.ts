@@ -1,6 +1,7 @@
 import { db, getPoolStats } from '../../database/index.js';
 import { sql } from 'kysely';
 import { connection as redis } from '../../queue/connection.js';
+import { CacheManager, type CacheStats, isCacheEnabled } from '../../utils/cache.js';
 
 // System-wide statistics
 export interface SystemStats {
@@ -1179,6 +1180,34 @@ export class AdminService {
 
         return { message: 'Project deleted successfully' };
     }
+
+    /**
+     * Get cache statistics
+     */
+    async getCacheStats(): Promise<CacheStats & { enabled: boolean }> {
+        const stats = await CacheManager.getStats();
+        return {
+            ...stats,
+            enabled: isCacheEnabled(),
+        };
+    }
+
+    /**
+     * Clear all caches (admin action)
+     */
+    async clearCache(): Promise<{ cleared: number }> {
+        const cleared = await CacheManager.clearAll();
+        return { cleared };
+    }
+
+    /**
+     * Invalidate cache for a specific project
+     */
+    async invalidateProjectCache(projectId: string): Promise<void> {
+        await CacheManager.invalidateProjectCache(projectId);
+    }
 }
 
 export const adminService = new AdminService();
+
+export type { CacheStats };
