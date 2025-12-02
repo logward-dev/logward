@@ -206,6 +206,22 @@ export interface LogsDailyStatsTable {
   log_count: number;
 }
 
+// Checklist items state stored as JSON: { "item-id": true, ... }
+export type ChecklistItemsState = Record<string, boolean>;
+
+export interface UserOnboardingTable {
+  id: Generated<string>;
+  user_id: string;
+  checklist_items: ColumnType<ChecklistItemsState, ChecklistItemsState, ChecklistItemsState>;
+  checklist_collapsed: Generated<boolean>;
+  checklist_dismissed: Generated<boolean>;
+  tutorial_completed: Generated<boolean>;
+  tutorial_step: Generated<number>;
+  tutorial_skipped: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Database {
   logs: LogsTable;
   users: UsersTable;
@@ -220,6 +236,7 @@ export interface Database {
   sigma_rules: SigmaRulesTable;
   traces: TracesTable;
   spans: SpansTable;
+  user_onboarding: UserOnboardingTable;
   // Continuous aggregates (TimescaleDB materialized views)
   logs_hourly_stats: LogsHourlyStatsTable;
   logs_daily_stats: LogsDailyStatsTable;

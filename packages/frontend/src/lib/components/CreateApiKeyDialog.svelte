@@ -8,6 +8,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
+  import { checklistStore } from '$lib/stores/checklist';
 
   interface Props {
     onSubmit: (data: { name: string }) => Promise<{ apiKey: string; message: string }>;
@@ -32,6 +33,9 @@
       });
 
       generatedApiKey = result.apiKey;
+
+      // Mark checklist item as complete
+      checklistStore.completeItem('create-api-key');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to create API key';
     } finally {
@@ -173,7 +177,7 @@
 
         <div class="bg-muted p-3 rounded-md space-y-1">
           <p class="text-xs font-medium">Usage Example:</p>
-          <pre class="text-xs text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all"><code>curl -X POST https://api.logward.dev/v1/ingest \
+          <pre class="text-xs text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all"><code>curl -X POST https://api.logward.dev/api/v1/ingest \
   -H "X-API-Key: {generatedApiKey}" \
   -d '{`{"logs": [...]}`}'</code></pre>
         </div>

@@ -52,6 +52,8 @@
 	import Download from "@lucide/svelte/icons/download";
 	import ChevronDown from "@lucide/svelte/icons/chevron-down";
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
+	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
+	import { checklistStore } from "$lib/stores/checklist";
 
 	let alertRules = $state<AlertRule[]>([]);
 	let alertHistory = $state<AlertHistory[]>([]);
@@ -315,8 +317,18 @@
 
 			<Tabs value="rules" class="space-y-4">
 				<TabsList>
-					<TabsTrigger value="rules">Alert Rules</TabsTrigger>
-					<TabsTrigger value="sigma">Sigma Rules</TabsTrigger>
+					<TabsTrigger value="rules" class="gap-1">
+						Alert Rules
+						<HelpTooltip
+							text="Alert rules trigger notifications when log volume exceeds a threshold within a time window."
+						/>
+					</TabsTrigger>
+					<TabsTrigger value="sigma" class="gap-1">
+						Sigma Rules
+						<HelpTooltip
+							text="Sigma rules are industry-standard detection rules for security threats. Import from SigmaHQ or create your own."
+						/>
+					</TabsTrigger>
 					<TabsTrigger value="history">Alert History</TabsTrigger>
 				</TabsList>
 

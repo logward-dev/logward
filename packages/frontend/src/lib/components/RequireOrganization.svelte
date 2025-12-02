@@ -47,7 +47,7 @@
         });
 
         if (orgs.length === 0) {
-          goto('/onboarding/create-organization');
+          goto('/onboarding');
           return;
         }
 
@@ -65,7 +65,7 @@
   });
 
   function createOrganization() {
-    goto('/onboarding/create-organization');
+    goto('/onboarding');
   }
 </script>
 

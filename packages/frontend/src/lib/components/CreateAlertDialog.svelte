@@ -2,6 +2,7 @@
 	import { alertsAPI, type CreateAlertRuleInput } from "$lib/api/alerts";
 	import { sigmaAPI } from "$lib/api/sigma";
 	import { toastStore } from "$lib/stores/toast";
+	import { checklistStore } from "$lib/stores/checklist";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import Button from "$lib/components/ui/button/button.svelte";
 	import Input from "$lib/components/ui/input/input.svelte";
@@ -152,6 +153,7 @@
 			await alertsAPI.createAlertRule(input);
 
 			toastStore.success("Alert rule created successfully");
+			checklistStore.completeItem('create-alert');
 			resetForm();
 			open = false;
 			onSuccess?.();
@@ -208,6 +210,7 @@
 			}
 
 			toastStore.success("Sigma rule imported successfully");
+			checklistStore.completeItem('import-sigma-rule');
 
 			if (result.warnings && result.warnings.length > 0) {
 				result.warnings.forEach((warning) => {

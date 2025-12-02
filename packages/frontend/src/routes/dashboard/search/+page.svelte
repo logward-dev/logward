@@ -5,6 +5,7 @@
   import { PUBLIC_API_URL } from "$env/static/public";
   import { currentOrganization } from "$lib/stores/organization";
   import { authStore } from "$lib/stores/auth";
+  import { checklistStore } from "$lib/stores/checklist";
   import { ProjectsAPI } from "$lib/api/projects";
   import { logsAPI } from "$lib/api/logs";
   import { toastStore } from "$lib/stores/toast";
@@ -31,6 +32,7 @@
   import * as Popover from "$lib/components/ui/popover";
   import Switch from "$lib/components/ui/switch/switch.svelte";
   import LogContextDialog from "$lib/components/LogContextDialog.svelte";
+  import EmptyLogs from "$lib/components/EmptyLogs.svelte";
   import FileJson from "@lucide/svelte/icons/file-json";
   import FileText from "@lucide/svelte/icons/file-text";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
@@ -314,6 +316,15 @@
   let filteredLogs = $derived(logs);
 
   let effectiveTotalLogs = $derived(liveTail ? logs.length : totalLogs);
+
+  // Track when live tail is activated for checklist
+  let hasActivatedLiveTail = $state(false);
+  $effect(() => {
+    if (liveTail && !hasActivatedLiveTail) {
+      hasActivatedLiveTail = true;
+      checklistStore.completeItem('try-live-tail');
+    }
+  });
 
   $effect(() => {
     if (liveTail && selectedProjects.length > 1) {
@@ -946,9 +957,7 @@
         </CardHeader>
         <CardContent>
           {#if paginatedLogs.length === 0}
-            <div class="text-center py-12">
-              <p class="text-muted-foreground">No logs found</p>
-            </div>
+            <EmptyLogs />
           {:else}
             <div class="rounded-md border">
               <Table>

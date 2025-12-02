@@ -9,7 +9,7 @@
   import { NotificationsAPI, type Notification } from "$lib/api/notifications";
   import Button from "$lib/components/ui/button/button.svelte";
   import { Separator } from "$lib/components/ui/separator";
-  import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+  import { DropdownMenu as DropdownMenuPrimitive, Tooltip as TooltipPrimitive } from "bits-ui";
   import DropdownMenuContent from "$lib/components/ui/dropdown-menu/dropdown-menu-content.svelte";
   import DropdownMenuItem from "$lib/components/ui/dropdown-menu/dropdown-menu-item.svelte";
   import DropdownMenuLabel from "$lib/components/ui/dropdown-menu/dropdown-menu-label.svelte";
@@ -37,6 +37,8 @@
   import X from "@lucide/svelte/icons/x";
   import { formatTimeAgo } from "$lib/utils/datetime";
   import Footer from "$lib/components/Footer.svelte";
+  import OnboardingChecklist from "$lib/components/OnboardingChecklist.svelte";
+  import FeatureBadge from "$lib/components/FeatureBadge.svelte";
 
   interface Props {
     children?: import("svelte").Snippet;
@@ -189,11 +191,27 @@
   }
 
 
-  const navigationItems = [
+  interface NavItem {
+    label: string;
+    href: string;
+    icon: typeof LayoutDashboard;
+    badge?: {
+      id: string;
+      type: 'new' | 'updated' | 'beta';
+      showUntil?: string;
+    };
+  }
+
+  const navigationItems: NavItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Projects", href: "/dashboard/projects", icon: FolderKanban },
     { label: "Logs", href: "/dashboard/search", icon: FileText },
-    { label: "Traces", href: "/dashboard/traces", icon: GitBranch },
+    {
+      label: "Traces",
+      href: "/dashboard/traces",
+      icon: GitBranch,
+      badge: { id: 'traces-feature', type: 'new', showUntil: '2025-03-01' }
+    },
     { label: "Alerts", href: "/dashboard/alerts", icon: AlertTriangle },
     { label: "Docs", href: "/docs", icon: Book },
     { label: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -215,6 +233,7 @@
   }
 </script>
 
+<TooltipPrimitive.Provider>
 <div class="min-h-screen bg-background">
   <aside
     class="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col border-r border-border bg-card z-40"
@@ -242,6 +261,7 @@
         {@const Icon = item.icon}
         <a
           href={item.href}
+          data-nav-item={item.label.toLowerCase()}
           class="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors {isActive(
             item.href,
           )
@@ -249,7 +269,14 @@
             : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'}"
         >
           <Icon class="w-4 h-4" />
-          <span>{item.label}</span>
+          <span class="flex-1">{item.label}</span>
+          {#if item.badge}
+            <FeatureBadge
+              id={item.badge.id}
+              type={item.badge.type}
+              showUntil={item.badge.showUntil}
+            />
+          {/if}
         </a>
       {/each}
 
@@ -279,6 +306,11 @@
         <span>GitHub</span>
       </a>
     </nav>
+
+    <!-- Onboarding Checklist -->
+    <div class="p-4 border-t border-border">
+      <OnboardingChecklist />
+    </div>
   </aside>
 
   <div class="flex flex-col min-h-screen lg:ml-64">
@@ -498,3 +530,4 @@
 </div>
 
 <UserSettingsDialog bind:open={showUserSettings} />
+</TooltipPrimitive.Provider>

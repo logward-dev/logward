@@ -1,6 +1,7 @@
 <script lang="ts">
     import { sigmaAPI, type SyncResult } from "$lib/api/sigma";
     import { toastStore } from "$lib/stores/toast";
+    import { checklistStore } from "$lib/stores/checklist";
     import * as Dialog from "$lib/components/ui/dialog";
     import Button from "$lib/components/ui/button/button.svelte";
     import Label from "$lib/components/ui/label/label.svelte";
@@ -69,6 +70,12 @@
                 toastStore.success(
                     `Sync completed: ${result.imported} imported, ${result.skipped} skipped, ${result.failed} failed`,
                 );
+
+                // Mark checklist item as complete if any rules were imported
+                if (result.imported > 0) {
+                    checklistStore.completeItem('import-sigma-rule');
+                }
+
                 onSuccess?.();
             } else {
                 toastStore.error("Sync failed");

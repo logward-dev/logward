@@ -29,6 +29,7 @@
   import * as Popover from "$lib/components/ui/popover";
   import AppLayout from "$lib/components/AppLayout.svelte";
   import RequireOrganization from "$lib/components/RequireOrganization.svelte";
+  import EmptyTraces from "$lib/components/EmptyTraces.svelte";
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
@@ -539,13 +540,7 @@
         </CardHeader>
         <CardContent>
           {#if traces.length === 0}
-            <div class="text-center py-12">
-              <GitBranch class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p class="text-muted-foreground">No traces found</p>
-              <p class="text-sm text-muted-foreground mt-2">
-                Send traces using the OTLP endpoint to see them here
-              </p>
-            </div>
+            <EmptyTraces />
           {:else}
             <div class="rounded-md border">
               <Table>

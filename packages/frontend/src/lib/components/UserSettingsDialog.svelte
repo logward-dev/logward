@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authStore } from '$lib/stores/auth';
   import { toastStore } from '$lib/stores/toast';
+  import { onboardingStore } from '$lib/stores/onboarding';
   import { UsersAPI } from '$lib/api/users';
   import { Dialog as DialogPrimitive } from 'bits-ui';
   import DialogContent from '$lib/components/ui/dialog/dialog-content.svelte';
@@ -23,6 +24,7 @@
   } from '$lib/components/ui/alert-dialog';
   import Save from '@lucide/svelte/icons/save';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import { goto } from '$app/navigation';
 
   const Dialog = DialogPrimitive.Root;
@@ -143,6 +145,13 @@
       deletePassword = '';
     }
   }
+
+  function restartTutorial() {
+    onboardingStore.reset();
+    open = false;
+    toastStore.success('Tutorial restarted! Redirecting...');
+    goto('/onboarding');
+  }
 </script>
 
 <Dialog bind:open>
@@ -232,6 +241,26 @@
         <Save class="w-4 h-4" />
         {saving ? 'Saving...' : 'Save Changes'}
       </Button>
+
+      <Separator />
+
+      <div class="space-y-4">
+        <div>
+          <h3 class="text-lg font-semibold">Onboarding Tutorial</h3>
+          <p class="text-sm text-muted-foreground mt-1">
+            Restart the onboarding tutorial to learn about LogWard features
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          onclick={restartTutorial}
+          class="gap-2 w-full"
+        >
+          <RotateCcw class="w-4 h-4" />
+          Restart Tutorial
+        </Button>
+      </div>
 
       <Separator />
 

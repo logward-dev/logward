@@ -17,6 +17,7 @@ import { sigmaRoutes } from './modules/sigma/routes.js';
 import { adminRoutes } from './modules/admin/index.js';
 import { otlpRoutes, otlpTraceRoutes } from './modules/otlp/index.js';
 import { tracesRoutes } from './modules/traces/index.js';
+import { onboardingRoutes } from './modules/onboarding/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
 import { initializeInternalLogging, shutdownInternalLogging } from './utils/internal-logger.js';
 import websocketPlugin from './plugins/websocket.js';
@@ -82,6 +83,9 @@ export async function build(opts = {}) {
 
   // Notifications routes (session-based auth)
   await fastify.register(notificationsRoutes, { prefix: '/api/v1/notifications' });
+
+  // Onboarding routes (session-based auth)
+  await fastify.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
 
   // Alerts routes (session-based auth)
   await fastify.register(alertsRoutes, { prefix: '/api/v1/alerts' });
