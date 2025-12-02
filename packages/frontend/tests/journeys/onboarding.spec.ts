@@ -40,7 +40,7 @@ test.describe('Onboarding Tutorial Journey', () => {
     await expect(page.locator('button:has-text("Start the Tutorial")')).toBeVisible();
 
     // Should see "Skip for now" button
-    await expect(page.locator('button:has-text("Skip")')).toBeVisible();
+    await expect(page.locator('button:has-text("Skip for now")')).toBeVisible();
 
     // Store auth token for later tests
     const authData = await page.evaluate(() => localStorage.getItem('logward_auth'));
@@ -63,7 +63,7 @@ test.describe('Onboarding Tutorial Journey', () => {
     await page.locator('button:has-text("Start the Tutorial")').click();
 
     // Should now be on create-organization step
-    await expect(page.locator('text=/Create.*Organization|organization/i')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Create.*Organization|organization/i').first()).toBeVisible({ timeout: 5000 });
 
     // Should see organization name input
     const orgInput = page.locator('input#org-name');
@@ -225,7 +225,7 @@ test.describe('Tutorial Skip and Resume', () => {
     await expect(page).toHaveURL(/onboarding/, { timeout: 15000 });
 
     // Click "Skip for now"
-    await page.locator('button:has-text("Skip")').click();
+    await page.locator('button:has-text("Skip for now")').click();
 
     // Should redirect to dashboard
     await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
@@ -261,13 +261,13 @@ test.describe('Tutorial Skip and Resume', () => {
     await page.locator('button:has-text("Start the Tutorial")').click();
 
     // Should be on create-organization step
-    await expect(page.locator('text=/Create.*Organization|organization/i')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Create.*Organization|organization/i').first()).toBeVisible({ timeout: 5000 });
 
     // Refresh the page
     await page.reload();
 
     // Should still be on create-organization step (not reset to welcome)
-    await expect(page.locator('text=/Create.*Organization|organization/i')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Create.*Organization|organization/i').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('User can restart tutorial from settings', async ({ page }) => {
@@ -285,7 +285,7 @@ test.describe('Tutorial Skip and Resume', () => {
 
     // Skip tutorial to complete it
     await expect(page).toHaveURL(/onboarding/, { timeout: 15000 });
-    await page.locator('button:has-text("Skip")').click();
+    await page.locator('button:has-text("Skip for now")').click();
 
     // Should be on dashboard
     await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
@@ -353,7 +353,7 @@ test.describe('Onboarding Mobile Responsive', () => {
     await expect(startButton).toBeVisible();
     await expect(startButton).toBeInViewport();
 
-    const skipButton = page.locator('button:has-text("Skip")');
+    const skipButton = page.locator('button:has-text("Skip for now")');
     await expect(skipButton).toBeVisible();
     await expect(skipButton).toBeInViewport();
 
@@ -447,7 +447,7 @@ test.describe('Onboarding Accessibility', () => {
     await expect(startButton).toBeVisible();
     await expect(startButton).toBeEnabled();
 
-    const skipButton = page.locator('button:has-text("Skip")');
+    const skipButton = page.locator('button:has-text("Skip for now")');
     await expect(skipButton).toBeVisible();
     await expect(skipButton).toBeEnabled();
 
@@ -481,7 +481,7 @@ test.describe('Onboarding Accessibility', () => {
     await page.locator('button:has-text("Start the Tutorial")').click();
 
     // Should be on create-organization step
-    await expect(page.locator('text=/Create.*Organization|organization/i')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Create.*Organization|organization/i').first()).toBeVisible({ timeout: 5000 });
 
     // Organization name input should have a label
     const orgInput = page.locator('input#org-name');
@@ -562,7 +562,7 @@ test.describe('Onboarding Accessibility', () => {
 
     // After transition, focus should be on an interactive element or the new content area
     // The heading or first input should be focusable
-    const organizationHeading = page.locator('text=/Create.*Organization|organization/i');
+    const organizationHeading = page.locator('text=/Create.*Organization|organization/i').first();
     await expect(organizationHeading).toBeVisible({ timeout: 5000 });
 
     // Check that there's a focusable element on the new step

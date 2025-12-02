@@ -57,12 +57,24 @@ test.describe('New User Journey', () => {
     await page.locator('input[type="password"]').fill(userPassword);
     await page.locator('button[type="submit"]').click();
 
-    // Should be on organization creation page
+    // Should be on onboarding page
     await expect(page).toHaveURL(/onboarding|create-organization/, { timeout: 15000 });
 
-    // Fill organization form - the input has id="org-name"
+    // Handle welcome step if present - click "Start the Tutorial" to proceed
+    const startButton = page.locator('button:has-text("Start the Tutorial")');
+    if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startButton.click();
+      await page.waitForTimeout(500);
+    }
+
+    // Now should be on organization creation step
+    // Wait for org-name input to be visible
+    const orgInput = page.locator('input#org-name');
+    await expect(orgInput).toBeVisible({ timeout: 10000 });
+
+    // Fill organization form
     const orgName = `Test Org ${Date.now()}`;
-    await page.locator('input#org-name').fill(orgName);
+    await orgInput.fill(orgName);
 
     // Submit form
     await page.locator('button[type="submit"]').click();
