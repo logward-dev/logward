@@ -8,6 +8,12 @@ interface LogMessage {
     logs: any[];
 }
 
+/**
+ * WebSocket routes for real-time log streaming.
+ * Rate limiting note: WebSocket connections are long-lived and authenticated.
+ * Connection rate is implicitly limited by authentication requirements.
+ * Message rate limiting is handled by Redis pub/sub throughput.
+ */
 const websocketRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.get('/api/v1/logs/ws', { websocket: true }, async (socket, req: any) => {
         const { projectId, service, level, token } = req.query as {

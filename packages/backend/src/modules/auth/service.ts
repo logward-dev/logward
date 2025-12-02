@@ -5,6 +5,11 @@ export class AuthService {
   /**
    * Hash an API key using SHA-256
    */
+  /**
+   * Hash an API key using SHA-256.
+   * Note: SHA-256 is appropriate for API keys (high-entropy random values)
+   * unlike passwords which require bcrypt/argon2. This is intentional.
+   */
   private hashApiKey(apiKey: string): string {
     return crypto.createHash('sha256').update(apiKey).digest('hex');
   }

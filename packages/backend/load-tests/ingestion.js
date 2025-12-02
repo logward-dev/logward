@@ -86,7 +86,7 @@ function generateLogs(count = 10) {
             level: levels[Math.floor(Math.random() * levels.length)],
             message: messages[Math.floor(Math.random() * messages.length)] + ` [${Date.now()}-${i}]`,
             metadata: {
-                requestId: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                requestId: `req-${Date.now()}-${Date.now().toString(36)}`,
                 userId: `user-${Math.floor(Math.random() * 10000)}`,
                 duration: Math.floor(Math.random() * 1000),
             },

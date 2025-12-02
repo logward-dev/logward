@@ -240,7 +240,7 @@ test.describe('New User Journey', () => {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`Ingest failed: ${response.status} - ${errorBody}`);
-      console.error(`API Key used: ${apiKey?.substring(0, 10)}...`);
+      // Note: Not logging API key for security reasons
     }
 
     expect(response.ok).toBe(true);

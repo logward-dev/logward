@@ -5,6 +5,13 @@
   "description": "LogWard - Self-hosted log management platform",
   "author": "LogWard Team",
   "license": "AGPL-3.0",
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.25.0",
+      "cookie": ">=0.7.0",
+      "express": ">=5.2.0"
+    }
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./packages/**\" dev",
     "dev:backend": "pnpm --filter \"@logward/backend\" dev",

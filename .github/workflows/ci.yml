@@ -10,6 +10,11 @@ env:
   NODE_VERSION: '20'
   PNPM_VERSION: '10'
 
+# Restrict permissions for all jobs (principle of least privilege)
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   # ====================
   # Backend Tests

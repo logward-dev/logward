@@ -185,7 +185,7 @@ export const CacheManager = {
       cacheMisses++;
       return null;
     } catch (error) {
-      console.error(`[Cache] Error getting key ${key}:`, error);
+      console.error('[Cache] Error getting key:', key, error);
       cacheMisses++;
       return null;
     }
@@ -202,7 +202,7 @@ export const CacheManager = {
     try {
       await connection.setex(key, getCacheTTL(ttl), JSON.stringify(value));
     } catch (error) {
-      console.error(`[Cache] Error setting key ${key}:`, error);
+      console.error('[Cache] Error setting key:', key, error);
     }
   },
 
@@ -213,7 +213,7 @@ export const CacheManager = {
     try {
       await connection.del(key);
     } catch (error) {
-      console.error(`[Cache] Error deleting key ${key}:`, error);
+      console.error('[Cache] Error deleting key:', key, error);
     }
   },
 
@@ -228,7 +228,7 @@ export const CacheManager = {
       }
       return keys.length;
     } catch (error) {
-      console.error(`[Cache] Error deleting pattern ${pattern}:`, error);
+      console.error('[Cache] Error deleting pattern:', pattern, error);
       return 0;
     }
   },

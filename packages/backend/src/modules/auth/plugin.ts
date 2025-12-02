@@ -11,6 +11,12 @@ declare module 'fastify' {
   }
 }
 
+/**
+ * Authentication plugin for API routes.
+ * Rate limiting note: This plugin handles authentication only.
+ * Rate limiting is configured globally via @fastify/rate-limit in server.ts
+ * with separate limits for auth endpoints (10 req/15min) and ingestion (200 req/min).
+ */
 const authPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.decorateRequest('authenticated', false);
   fastify.decorateRequest('projectId', null);
