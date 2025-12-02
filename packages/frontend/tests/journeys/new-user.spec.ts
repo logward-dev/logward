@@ -125,50 +125,77 @@ test.describe('New User Journey', () => {
     // Wait for redirect (could be dashboard, projects, or onboarding)
     await page.waitForURL(/dashboard|projects|onboarding/, { timeout: 15000 });
 
-    // If redirected to onboarding, skip it to get to dashboard
+    // If redirected to onboarding, handle it appropriately
     if (page.url().includes('onboarding')) {
-      const skipButton = page.locator('button:has-text("Skip for now"), button:has-text("Skip tutorial")');
-      if (await skipButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-        await skipButton.first().click();
-        await page.waitForURL(/dashboard/, { timeout: 10000 });
+      // Check if we're on project creation step (after org was created in test 3)
+      const projectInput = page.locator('input#project-name');
+      if (await projectInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        // We're on project step - create project here
+        await projectInput.fill(`Test Project ${Date.now()}`);
+        await page.locator('button[type="submit"]').click();
+        await page.waitForTimeout(1000);
+
+        // Skip remaining steps
+        const skipButton = page.locator('button:has-text("Skip for now"), button:has-text("Skip tutorial")');
+        if (await skipButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+          await skipButton.first().click();
+        }
+      } else {
+        // Try to skip onboarding
+        const skipButton = page.locator('button:has-text("Skip for now"), button:has-text("Skip tutorial")');
+        if (await skipButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+          await skipButton.first().click();
+        }
       }
+
+      await page.waitForURL(/dashboard/, { timeout: 10000 }).catch(() => {});
     }
 
     // Navigate to projects page
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects`);
     await page.waitForLoadState('networkidle');
 
-    // Look for create project button or dialog trigger
-    const createButton = page.locator('button:has-text("Create"), button:has-text("New Project"), button:has-text("Add Project")');
-
-    // If button exists, click it
-    if (await createButton.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await createButton.first().click();
-      await page.waitForTimeout(500);
-
-      // Fill project form in dialog - input has id="project-name"
-      const projectName = `Test Project ${Date.now()}`;
-      const projectInput = page.locator('input#project-name');
-      await expect(projectInput).toBeVisible({ timeout: 5000 });
-      await projectInput.fill(projectName);
-
-      // Submit
-      await page.locator('button[type="submit"]').click();
-
-      // Wait for project to be created
-      await page.waitForTimeout(2000);
-    }
-
+    // Check if we already have a project from onboarding
     // Verify we have organizationId and authToken from previous test
     expect(organizationId).toBeTruthy();
     expect(authToken).toBeTruthy();
 
-    // Fetch projects to get ID
-    const projectsResponse = await fetch(`${TEST_API_URL}/api/v1/projects?organizationId=${organizationId}`, {
+    // First check if project already exists
+    let projectsResponse = await fetch(`${TEST_API_URL}/api/v1/projects?organizationId=${organizationId}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
-    const projectsData = await projectsResponse.json();
-    projectId = projectsData.projects[0]?.id;
+    let projectsData = await projectsResponse.json();
+
+    if (projectsData.projects && projectsData.projects.length > 0) {
+      // Project already created (probably during onboarding)
+      projectId = projectsData.projects[0].id;
+    } else {
+      // Need to create project via UI
+      const createButton = page.locator('button:has-text("Create"), button:has-text("New Project"), button:has-text("Add Project")');
+
+      if (await createButton.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+        await createButton.first().click();
+        await page.waitForTimeout(1000);
+
+        // Fill project form in dialog - input has id="project-name"
+        const projectName = `Test Project ${Date.now()}`;
+        const projectInput = page.locator('input#project-name');
+
+        if (await projectInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await projectInput.fill(projectName);
+          await page.locator('button[type="submit"]').click();
+          await page.waitForTimeout(2000);
+        }
+      }
+
+      // Fetch projects to get ID
+      projectsResponse = await fetch(`${TEST_API_URL}/api/v1/projects?organizationId=${organizationId}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      projectsData = await projectsResponse.json();
+      projectId = projectsData.projects[0]?.id;
+    }
+
     expect(projectId).toBeTruthy();
   });
 
