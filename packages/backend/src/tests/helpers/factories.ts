@@ -78,7 +78,7 @@ export async function createTestProject(overrides: {
     organizationId?: string;
     userId?: string;
 } = {}) {
-    const name = overrides.name || `Test Project ${Date.now()}`;
+    const name = overrides.name || `Test Project ${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     // Create organization if not provided
     let organizationId = overrides.organizationId;
