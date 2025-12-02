@@ -1,5 +1,15 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { authStore } from './auth';
+import { checklistStore } from './checklist';
+import { OnboardingAPI, type OnboardingState as APIOnboardingState } from '$lib/api/onboarding';
+
+// Map onboarding steps to checklist items
+const STEP_TO_CHECKLIST: Record<string, string> = {
+  'create-organization': 'create-organization',
+  'create-project': 'create-project',
+  'api-key': 'create-api-key'
+};
 
 export type OnboardingStep =
   | 'welcome'
@@ -20,9 +30,19 @@ export interface OnboardingState {
   firstLogReceived: boolean;
   startedAt: string | null;
   completedAt: string | null;
+  loading: boolean;
+  initialized: boolean;
 }
 
-const STORAGE_KEY = 'logward_onboarding';
+const STEP_ORDER: OnboardingStep[] = [
+  'welcome',
+  'create-organization',
+  'create-project',
+  'api-key',
+  'first-log',
+  'feature-tour',
+  'completed'
+];
 
 const defaultState: OnboardingState = {
   currentStep: 'welcome',
@@ -33,52 +53,81 @@ const defaultState: OnboardingState = {
   apiKey: null,
   firstLogReceived: false,
   startedAt: null,
-  completedAt: null
+  completedAt: null,
+  loading: false,
+  initialized: false
 };
 
-function loadFromStorage(): OnboardingState {
-  if (!browser) return defaultState;
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return { ...defaultState, ...parsed };
-    }
-  } catch (e) {
-    console.error('Failed to load onboarding state:', e);
-  }
-
-  return defaultState;
-}
-
-function saveToStorage(state: OnboardingState): void {
-  if (!browser) return;
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.error('Failed to save onboarding state:', e);
-  }
-}
-
 function createOnboardingStore() {
-  const { subscribe, set, update } = writable<OnboardingState>(loadFromStorage());
+  const { subscribe, set, update } = writable<OnboardingState>(defaultState);
 
-  // Auto-save on changes
-  subscribe((state) => {
-    saveToStorage(state);
-  });
+  let api: OnboardingAPI | null = null;
+  let currentToken: string | null = null;
 
-  const STEP_ORDER: OnboardingStep[] = [
-    'welcome',
-    'create-organization',
-    'create-project',
-    'api-key',
-    'first-log',
-    'feature-tour',
-    'completed'
-  ];
+  async function loadFromServer() {
+    if (!api) return;
+
+    update(state => ({ ...state, loading: true }));
+
+    try {
+      const serverState = await api.getState();
+
+      // Convert tutorial step number to step name
+      const stepIndex = serverState.tutorialStep;
+      const currentStep = stepIndex < STEP_ORDER.length ? STEP_ORDER[stepIndex] : 'completed';
+
+      // Reconstruct completed steps from step index
+      const completedSteps: OnboardingStep[] = [];
+      for (let i = 0; i < stepIndex && i < STEP_ORDER.length - 1; i++) {
+        completedSteps.push(STEP_ORDER[i]);
+      }
+
+      update(state => ({
+        ...state,
+        currentStep: serverState.tutorialCompleted ? 'completed' : currentStep,
+        completedSteps,
+        skipped: serverState.tutorialSkipped,
+        completedAt: serverState.tutorialCompleted ? new Date().toISOString() : null,
+        loading: false,
+        initialized: true
+      }));
+    } catch (error) {
+      console.error('Failed to load onboarding state from server:', error);
+      update(state => ({ ...state, loading: false, initialized: true }));
+    }
+  }
+
+  async function saveToServer(stepIndex: number, completed: boolean, skipped: boolean) {
+    if (!api) return;
+
+    try {
+      await api.updateState({
+        tutorialStep: stepIndex,
+        tutorialCompleted: completed,
+        tutorialSkipped: skipped
+      });
+    } catch (error) {
+      console.error('Failed to save onboarding state to server:', error);
+    }
+  }
+
+  // Subscribe to auth changes to update API instance
+  if (browser) {
+    authStore.subscribe(state => {
+      if (state.token !== currentToken) {
+        currentToken = state.token;
+        if (state.token) {
+          api = new OnboardingAPI(() => state.token);
+          // Load state from server when authenticated
+          loadFromServer();
+        } else {
+          api = null;
+          // Reset to default state when logged out
+          set(defaultState);
+        }
+      }
+    });
+  }
 
   return {
     subscribe,
@@ -86,24 +135,30 @@ function createOnboardingStore() {
     /**
      * Start the onboarding tutorial
      */
-    start: () => {
+    start: async () => {
       update(state => ({
         ...state,
         currentStep: 'welcome',
         startedAt: new Date().toISOString(),
         skipped: false
       }));
+      await saveToServer(0, false, false);
     },
 
     /**
      * Move to the next step
      */
-    nextStep: () => {
+    nextStep: async () => {
+      let newStepIndex = 0;
+      let isCompleted = false;
+
       update(state => {
         const currentIndex = STEP_ORDER.indexOf(state.currentStep);
         const nextIndex = currentIndex + 1;
+        newStepIndex = nextIndex;
 
         if (nextIndex >= STEP_ORDER.length) {
+          isCompleted = true;
           return {
             ...state,
             currentStep: 'completed',
@@ -118,53 +173,73 @@ function createOnboardingStore() {
           completedSteps: [...state.completedSteps, state.currentStep]
         };
       });
+
+      await saveToServer(newStepIndex, isCompleted, false);
     },
 
     /**
      * Go to a specific step
      */
-    goToStep: (step: OnboardingStep) => {
+    goToStep: async (step: OnboardingStep) => {
+      const stepIndex = STEP_ORDER.indexOf(step);
       update(state => ({
         ...state,
         currentStep: step
       }));
+      await saveToServer(stepIndex, step === 'completed', false);
     },
 
     /**
      * Mark current step as completed and optionally move to next
      */
-    completeStep: (step: OnboardingStep, moveToNext = true) => {
+    completeStep: async (step: OnboardingStep, moveToNext = true) => {
+      let newStepIndex = 0;
+      let isCompleted = false;
+
       update(state => {
         const newCompletedSteps = state.completedSteps.includes(step)
           ? state.completedSteps
           : [...state.completedSteps, step];
 
+        // Also update the checklist if there's a corresponding item
+        // Don't show confetti during onboarding flow
+        const checklistItemId = STEP_TO_CHECKLIST[step];
+        if (checklistItemId) {
+          checklistStore.completeItem(checklistItemId, false);
+        }
+
         if (!moveToNext) {
+          newStepIndex = STEP_ORDER.indexOf(step);
           return { ...state, completedSteps: newCompletedSteps };
         }
 
         const currentIndex = STEP_ORDER.indexOf(step);
         const nextStep = STEP_ORDER[currentIndex + 1] || 'completed';
+        newStepIndex = currentIndex + 1;
+        isCompleted = nextStep === 'completed';
 
         return {
           ...state,
           currentStep: nextStep,
           completedSteps: newCompletedSteps,
-          completedAt: nextStep === 'completed' ? new Date().toISOString() : state.completedAt
+          completedAt: isCompleted ? new Date().toISOString() : state.completedAt
         };
       });
+
+      await saveToServer(newStepIndex, isCompleted, false);
     },
 
     /**
      * Skip the entire tutorial
      */
-    skip: () => {
+    skip: async () => {
       update(state => ({
         ...state,
         skipped: true,
         currentStep: 'completed',
         completedAt: new Date().toISOString()
       }));
+      await saveToServer(STEP_ORDER.length - 1, true, true);
     },
 
     /**
@@ -210,10 +285,19 @@ function createOnboardingStore() {
     /**
      * Reset the onboarding to start fresh
      */
-    reset: () => {
-      set(defaultState);
-      if (browser) {
-        localStorage.removeItem(STORAGE_KEY);
+    reset: async () => {
+      set({ ...defaultState, loading: true });
+
+      if (api) {
+        try {
+          await api.reset();
+          await loadFromServer();
+        } catch (error) {
+          console.error('Failed to reset onboarding:', error);
+          update(state => ({ ...state, loading: false }));
+        }
+      } else {
+        set(defaultState);
       }
     },
 

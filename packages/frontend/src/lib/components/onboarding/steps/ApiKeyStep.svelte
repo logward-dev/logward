@@ -83,7 +83,7 @@
   const API_URL = PUBLIC_API_URL;
 
   let codeExamples = $derived({
-    curl: `curl -X POST ${API_URL}/v1/ingest \\
+    curl: `curl -X POST ${API_URL}/api/v1/ingest \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${apiKey || 'YOUR_API_KEY'}" \\
   -d '{
@@ -131,7 +131,7 @@ services:
     Match *
     Host  ${API_URL.replace('https://', '').replace('http://', '')}
     Port  443
-    URI   /v1/ingest
+    URI   /api/v1/ingest
     Format json
     Header X-API-Key \${LOGWARD_API_KEY}
     Header Content-Type application/json
@@ -143,7 +143,7 @@ import { LoggerProvider, SimpleLogRecordProcessor } from '@opentelemetry/sdk-log
 import { Resource } from '@opentelemetry/resources';
 
 const logExporter = new OTLPLogExporter({
-  url: '${API_URL}/v1/otlp/logs',
+  url: '${API_URL}/api/v1/otlp/logs',
   headers: {
     'X-API-Key': '${apiKey || 'YOUR_API_KEY'}'
   }
@@ -164,7 +164,7 @@ from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 
 exporter = OTLPLogExporter(
-    endpoint="${API_URL}/v1/otlp/logs",
+    endpoint="${API_URL}/api/v1/otlp/logs",
     headers={"X-API-Key": "${apiKey || 'YOUR_API_KEY'}"}
 )
 

@@ -6,6 +6,7 @@
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Spinner from './Spinner.svelte';
   import Plus from '@lucide/svelte/icons/plus';
+  import { checklistStore } from '$lib/stores/checklist';
 
   interface Props {
     onSubmit: (data: { name: string; description?: string }) => Promise<void>;
@@ -28,6 +29,9 @@
         name: name.trim(),
         description: description.trim() || undefined,
       });
+
+      // Mark checklist item as complete
+      checklistStore.completeItem('create-organization');
 
       name = '';
       description = '';

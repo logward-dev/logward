@@ -26,7 +26,7 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({
-    url: '${API_URL}/v1/otlp/traces',
+    url: '${API_URL}/api/v1/otlp/traces',
     headers: { 'X-API-Key': 'YOUR_API_KEY' }
   }),
   instrumentations: [getNodeAutoInstrumentations()]
@@ -42,7 +42,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 provider = TracerProvider()
 exporter = OTLPSpanExporter(
-    endpoint="${API_URL}/v1/otlp/traces",
+    endpoint="${API_URL}/api/v1/otlp/traces",
     headers={"X-API-Key": "YOUR_API_KEY"}
 )
 provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -62,7 +62,7 @@ import (
 
 exporter, _ := otlptracehttp.New(ctx,
     otlptracehttp.WithEndpoint("${API_URL.replace('https://', '').replace('http://', '')}"),
-    otlptracehttp.WithURLPath("/v1/otlp/traces"),
+    otlptracehttp.WithURLPath("/api/v1/otlp/traces"),
     otlptracehttp.WithHeaders(map[string]string{
         "X-API-Key": "YOUR_API_KEY",
     }),

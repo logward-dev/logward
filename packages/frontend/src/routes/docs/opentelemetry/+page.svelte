@@ -44,7 +44,7 @@
                 <div class="grid gap-3 text-sm">
                     <div class="flex justify-between">
                         <span class="text-muted-foreground">Endpoint:</span>
-                        <code class="font-mono">POST /v1/otlp/logs</code>
+                        <code class="font-mono">POST /api/v1/otlp/logs</code>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-muted-foreground">Content Types:</span>
@@ -204,7 +204,7 @@ import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 
 // Configure the OTLP exporter
 const logExporter = new OTLPLogExporter({
-  url: 'https://your-logward-instance.com/v1/otlp/logs',
+  url: 'https://your-logward-instance.com/api/v1/otlp/logs',
   headers: {
     'X-API-Key': 'your-api-key-here',
   },
@@ -268,7 +268,7 @@ resource = Resource.create({
 
 # Configure the OTLP exporter
 exporter = OTLPLogExporter(
-    endpoint="https://your-logward-instance.com/v1/otlp/logs",
+    endpoint="https://your-logward-instance.com/api/v1/otlp/logs",
     headers={"X-API-Key": "your-api-key-here"},
 )
 
@@ -333,7 +333,7 @@ func main() {
     // Create the OTLP exporter
     exporter, err := otlploghttp.New(ctx,
         otlploghttp.WithEndpoint("your-logward-instance.com"),
-        otlploghttp.WithURLPath("/v1/otlp/logs"),
+        otlploghttp.WithURLPath("/api/v1/otlp/logs"),
         otlploghttp.WithHeaders(map[string]string{
             "X-API-Key": "your-api-key-here",
         }),
@@ -450,7 +450,7 @@ services:
     Match        *
     Host         your-logward-instance.com
     Port         443
-    Uri          /v1/otlp/logs
+    Uri          /api/v1/otlp/logs
     Log_response_payload True
     Tls          On
     Header       X-API-Key your-api-key-here`}
@@ -587,7 +587,7 @@ span.end();`}
                 <CardContent class="text-sm text-muted-foreground">
                     <ul class="list-disc pl-4 space-y-1">
                         <li>Check that your API key is valid and has ingestion permissions</li>
-                        <li>Verify you're sending to <code>/v1/otlp/logs</code></li>
+                        <li>Verify you're sending to <code>/api/v1/otlp/logs</code></li>
                         <li>Use <code>application/json</code> content type for best compatibility</li>
                         <li>Check rate limits (default: 200 req/min per API key)</li>
                     </ul>

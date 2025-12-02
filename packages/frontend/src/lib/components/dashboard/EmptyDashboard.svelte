@@ -17,11 +17,12 @@
   const API_URL = PUBLIC_API_URL;
 
   const codeExamples: Record<string, string> = {
-    curl: `curl -X POST ${API_URL}/v1/ingest \\
+    curl: `curl -X POST ${API_URL}/api/v1/ingest \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -d '{
     "logs": [{
+      "time": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
       "level": "info",
       "service": "my-app",
       "message": "Hello from LogWard!"
@@ -50,7 +51,7 @@ logger.info("Hello from LogWard!")`,
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 
 const exporter = new OTLPLogExporter({
-  url: '${API_URL}/v1/otlp/logs',
+  url: '${API_URL}/api/v1/otlp/logs',
   headers: { 'X-API-Key': 'YOUR_API_KEY' }
 });`
   };

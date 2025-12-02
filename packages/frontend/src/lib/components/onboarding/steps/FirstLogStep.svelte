@@ -181,10 +181,10 @@
 
           <div class="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground">
             <p class="font-medium mb-2">Quick test with cURL:</p>
-            <pre class="bg-background rounded p-2 overflow-x-auto text-xs"><code>curl -X POST {PUBLIC_API_URL}/v1/ingest \
+            <pre class="bg-background rounded p-2 overflow-x-auto text-xs"><code>curl -X POST {PUBLIC_API_URL}/api/v1/ingest \
   -H "X-API-Key: {onboardingState.apiKey || 'YOUR_API_KEY'}" \
   -H "Content-Type: application/json" \
-  -d '{`{"logs":[{"level":"info","service":"test","message":"Hello!"}]}`}'</code></pre>
+  -d '{`{"logs":[{"level":"info","service":"test","message":"Hello!","time":"${new Date().toISOString()}"}]}`}'</code></pre>
           </div>
 
           <div class="flex flex-col sm:flex-row gap-2 justify-center">

@@ -5,6 +5,7 @@
   import { PUBLIC_API_URL } from "$env/static/public";
   import { currentOrganization } from "$lib/stores/organization";
   import { authStore } from "$lib/stores/auth";
+  import { checklistStore } from "$lib/stores/checklist";
   import { ProjectsAPI } from "$lib/api/projects";
   import { logsAPI } from "$lib/api/logs";
   import { toastStore } from "$lib/stores/toast";
@@ -315,6 +316,15 @@
   let filteredLogs = $derived(logs);
 
   let effectiveTotalLogs = $derived(liveTail ? logs.length : totalLogs);
+
+  // Track when live tail is activated for checklist
+  let hasActivatedLiveTail = $state(false);
+  $effect(() => {
+    if (liveTail && !hasActivatedLiveTail) {
+      hasActivatedLiveTail = true;
+      checklistStore.completeItem('try-live-tail');
+    }
+  });
 
   $effect(() => {
     if (liveTail && selectedProjects.length > 1) {
