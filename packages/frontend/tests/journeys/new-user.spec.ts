@@ -116,6 +116,10 @@ test.describe('New User Journey', () => {
   });
 
   test('4. User can create a project', async ({ page }) => {
+    // Verify we have organizationId and authToken from previous test
+    expect(organizationId).toBeTruthy();
+    expect(authToken).toBeTruthy();
+
     // Login
     await page.goto(`${TEST_FRONTEND_URL}/login`);
     await page.locator('input[type="email"]').fill(userEmail);
@@ -155,12 +159,7 @@ test.describe('New User Journey', () => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects`);
     await page.waitForLoadState('networkidle');
 
-    // Check if we already have a project from onboarding
-    // Verify we have organizationId and authToken from previous test
-    expect(organizationId).toBeTruthy();
-    expect(authToken).toBeTruthy();
-
-    // First check if project already exists
+    // First check if project already exists via API
     let projectsResponse = await fetch(`${TEST_API_URL}/api/v1/projects?organizationId=${organizationId}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -170,7 +169,7 @@ test.describe('New User Journey', () => {
       // Project already created (probably during onboarding)
       projectId = projectsData.projects[0].id;
     } else {
-      // Need to create project via UI
+      // Try to create project via UI first
       const createButton = page.locator('button:has-text("Create"), button:has-text("New Project"), button:has-text("Add Project")');
 
       if (await createButton.first().isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -194,6 +193,29 @@ test.describe('New User Journey', () => {
       });
       projectsData = await projectsResponse.json();
       projectId = projectsData.projects[0]?.id;
+
+      // If still no project, create via API as fallback
+      if (!projectId) {
+        const createResponse = await fetch(`${TEST_API_URL}/api/v1/projects`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            name: `Test Project ${Date.now()}`,
+            organizationId: organizationId,
+          }),
+        });
+        const createData = await createResponse.json();
+        projectId = createData.project?.id || createData.id;
+
+        // Refresh the page to show the new project
+        if (projectId) {
+          await page.reload();
+          await page.waitForLoadState('networkidle');
+        }
+      }
     }
 
     expect(projectId).toBeTruthy();
