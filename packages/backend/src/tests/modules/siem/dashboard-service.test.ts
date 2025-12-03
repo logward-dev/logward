@@ -425,7 +425,7 @@ describe('SIEM Dashboard Service', () => {
             service: 'test',
             level: 'error',
             message: 'Old event',
-            time: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000), // 31 days ago
+            time: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000), // 29 days ago (within 30d range)
         });
 
         const recentLog = await createTestLog({
@@ -435,7 +435,7 @@ describe('SIEM Dashboard Service', () => {
             message: 'Recent event',
         });
 
-        // Create an old event (30 days ago)
+        // Create an old event (29 days ago, within 30d range)
         await db
             .insertInto('detection_events')
             .values({
@@ -448,7 +448,7 @@ describe('SIEM Dashboard Service', () => {
                 service: 'test',
                 log_level: 'error',
                 log_message: 'Old event',
-                time: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000), // 31 days ago
+                time: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000), // 29 days ago
             })
             .execute();
 

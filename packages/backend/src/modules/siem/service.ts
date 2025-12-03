@@ -351,7 +351,7 @@ export class SiemService {
   ): Promise<IncidentHistoryEntry[]> {
     const results = await this.db
       .selectFrom('incident_history')
-      .innerJoin('users', 'users.id', 'incident_history.user_id')
+      .leftJoin('users', 'users.id', 'incident_history.user_id')
       .select([
         'incident_history.id',
         'incident_history.incident_id',
