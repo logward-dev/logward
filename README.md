@@ -15,7 +15,7 @@
   <a href="https://github.com/logward-dev/logward/actions/workflows/ci.yml"><img src="https://github.com/logward-dev/logward/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/logward-dev/logward"><img src="https://codecov.io/gh/logward-dev/logward/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://hub.docker.com/r/logward/backend"><img src="https://img.shields.io/docker/v/logward/backend?label=docker&logo=docker" alt="Docker"></a>
-  <img src="https://img.shields.io/badge/version-0.2.2-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.3-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status">
   <img src="https://img.shields.io/badge/cloud-free_during_alpha-success.svg" alt="Free Cloud">
@@ -155,7 +155,7 @@ Total control over your data. **No build required** - uses pre-built images from
 
 **Docker Images:** [Docker Hub](https://hub.docker.com/r/logward/backend) | [GitHub Container Registry](https://github.com/logward-dev/logward/pkgs/container/logward-backend)
 
-> **Production:** Pin versions with `image: logward/backend:0.2.2` instead of `latest`.
+> **Production:** Pin versions with `image: logward/backend:0.2.3` instead of `latest`.
 
 ---
 
