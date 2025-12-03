@@ -638,8 +638,17 @@ export async function siemRoutes(fastify: FastifyInstance) {
         const params = paramsSchema.parse(request.params);
         const body = bodySchema.parse(request.body);
 
-        // TODO: Verify user has access to this incident
-        // For now, we just use the authenticated user
+        // Verify user has access to this incident
+        const incident = await siemService.getIncident(
+          params.id,
+          request.user.organizationId
+        );
+
+        if (!incident) {
+          return reply.status(404).send({
+            error: 'Incident not found or access denied',
+          });
+        }
 
         const comment = await siemService.addComment({
           incidentId: params.id,

@@ -19,6 +19,7 @@ export interface SigmaDetectionMatch {
   matchedAt: Date;
   mitreTactics?: string[];
   mitreTechniques?: string[];
+  matchedFields?: Record<string, any>;
 }
 
 /**
@@ -62,6 +63,7 @@ export async function processSigmaDetection(job: any) {
             matchedAt: matchedRule.matchedAt,
             mitreTactics,
             mitreTechniques,
+            matchedFields: matchedRule.matchedFields,
           });
         });
       }
@@ -106,7 +108,7 @@ export async function processSigmaDetection(job: any) {
           logLevel: log.level || 'info',
           logMessage: log.message || '',
           traceId: log.trace_id || null,
-          matchedFields: null, // TODO: Capture matched fields from detection engine
+          matchedFields: match.matchedFields || null,
         });
       }
 
