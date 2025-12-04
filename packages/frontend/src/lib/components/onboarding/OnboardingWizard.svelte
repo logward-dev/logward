@@ -71,8 +71,10 @@
   }
 
   function handleSkip() {
-    onboardingStore.skip();
-    goto('/dashboard');
+    // Skip the tutorial intro but still require organization creation
+    // (user needs an org to access dashboard)
+    onboardingStore.setSkipAfterOrgCreation(true);
+    onboardingStore.goToStep('create-organization');
   }
 </script>
 

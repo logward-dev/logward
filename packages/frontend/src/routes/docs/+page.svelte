@@ -85,7 +85,7 @@
                             >
                         </li>
                     </ul>
-                    <a href="https://logward.dev/signup" target="_blank">
+                    <a href="/register">
                         <Button variant="default" size="sm" class="gap-1">
                             Sign Up Free
                             <ArrowRight class="w-3 h-3" />
@@ -204,7 +204,7 @@ curl -X POST https://api.logward.dev/api/v1/ingest \\
     environment:
       POSTGRES_DB: logward
       POSTGRES_USER: logward
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
+      POSTGRES_PASSWORD: \${DB_PASSWORD:-password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -215,31 +215,50 @@ curl -X POST https://api.logward.dev/api/v1/ingest \\
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass \${REDIS_PASSWORD}
+    command: redis-server --requirepass \${REDIS_PASSWORD:-password}
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a \${REDIS_PASSWORD:-password} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   backend:
     image: logward/backend:latest
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgresql://logward:\${DB_PASSWORD}@postgres:5432/logward
-      REDIS_URL: redis://:\${REDIS_PASSWORD}@redis:6379
-      API_KEY_SECRET: \${API_KEY_SECRET}
+      DATABASE_URL: postgresql://logward:\${DB_PASSWORD:-password}@postgres:5432/logward
+      DATABASE_HOST: postgres
+      DB_USER: logward
+      REDIS_URL: redis://:\${REDIS_PASSWORD:-password}@redis:6379
+      API_KEY_SECRET: \${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
 
   worker:
     image: logward/backend:latest
     command: ["worker"]
     environment:
-      DATABASE_URL: postgresql://logward:\${DB_PASSWORD}@postgres:5432/logward
-      REDIS_URL: redis://:\${REDIS_PASSWORD}@redis:6379
-      API_KEY_SECRET: \${API_KEY_SECRET}
+      DATABASE_URL: postgresql://logward:\${DB_PASSWORD:-password}@postgres:5432/logward
+      DATABASE_HOST: postgres
+      DB_USER: logward
+      REDIS_URL: redis://:\${REDIS_PASSWORD:-password}@redis:6379
+      API_KEY_SECRET: \${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
     depends_on:
-      postgres:
+      backend:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:
@@ -248,6 +267,8 @@ curl -X POST https://api.logward.dev/api/v1/ingest \\
       - "3000:3000"
     environment:
       PUBLIC_API_URL: http://localhost:8080
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
@@ -271,6 +292,9 @@ API_KEY_SECRET=your_32_character_secret_key_here`}
 
 # Access LogWard at http://localhost:3000`}
                     />
+                    <p class="text-xs text-muted-foreground mt-2">
+                        <strong>Note:</strong> Database migrations run automatically when the backend starts.
+                    </p>
                 </CardContent>
             </Card>
         </div>

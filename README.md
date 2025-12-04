@@ -100,6 +100,11 @@ Total control over your data. **No build required** - uses pre-built images from
         command: redis-server --requirepass ${REDIS_PASSWORD:-password}
         volumes:
           - redis_data:/data
+        healthcheck:
+          test: ["CMD", "sh", "-c", "redis-cli -a ${REDIS_PASSWORD:-password} ping | grep -q PONG"]
+          interval: 10s
+          timeout: 3s
+          retries: 5
 
       backend:
         image: logward/backend:latest
@@ -107,21 +112,35 @@ Total control over your data. **No build required** - uses pre-built images from
           - "8080:8080"
         environment:
           DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
+          DATABASE_HOST: postgres
+          DB_USER: logward
           REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
           API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
         depends_on:
           postgres:
             condition: service_healthy
+          redis:
+            condition: service_healthy
+        healthcheck:
+          test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+          interval: 30s
+          timeout: 3s
+          retries: 3
+          start_period: 40s
 
       worker:
         image: logward/backend:latest
         command: ["worker"]
         environment:
           DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
+          DATABASE_HOST: postgres
+          DB_USER: logward
           REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
           API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
         depends_on:
-          postgres:
+          backend:
+            condition: service_healthy
+          redis:
             condition: service_healthy
 
       frontend:
@@ -130,11 +149,15 @@ Total control over your data. **No build required** - uses pre-built images from
           - "3000:3000"
         environment:
           PUBLIC_API_URL: http://localhost:8080
+        depends_on:
+          - backend
 
     volumes:
       postgres_data:
       redis_data:
     ```
+
+    > **Note:** Database migrations run automatically when the backend starts. When upgrading, just pull the new images and restart.
 
 2.  **Create `.env`** with secure passwords
     ```bash
@@ -167,13 +190,12 @@ We have ready-to-use SDKs for the most popular languages.
 | :--- | :--- | :--- |
 | **Node.js** | ✅ Ready | [`@logward-dev/sdk-node`](https://www.npmjs.com/package/@logward-dev/sdk-node) |
 | **Python** | ✅ Ready | [`logward-sdk`](https://pypi.org/project/logward-sdk/) |
+| **Go** | ✅ Ready | [`logward-sdk-go`](https://github.com/logward-dev/logward-sdk-go) |
 | **PHP** | ✅ Ready | [`logward-dev/sdk-php`](https://packagist.org/packages/logward-dev/sdk-php) |
 | **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](#) |
 | **Docker** | ✅ Ready | Use Fluent Bit / Syslog driver |
 | **HTTP** | ✅ Ready | [API Reference](#) |
 | **OpenTelemetry** | ✅ Ready | OTLP endpoint (logs + traces) |
-
-> **Note:** Go (Golang) support is coming soon. Use the HTTP API or OpenTelemetry SDK for now.
 
 ---
 

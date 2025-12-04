@@ -61,7 +61,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -122,7 +122,7 @@ services:
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       SERVICE_NAME: logward-worker
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
