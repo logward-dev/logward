@@ -5,6 +5,49 @@ All notable changes to LogWard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2025-12-04
+
+### Added
+
+- **Syslog Integration Documentation**: New guide for collecting logs from infrastructure
+  - Fluent Bit configuration for syslog UDP/TCP on port 514
+  - Parsers for RFC 3164 (traditional) and RFC 5424 (modern) syslog formats
+  - Lua script for mapping syslog severity to log levels
+  - Device-specific guides: Proxmox VE, VMware ESXi, UniFi, pfSense, Synology
+  - Credit to Brandon Lee / VirtualizationHowto for inspiration
+
+- **Go SDK Documentation**: Official SDK docs at `/docs/sdks/go`
+  - Installation, quick start, configuration options
+  - Logging methods, error handling, OpenTelemetry integration
+  - HTTP middleware examples (standard library, Gin)
+
+- **Documentation Restructure**
+  - New "Integrations" section in docs sidebar (Syslog, OpenTelemetry)
+  - Go SDK added to SDK overview and sidebar
+
+### Changed
+
+- **Docker Compose**: Improved container orchestration
+  - Worker now depends on backend health (fixes migration race condition)
+  - Redis healthcheck fixed with proper authentication
+  - Updated all docker-compose files (production, dev, README, docs)
+
+- **Onboarding Flow**: Fixed "Skip tutorial" behavior
+  - Skip now goes to organization creation (required step)
+  - After creating org, redirects to dashboard instead of continuing tutorial
+  - Added `skipAfterOrgCreation` flag to onboarding store
+
+- **Runtime Configuration**: Fixed PUBLIC_API_URL build-time vs runtime issue
+  - Components now use `getApiUrl()` for runtime configuration
+  - API URL can be changed via environment variables without rebuild
+  - Affected: ApiKeyStep, FirstLogStep, EmptyLogs, EmptyTraces, EmptyDashboard
+
+### Fixed
+
+- "Sign Up Free" link on landing page pointing to non-existent `/signup` (now `/register`)
+- Skip tutorial redirect loop to `/onboarding`
+- API URL in code examples showing localhost instead of configured URL
+
 ## [0.2.3] - 2025-12-03
 
 ### Added
