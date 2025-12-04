@@ -67,7 +67,7 @@ We host it for you. Perfect for testing and small projects. **Currently Free.**
 3.  **Get API Key:** Copy your project-scoped API Key.
 4.  **Send a Log:**
     ```bash
-    curl -X POST [https://api.logward.dev/api/v1/ingest](https://api.logward.dev/api/v1/ingest) \
+    curl -X POST https://api.logward.dev/api/v1/ingest \
       -H "X-API-Key: YOUR_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{ "logs": [{ "service": "test", "level": "info", "message": "Hello Cloud!" }] }'
