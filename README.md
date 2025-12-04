@@ -86,7 +86,7 @@ Total control over your data. **No build required** - uses pre-built images from
         environment:
           POSTGRES_DB: logward
           POSTGRES_USER: logward
-          POSTGRES_PASSWORD: ${DB_PASSWORD}
+          POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
         volumes:
           - postgres_data:/var/lib/postgresql/data
         healthcheck:
@@ -97,7 +97,7 @@ Total control over your data. **No build required** - uses pre-built images from
 
       redis:
         image: redis:7-alpine
-        command: redis-server --requirepass ${REDIS_PASSWORD}
+        command: redis-server --requirepass ${REDIS_PASSWORD:-password}
         volumes:
           - redis_data:/data
 
@@ -106,9 +106,9 @@ Total control over your data. **No build required** - uses pre-built images from
         ports:
           - "8080:8080"
         environment:
-          DATABASE_URL: postgresql://logward:${DB_PASSWORD}@postgres:5432/logward
-          REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-          API_KEY_SECRET: ${API_KEY_SECRET}
+          DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
+          REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
+          API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
         depends_on:
           postgres:
             condition: service_healthy
@@ -117,9 +117,9 @@ Total control over your data. **No build required** - uses pre-built images from
         image: logward/backend:latest
         command: ["worker"]
         environment:
-          DATABASE_URL: postgresql://logward:${DB_PASSWORD}@postgres:5432/logward
-          REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-          API_KEY_SECRET: ${API_KEY_SECRET}
+          DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
+          REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
+          API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
         depends_on:
           postgres:
             condition: service_healthy
