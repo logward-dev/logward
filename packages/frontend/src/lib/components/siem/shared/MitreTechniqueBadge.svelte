@@ -4,9 +4,10 @@
 
 	interface Props {
 		technique: string;
+		compact?: boolean;
 	}
 
-	let { technique }: Props = $props();
+	let { technique, compact = false }: Props = $props();
 
 	// Format technique ID (e.g., T1059.001 -> T1059.001)
 	function formatTechnique(t: string): string {
@@ -21,9 +22,9 @@
 	const hasName = $derived(techniqueName !== technique);
 	const mitreUrl = $derived(getMitreUrl(technique));
 
-	// Show name, tooltip shows ID
-	const displayText = $derived(hasName ? techniqueName : displayId);
-	const tooltipText = $derived(hasName ? displayId : '');
+	// In compact mode, show ID; otherwise show name with ID as tooltip
+	const displayText = $derived(compact ? displayId : (hasName ? techniqueName : displayId));
+	const tooltipText = $derived(compact ? (hasName ? techniqueName : '') : (hasName ? displayId : ''));
 </script>
 
 <a
@@ -35,7 +36,7 @@
 >
 	<Badge
 		variant="secondary"
-		class="text-xs cursor-pointer hover:bg-secondary/80 transition-colors"
+		class="text-xs cursor-pointer hover:bg-secondary/80 transition-colors whitespace-nowrap"
 	>
 		{displayText}
 	</Badge>

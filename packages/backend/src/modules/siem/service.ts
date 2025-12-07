@@ -1,5 +1,5 @@
-import { Kysely, sql } from 'kysely';
-import type { Database } from '../../database/types';
+import { Kysely, sql, Expression, SqlBool } from 'kysely';
+import type { Database, Severity } from '../../database/types';
 import type {
   DetectionEvent,
   CreateDetectionEventInput,
@@ -11,6 +11,7 @@ import type {
   CreateIncidentCommentInput,
   IncidentHistoryEntry,
 } from './types';
+import { incidentNotificationQueue } from '../../queue/jobs/incident-notification.js';
 
 export class SiemService {
   constructor(private db: Kysely<Database>) {}
@@ -41,9 +42,7 @@ export class SiemService {
         log_level: input.logLevel,
         log_message: input.logMessage,
         trace_id: input.traceId ?? null,
-        matched_fields: input.matchedFields
-          ? JSON.stringify(input.matchedFields)
-          : null,
+        matched_fields: input.matchedFields ?? null,
         time: new Date(),
       })
       .returningAll()
@@ -74,7 +73,7 @@ export class SiemService {
     }
 
     if (filters.severity && filters.severity.length > 0) {
-      query = query.where('severity', 'in', filters.severity);
+      query = query.where('severity', 'in', filters.severity as Severity[]);
     }
 
     if (filters.startTime) {
@@ -122,7 +121,21 @@ export class SiemService {
       .returningAll()
       .executeTakeFirstOrThrow();
 
-    return this.mapIncident(result);
+    const incident = this.mapIncident(result);
+
+    // Queue notification for new incident (async, don't wait)
+    incidentNotificationQueue.add('new-incident', {
+      incidentId: incident.id,
+      organizationId: incident.organizationId,
+      title: incident.title,
+      description: incident.description,
+      severity: incident.severity,
+      affectedServices: incident.affectedServices,
+    }).catch((err) => {
+      console.error('[SiemService] Failed to queue incident notification:', err);
+    });
+
+    return incident;
   }
 
   /**
@@ -178,14 +191,14 @@ export class SiemService {
     // Filter by service (check if service is in affected_services array)
     if (filters.service) {
       query = query.where(
-        sql`${filters.service} = ANY(affected_services)`
+        sql<boolean>`${filters.service} = ANY(affected_services)` as Expression<SqlBool>
       );
     }
 
     // Filter by MITRE technique (check if technique is in mitre_techniques array)
     if (filters.technique) {
       query = query.where(
-        sql`${filters.technique} = ANY(mitre_techniques)`
+        sql<boolean>`${filters.technique} = ANY(mitre_techniques)` as Expression<SqlBool>
       );
     }
 
@@ -393,8 +406,8 @@ export class SiemService {
       newValue: row.new_value,
       metadata: row.metadata as Record<string, unknown> | null,
       createdAt: row.created_at,
-      userName: row.userName,
-      userEmail: row.userEmail,
+      userName: row.userName ?? undefined,
+      userEmail: row.userEmail ?? undefined,
     }));
   }
 

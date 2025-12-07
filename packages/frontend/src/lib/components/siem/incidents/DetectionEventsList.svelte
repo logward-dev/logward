@@ -142,7 +142,7 @@
 								</TableCell>
 								<TableCell class="py-2">
 									{#if detection.mitreTechniques && detection.mitreTechniques.length > 0}
-										<MitreTechniqueBadge technique={detection.mitreTechniques[0]} />
+										<MitreTechniqueBadge technique={detection.mitreTechniques[0]} compact />
 									{:else}
 										<span class="text-xs text-muted-foreground">-</span>
 									{/if}

@@ -53,7 +53,19 @@ export interface OrganizationMembersTable {
   id: Generated<string>;
   organization_id: string;
   user_id: string;
-  role: string;
+  role: 'owner' | 'admin' | 'member';
+  created_at: Generated<Timestamp>;
+}
+
+export interface OrganizationInvitationsTable {
+  id: Generated<string>;
+  organization_id: string;
+  email: string;
+  role: 'owner' | 'admin' | 'member';
+  token: string;
+  invited_by: string;
+  expires_at: Timestamp;
+  accepted_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -309,6 +321,7 @@ export interface Database {
   sessions: SessionsTable;
   organizations: OrganizationsTable;
   organization_members: OrganizationMembersTable;
+  organization_invitations: OrganizationInvitationsTable;
   projects: ProjectsTable;
   api_keys: ApiKeysTable;
   alert_rules: AlertRulesTable;

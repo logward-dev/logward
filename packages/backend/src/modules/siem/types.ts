@@ -134,7 +134,7 @@ export interface CreateIncidentCommentInput {
 export interface IncidentHistoryEntry {
   id: string;
   incidentId: string;
-  userId: string;
+  userId: string | null;
   action: string;
   fieldName: string | null;
   oldValue: string | null;

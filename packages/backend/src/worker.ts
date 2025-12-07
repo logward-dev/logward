@@ -2,6 +2,8 @@ import { createWorker } from './queue/connection.js';
 import { processAlertNotification } from './queue/jobs/alert-notification.js';
 import { processSigmaDetection } from './queue/jobs/sigma-detection.js';
 import { processIncidentAutoGrouping } from './queue/jobs/incident-autogrouping.js';
+import { processInvitationEmail } from './queue/jobs/invitation-email.js';
+import { processIncidentNotification } from './queue/jobs/incident-notification.js';
 import { alertsService } from './modules/alerts/index.js';
 import { initializeInternalLogging, shutdownInternalLogging, getInternalLogger } from './utils/internal-logger.js';
 
@@ -21,6 +23,16 @@ const sigmaWorker = createWorker('sigma-detection', async (job) => {
 // Create worker for incident auto-grouping
 const autoGroupWorker = createWorker('incident-autogrouping', async (job) => {
   await processIncidentAutoGrouping(job);
+});
+
+// Create worker for invitation emails
+const invitationWorker = createWorker('invitation-email', async (job) => {
+  await processInvitationEmail(job);
+});
+
+// Create worker for incident notifications
+const incidentNotificationWorker = createWorker('incident-notifications', async (job) => {
+  await processIncidentNotification(job);
 });
 
 alertWorker.on('completed', (job) => {
@@ -89,6 +101,52 @@ autoGroupWorker.on('failed', (job, err) => {
     logger.error('worker-autogrouping-failed', `Incident auto-grouping job failed: ${err.message}`, {
       error: err,
       jobId: job?.id,
+    });
+  }
+});
+
+invitationWorker.on('completed', (job) => {
+  const logger = getInternalLogger();
+  if (logger) {
+    logger.info('worker-invitation-completed', `Invitation email job completed`, {
+      jobId: job.id,
+      email: job.data?.email,
+    });
+  }
+});
+
+invitationWorker.on('failed', (job, err) => {
+  console.error(`❌ Invitation email job ${job?.id} failed:`, err);
+
+  const logger = getInternalLogger();
+  if (logger) {
+    logger.error('worker-invitation-failed', `Invitation email job failed: ${err.message}`, {
+      error: err,
+      jobId: job?.id,
+      email: job?.data?.email,
+    });
+  }
+});
+
+incidentNotificationWorker.on('completed', (job) => {
+  const logger = getInternalLogger();
+  if (logger) {
+    logger.info('worker-incident-notification-completed', `Incident notification job completed`, {
+      jobId: job.id,
+      incidentId: job.data?.incidentId,
+    });
+  }
+});
+
+incidentNotificationWorker.on('failed', (job, err) => {
+  console.error(`❌ Incident notification job ${job?.id} failed:`, err);
+
+  const logger = getInternalLogger();
+  if (logger) {
+    logger.error('worker-incident-notification-failed', `Incident notification job failed: ${err.message}`, {
+      error: err,
+      jobId: job?.id,
+      incidentId: job?.data?.incidentId,
     });
   }
 });
@@ -220,6 +278,8 @@ async function gracefulShutdown(signal: string) {
     await alertWorker.close();
     await sigmaWorker.close();
     await autoGroupWorker.close();
+    await invitationWorker.close();
+    await incidentNotificationWorker.close();
     console.log('✅ Workers closed');
 
     // Close internal logging

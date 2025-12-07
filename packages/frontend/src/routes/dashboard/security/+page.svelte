@@ -80,7 +80,14 @@
 
 	function handleEventClick(event: DetectionEvent) {
 		if (event.incidentId) {
+			// Navigate to the incident if the event is linked to one
 			goto(`/dashboard/security/incidents/${event.incidentId}`);
+		} else if (event.logId && event.projectId) {
+			// Navigate to search with the specific log
+			goto(`/dashboard/search?logId=${event.logId}&projectId=${event.projectId}`);
+		} else if (event.logId) {
+			// Navigate to search with just the log ID
+			goto(`/dashboard/search?logId=${event.logId}`);
 		}
 	}
 

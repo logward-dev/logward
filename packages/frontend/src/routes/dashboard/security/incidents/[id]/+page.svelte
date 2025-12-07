@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { currentOrganization } from '$lib/stores/organization';
+	import { authStore } from '$lib/stores/auth';
 	import {
 		getIncident,
 		updateIncident,
@@ -11,6 +12,7 @@
 		type IncidentComment,
 		type IncidentHistoryEntry,
 	} from '$lib/api/siem';
+	import { OrganizationsAPI, type OrganizationMemberWithUser } from '$lib/api/organizations';
 	import { toastStore } from '$lib/stores/toast';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -48,14 +50,23 @@
 	let detections = $state<DetectionEvent[]>([]);
 	let comments = $state<IncidentComment[]>([]);
 	let history = $state<IncidentHistoryEntry[]>([]);
+	let members = $state<OrganizationMemberWithUser[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state('detections');
+	let updatingAssignee = $state(false);
 
 	// SSE connection
 	let eventSource = $state<EventSource | null>(null);
 
+	// Auth token for API calls
+	let authToken: string | null = null;
+	authStore.subscribe((state) => {
+		authToken = state.token;
+	});
+
 	const incidentId = $derived($page.params.id);
+	const organizationsAPI = $derived(new OrganizationsAPI(() => authToken));
 
 	async function loadIncident() {
 		if (!$currentOrganization || !incidentId) return;
@@ -64,17 +75,48 @@
 		error = '';
 
 		try {
-			const response = await getIncident(incidentId, $currentOrganization.id);
-			incident = response.incident;
-			detections = response.detections;
-			comments = response.comments;
-			history = response.history;
+			const [incidentResponse, membersResponse] = await Promise.all([
+				getIncident(incidentId, $currentOrganization.id),
+				organizationsAPI.getOrganizationMembers($currentOrganization.id),
+			]);
+			incident = incidentResponse.incident;
+			detections = incidentResponse.detections;
+			comments = incidentResponse.comments;
+			history = incidentResponse.history;
+			members = membersResponse.members;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load incident';
 			toastStore.error(error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function handleAssigneeChange(userId: string | null) {
+		if (!incident || !$currentOrganization) return;
+
+		updatingAssignee = true;
+		try {
+			const updated = await updateIncident(incident.id, {
+				organizationId: $currentOrganization.id,
+				assigneeId: userId ?? undefined,
+			});
+			incident = updated;
+			toastStore.success(userId ? 'Assignee updated' : 'Assignee removed');
+			// Reload to get updated history
+			loadIncident();
+		} catch (e) {
+			toastStore.error(e instanceof Error ? e.message : 'Failed to update assignee');
+		} finally {
+			updatingAssignee = false;
+		}
+	}
+
+	// Get assignee name from members list
+	function getAssigneeName(assigneeId: string | null): string | null {
+		if (!assigneeId) return null;
+		const member = members.find((m) => m.user.id === assigneeId);
+		return member?.user.name ?? null;
 	}
 
 	function handleIncidentUpdate(updatedIncident: Incident) {
@@ -303,14 +345,23 @@
 						<!-- Assignee -->
 						<div>
 							<p class="text-xs font-medium text-muted-foreground mb-1">Assignee</p>
-							{#if incident.assigneeId}
-								<div class="flex items-center gap-2">
-									<User class="w-4 h-4 text-muted-foreground" />
-									<span class="text-sm">Assigned</span>
-								</div>
-							{:else}
-								<span class="text-sm text-muted-foreground">Unassigned</span>
-							{/if}
+							<select
+								class="w-full h-9 px-3 py-1 text-sm rounded-md border border-input bg-background ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+								value={incident.assigneeId ?? ''}
+								disabled={updatingAssignee}
+								onchange={(e) => {
+									const target = e.target as HTMLSelectElement;
+									const value = target.value || null;
+									handleAssigneeChange(value);
+								}}
+							>
+								<option value="">Unassigned</option>
+								{#each members as member}
+									<option value={member.user.id}>
+										{member.user.name} ({member.role})
+									</option>
+								{/each}
+							</select>
 						</div>
 
 						<!-- Trace ID -->

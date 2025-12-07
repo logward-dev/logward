@@ -398,10 +398,11 @@
                       if (!notification.read) {
                         markNotificationAsRead(notification.id);
                       }
-                      if (
-                        notification.type === "alert" &&
-                        notification.organizationSlug
-                      ) {
+                      // Handle navigation based on notification type
+                      if (notification.metadata?.link) {
+                        // If notification has a specific link, use it
+                        goto(notification.metadata.link);
+                      } else if (notification.type === "alert" && notification.organizationSlug) {
                         goto(`/dashboard/alerts`);
                       }
                     }}

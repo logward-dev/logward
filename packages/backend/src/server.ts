@@ -10,6 +10,7 @@ import { alertsRoutes } from './modules/alerts/index.js';
 import { usersRoutes } from './modules/users/routes.js';
 import { projectsRoutes } from './modules/projects/routes.js';
 import { organizationsRoutes } from './modules/organizations/routes.js';
+import { invitationsRoutes } from './modules/invitations/routes.js';
 import { notificationsRoutes } from './modules/notifications/routes.js';
 import { apiKeysRoutes } from './modules/api-keys/routes.js';
 import dashboardRoutes from './modules/dashboard/routes.js';
@@ -79,6 +80,9 @@ export async function build(opts = {}) {
 
   // Organizations routes (session-based auth)
   await fastify.register(organizationsRoutes, { prefix: '/api/v1/organizations' });
+
+  // Invitations routes (session-based auth, some public endpoints)
+  await fastify.register(invitationsRoutes, { prefix: '/api/v1/invitations' });
 
   // Projects routes (session-based auth)
   await fastify.register(projectsRoutes, { prefix: '/api/v1/projects' });

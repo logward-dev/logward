@@ -1,4 +1,5 @@
 import { db } from '../../database/connection.js';
+import { sql } from 'kysely';
 import { SiemService } from '../../modules/siem/service.js';
 import type { Severity } from '../../database/types';
 
@@ -10,7 +11,7 @@ const siemService = new SiemService(db);
  * 1. Same trace_id (distributed request correlation)
  * 2. Time window proximity (burst detection)
  */
-export async function processIncidentAutoGrouping(job: any) {
+export async function processIncidentAutoGrouping(_job: any) {
   console.log('[IncidentAutoGrouping] Starting auto-grouping job');
 
   try {
@@ -52,10 +53,10 @@ async function groupByTraceId(organizationId: string): Promise<void> {
         'project_id',
         db.fn.count<number>('id').as('count'),
         db.fn.max('severity').as('maxSeverity'), // Highest severity wins
-        db.fn.array_agg('id').as('eventIds'),
-        db.fn.array_agg('service').as('services'),
-        db.fn.array_agg('mitre_tactics').as('allTactics'),
-        db.fn.array_agg('mitre_techniques').as('allTechniques'),
+        sql<string[]>`array_agg(id)`.as('eventIds'),
+        sql<string[]>`array_agg(service)`.as('services'),
+        sql<string[][]>`array_agg(mitre_tactics)`.as('allTactics'),
+        sql<string[][]>`array_agg(mitre_techniques)`.as('allTechniques'),
         db.fn.min('time').as('firstSeen'),
         db.fn.max('time').as('lastSeen'),
       ])
@@ -69,23 +70,27 @@ async function groupByTraceId(organizationId: string): Promise<void> {
     console.log(`[IncidentAutoGrouping] Found ${traceGroups.length} trace-based groups`);
 
     for (const group of traceGroups) {
-      const affectedServices = Array.from(new Set(group.services.flat())).filter(Boolean);
-      const allTactics = Array.from(new Set(group.allTactics.flat().filter(Boolean)));
-      const allTechniques = Array.from(new Set(group.allTechniques.flat().filter(Boolean)));
+      const services = (group.services || []) as string[];
+      const tactics = (group.allTactics || []) as (string[] | null)[];
+      const techniques = (group.allTechniques || []) as (string[] | null)[];
+
+      const affectedServices = Array.from(new Set(services.flat())).filter(Boolean) as string[];
+      const allTactics = Array.from(new Set(tactics.flat().filter(Boolean))) as string[];
+      const allTechniques = Array.from(new Set(techniques.flat().filter(Boolean))) as string[];
 
       // Create incident
       const incident = await siemService.createIncident({
         organizationId,
-        projectId: group.project_id || null,
+        projectId: group.project_id || undefined,
         title: `Security Incident - Trace ${group.trace_id?.substring(0, 8)}`,
         description: `Auto-grouped incident from ${group.count} detection events correlated by trace ID.`,
         severity: (group.maxSeverity as Severity) || 'medium',
-        traceId: group.trace_id || null,
+        traceId: group.trace_id || undefined,
         timeWindowStart: group.firstSeen,
         timeWindowEnd: group.lastSeen,
         affectedServices,
-        mitreTactics: allTactics.length > 0 ? allTactics : null,
-        mitreTechniques: allTechniques.length > 0 ? allTechniques : null,
+        mitreTactics: allTactics.length > 0 ? allTactics : undefined,
+        mitreTechniques: allTechniques.length > 0 ? allTechniques : undefined,
       });
 
       // Link detection events to incident
@@ -148,7 +153,7 @@ async function groupByTimeWindow(organizationId: string): Promise<void> {
     }
 
     // Create incidents for groups with 3+ events
-    for (const [groupKey, events] of groups.entries()) {
+    for (const [, events] of groups.entries()) {
       if (events.length < 3) continue; // Need at least 3 events to create incident
 
       const firstEvent = events[0];
@@ -161,15 +166,15 @@ async function groupByTimeWindow(organizationId: string): Promise<void> {
       // Create incident
       const incident = await siemService.createIncident({
         organizationId,
-        projectId: firstEvent.project_id || null,
+        projectId: firstEvent.project_id || undefined,
         title: `Security Incident - ${firstEvent.service} (Burst Detection)`,
         description: `Auto-grouped incident from ${events.length} detection events in ${TIME_WINDOW_MINUTES}-minute window.`,
         severity: firstEvent.severity as Severity,
         timeWindowStart: firstEvent.time,
         timeWindowEnd: lastEvent.time,
         affectedServices,
-        mitreTactics: allTactics.length > 0 ? allTactics : null,
-        mitreTechniques: allTechniques.length > 0 ? allTechniques : null,
+        mitreTactics: allTactics.length > 0 ? allTactics : undefined,
+        mitreTechniques: allTechniques.length > 0 ? allTechniques : undefined,
       });
 
       // Link detection events to incident
