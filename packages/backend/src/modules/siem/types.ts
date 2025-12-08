@@ -215,7 +215,7 @@ export interface IpReputationData {
   isp?: string;
   domain?: string;
   usageType?: string;
-  source: 'AbuseIPDB' | 'manual';
+  source: 'IPsum' | 'AbuseIPDB' | 'manual';
   lastChecked: Date;
 }
 
@@ -227,5 +227,5 @@ export interface GeoIpData {
   latitude: number;
   longitude: number;
   timezone: string | null;
-  source: 'MaxMind' | 'manual';
+  source: 'GeoLite2' | 'MaxMind' | 'manual';
 }

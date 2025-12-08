@@ -2,14 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { SiemService } from './service.js';
 import { SiemDashboardService } from './dashboard-service.js';
-import { EnrichmentService } from './enrichment-service.js';
+import { enrichmentService } from './enrichment-service.js';
 import { usersService } from '../users/service.js';
 import { OrganizationsService } from '../organizations/service.js';
 import { db } from '../../database/index.js';
 
 const siemService = new SiemService(db);
 const dashboardService = new SiemDashboardService(db);
-const enrichmentService = new EnrichmentService();
 const organizationsService = new OrganizationsService();
 
 /**
@@ -294,6 +293,9 @@ export async function siemRoutes(fastify: FastifyInstance) {
             incident.id,
             body.detectionEventIds
           );
+
+          // Enrich incident with IP data after linking events
+          await siemService.enrichIncidentIpData(incident.id, enrichmentService);
         }
 
         return reply.status(201).send(incident);
@@ -691,8 +693,9 @@ export async function siemRoutes(fastify: FastifyInstance) {
         },
         body: {
           type: 'object',
-          required: ['comment'],
+          required: ['organizationId', 'comment'],
           properties: {
+            organizationId: { type: 'string', format: 'uuid' },
             comment: { type: 'string', minLength: 1 },
           },
         },
@@ -705,16 +708,29 @@ export async function siemRoutes(fastify: FastifyInstance) {
         });
 
         const bodySchema = z.object({
+          organizationId: z.string().uuid(),
           comment: z.string().min(1),
         });
 
         const params = paramsSchema.parse(request.params);
         const body = bodySchema.parse(request.body);
 
-        // Verify user has access to this incident
+        // Verify user is member of organization
+        const isMember = await checkOrganizationMembership(
+          request.user.id,
+          body.organizationId
+        );
+
+        if (!isMember) {
+          return reply.status(403).send({
+            error: 'You are not a member of this organization',
+          });
+        }
+
+        // Verify incident exists and belongs to organization
         const incident = await siemService.getIncident(
           params.id,
-          request.user.organizationId
+          body.organizationId
         );
 
         if (!incident) {
@@ -849,7 +865,7 @@ export async function siemRoutes(fastify: FastifyInstance) {
    * Check enrichment services configuration status
    */
   fastify.get('/api/v1/siem/enrichment/status', async (_request, reply) => {
-    const status = enrichmentService.isConfigured();
+    const status = enrichmentService.getStatus();
     return reply.send(status);
   });
 }

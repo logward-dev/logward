@@ -44,6 +44,9 @@
 	import FileText from '@lucide/svelte/icons/file-text';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import History from '@lucide/svelte/icons/history';
+	import IpReputationCard from '$lib/components/siem/enrichment/IpReputationCard.svelte';
+	import GeoIpCard from '$lib/components/siem/enrichment/GeoIpCard.svelte';
+	import GeoIpMap from '$lib/components/siem/enrichment/GeoIpMap.svelte';
 
 	// State
 	let incident = $state<Incident | null>(null);
@@ -428,26 +431,13 @@
 
 				<!-- IP Reputation (if enriched) -->
 				{#if incident.ipReputation && Object.keys(incident.ipReputation).length > 0}
-					<Card>
-						<CardHeader class="pb-3">
-							<CardTitle class="text-base font-semibold">IP Reputation</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<pre class="text-xs font-mono bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(incident.ipReputation, null, 2)}</pre>
-						</CardContent>
-					</Card>
+					<IpReputationCard ipReputation={incident.ipReputation} />
 				{/if}
 
 				<!-- GeoIP Data (if enriched) -->
 				{#if incident.geoData && Object.keys(incident.geoData).length > 0}
-					<Card>
-						<CardHeader class="pb-3">
-							<CardTitle class="text-base font-semibold">Geographic Data</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<pre class="text-xs font-mono bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(incident.geoData, null, 2)}</pre>
-						</CardContent>
-					</Card>
+					<GeoIpCard geoData={incident.geoData} />
+					<GeoIpMap geoData={incident.geoData} />
 				{/if}
 			</div>
 		</div>

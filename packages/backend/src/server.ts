@@ -25,6 +25,7 @@ import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
 import { initializeInternalLogging, shutdownInternalLogging } from './utils/internal-logger.js';
 import websocketPlugin from './plugins/websocket.js';
 import websocketRoutes from './modules/query/websocket.js';
+import { enrichmentService } from './modules/siem/enrichment-service.js';
 
 const PORT = config.PORT;
 const HOST = config.HOST;
@@ -139,6 +140,9 @@ async function start() {
 
   // Initialize internal logging first
   await initializeInternalLogging();
+
+  // Initialize enrichment services (GeoLite2 database, etc.)
+  await enrichmentService.initialize();
 
   const app = await build();
 

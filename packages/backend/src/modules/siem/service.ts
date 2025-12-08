@@ -10,8 +10,11 @@ import type {
   IncidentComment,
   CreateIncidentCommentInput,
   IncidentHistoryEntry,
+  IpReputationData,
+  GeoIpData,
 } from './types';
 import { incidentNotificationQueue } from '../../queue/jobs/incident-notification.js';
+import type { EnrichmentService } from './enrichment-service.js';
 
 export class SiemService {
   constructor(private db: Kysely<Database>) {}
@@ -304,6 +307,95 @@ export class SiemService {
       .execute();
 
     return results.map(this.mapDetectionEvent);
+  }
+
+  /**
+   * Enrich incident with IP reputation and GeoIP data from linked detection events.
+   * Extracts all public IPs from detection events and performs batch enrichment.
+   * Gracefully handles errors - enrichment failure does not affect incident.
+   */
+  async enrichIncidentIpData(
+    incidentId: string,
+    enrichmentService: EnrichmentService
+  ): Promise<void> {
+    try {
+      console.log(`[SiemService] Enriching incident ${incidentId} with IP data`);
+
+      // 1. Get all detection events for this incident
+      const detections = await this.getIncidentDetections(incidentId);
+
+      if (detections.length === 0) {
+        console.log(`[SiemService] No detection events found for incident ${incidentId}`);
+        return;
+      }
+
+      // 2. Extract all IPs from log messages and matched fields
+      const allIps = new Set<string>();
+
+      for (const detection of detections) {
+        // Extract from log message
+        const ipsFromMessage = enrichmentService.extractIpAddresses(detection.logMessage);
+        ipsFromMessage.forEach((ip) => allIps.add(ip));
+
+        // Extract from matched fields (JSONB object)
+        if (detection.matchedFields) {
+          const matchedFieldsStr = JSON.stringify(detection.matchedFields);
+          const ipsFromFields = enrichmentService.extractIpAddresses(matchedFieldsStr);
+          ipsFromFields.forEach((ip) => allIps.add(ip));
+        }
+      }
+
+      const uniqueIps = Array.from(allIps);
+
+      if (uniqueIps.length === 0) {
+        console.log(`[SiemService] No IPs found in detection events for incident ${incidentId}`);
+        return;
+      }
+
+      console.log(`[SiemService] Found ${uniqueIps.length} unique IPs to enrich`);
+
+      // 3. Batch enrich all IPs
+      const reputationData = enrichmentService.checkIpReputationBatch(uniqueIps);
+      const geoData = enrichmentService.getGeoIpDataBatch(uniqueIps);
+
+      // 4. Filter out null results and build records
+      const ipReputationRecord: Record<string, IpReputationData> = {};
+      const geoDataRecord: Record<string, GeoIpData> = {};
+
+      for (const ip of uniqueIps) {
+        if (reputationData[ip]) {
+          ipReputationRecord[ip] = reputationData[ip]!;
+        }
+        if (geoData[ip]) {
+          geoDataRecord[ip] = geoData[ip]!;
+        }
+      }
+
+      // 5. Update incident with enrichment data (only if we have data)
+      const hasReputation = Object.keys(ipReputationRecord).length > 0;
+      const hasGeo = Object.keys(geoDataRecord).length > 0;
+
+      if (!hasReputation && !hasGeo) {
+        console.log(`[SiemService] No enrichment data available for IPs in incident ${incidentId}`);
+        return;
+      }
+
+      await this.db
+        .updateTable('incidents')
+        .set({
+          ...(hasReputation && { ip_reputation: ipReputationRecord }),
+          ...(hasGeo && { geo_data: geoDataRecord }),
+        })
+        .where('id', '=', incidentId)
+        .execute();
+
+      console.log(
+        `[SiemService] Enriched incident ${incidentId}: ${Object.keys(ipReputationRecord).length} IPs with reputation, ${Object.keys(geoDataRecord).length} IPs with geo data`
+      );
+    } catch (error) {
+      // Log error but don't throw - enrichment failure shouldn't break incident creation
+      console.error(`[SiemService] Failed to enrich incident ${incidentId}:`, error);
+    }
   }
 
   // ==========================================================================

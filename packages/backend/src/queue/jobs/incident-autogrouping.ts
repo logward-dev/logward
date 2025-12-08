@@ -1,6 +1,7 @@
 import { db } from '../../database/connection.js';
 import { sql } from 'kysely';
 import { SiemService } from '../../modules/siem/service.js';
+import { enrichmentService } from '../../modules/siem/enrichment-service.js';
 import type { Severity } from '../../database/types';
 
 const siemService = new SiemService(db);
@@ -99,6 +100,9 @@ async function groupByTraceId(organizationId: string): Promise<void> {
         group.eventIds.filter(Boolean)
       );
 
+      // Enrich incident with IP data
+      await siemService.enrichIncidentIpData(incident.id, enrichmentService);
+
       console.log(
         `[IncidentAutoGrouping] Created incident ${incident.id} with ${group.count} events (trace: ${group.trace_id})`
       );
@@ -182,6 +186,9 @@ async function groupByTimeWindow(organizationId: string): Promise<void> {
         incident.id,
         events.map(e => e.id)
       );
+
+      // Enrich incident with IP data
+      await siemService.enrichIncidentIpData(incident.id, enrichmentService);
 
       console.log(
         `[IncidentAutoGrouping] Created incident ${incident.id} with ${events.length} events (service: ${firstEvent.service}, window: ${TIME_WINDOW_MINUTES}min)`

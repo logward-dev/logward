@@ -5,10 +5,14 @@ import { processIncidentAutoGrouping } from './queue/jobs/incident-autogrouping.
 import { processInvitationEmail } from './queue/jobs/invitation-email.js';
 import { processIncidentNotification } from './queue/jobs/incident-notification.js';
 import { alertsService } from './modules/alerts/index.js';
+import { enrichmentService } from './modules/siem/enrichment-service.js';
 import { initializeInternalLogging, shutdownInternalLogging, getInternalLogger } from './utils/internal-logger.js';
 
 // Initialize internal logging
 await initializeInternalLogging();
+
+// Initialize enrichment services (downloads GeoLite2 if missing)
+await enrichmentService.initialize();
 
 // Create worker for alert notifications
 const alertWorker = createWorker('alert-notifications', async (job) => {
@@ -268,6 +272,45 @@ setInterval(runAutoGrouping, 5 * 60 * 1000);
 
 // Run immediately on start (after 10 seconds delay to let system stabilize)
 setTimeout(runAutoGrouping, 10000);
+
+// ============================================================================
+// Enrichment Databases Daily Update (GeoLite2 + IPsum)
+// ============================================================================
+
+async function updateEnrichmentDatabases() {
+  const logger = getInternalLogger();
+
+  try {
+    const results = await enrichmentService.updateDatabasesIfNeeded();
+
+    if (results.geoLite2) {
+      console.log('✅ GeoLite2 database updated');
+      if (logger) {
+        logger.info('worker-geolite2-updated', 'GeoLite2 database updated successfully');
+      }
+    }
+
+    if (results.ipsum) {
+      console.log('✅ IPsum database updated');
+      if (logger) {
+        logger.info('worker-ipsum-updated', 'IPsum database updated successfully');
+      }
+    }
+  } catch (error) {
+    console.error('Error updating enrichment databases:', error);
+    if (logger) {
+      logger.error('worker-enrichment-update-error', `Failed to update databases: ${(error as Error).message}`, {
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
+  }
+}
+
+// Run database updates every 24 hours
+setInterval(updateEnrichmentDatabases, 24 * 60 * 60 * 1000);
+
+// Check for updates on start (after 30 seconds delay)
+setTimeout(updateEnrichmentDatabases, 30000);
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {

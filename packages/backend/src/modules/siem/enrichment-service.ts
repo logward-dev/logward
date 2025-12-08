@@ -1,174 +1,125 @@
+import { geoLite2Service } from './geolite2-service.js';
+import { ipsumService } from './ipsum-service.js';
 import type { IpReputationData, GeoIpData } from './types';
 
 export class EnrichmentService {
-  private abuseIpDbApiKey: string | null;
-  private maxMindLicenseKey: string | null;
-
-  constructor() {
-    this.abuseIpDbApiKey = process.env.ABUSEIPDB_API_KEY ?? null;
-    this.maxMindLicenseKey = process.env.MAXMIND_LICENSE_KEY ?? null;
-  }
-
   /**
-   * Check IP reputation using AbuseIPDB API
-   * https://www.abuseipdb.com/api
+   * Initialize the enrichment service
+   * This should be called at application startup
    */
-  async checkIpReputation(ip: string): Promise<IpReputationData | null> {
-    if (!this.abuseIpDbApiKey) {
-      console.warn(
-        'AbuseIPDB API key not configured. Skipping IP reputation check.'
-      );
-      return null;
+  async initialize(): Promise<void> {
+    console.log('[EnrichmentService] Initializing...');
+
+    // Initialize GeoLite2 database (downloads from GitHub mirror if needed)
+    const geoReady = await geoLite2Service.initialize();
+    if (geoReady) {
+      console.log('[EnrichmentService] GeoLite2 ready');
+    } else {
+      console.warn('[EnrichmentService] GeoLite2 not available - check network connection');
     }
 
-    try {
-      const response = await fetch(
-        `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`,
-        {
-          method: 'GET',
-          headers: {
-            Key: this.abuseIpDbApiKey,
-            Accept: 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(
-          `AbuseIPDB API error: ${response.status} ${response.statusText}`
-        );
-        return null;
-      }
-
-      const data = await response.json();
-      const ipData = data.data;
-
-      // Determine reputation based on abuse confidence score
-      let reputation: 'clean' | 'suspicious' | 'malicious' = 'clean';
-      if (ipData.abuseConfidenceScore >= 75) {
-        reputation = 'malicious';
-      } else if (ipData.abuseConfidenceScore >= 25) {
-        reputation = 'suspicious';
-      }
-
-      return {
-        ip,
-        reputation,
-        abuseConfidenceScore: ipData.abuseConfidenceScore,
-        country: ipData.countryCode,
-        isp: ipData.isp,
-        domain: ipData.domain,
-        usageType: ipData.usageType,
-        source: 'AbuseIPDB',
-        lastChecked: new Date(),
-      };
-    } catch (error) {
-      console.error('Error checking IP reputation:', error);
-      return null;
+    // Initialize IPsum database (downloads from GitHub if needed)
+    const ipsumReady = await ipsumService.initialize();
+    if (ipsumReady) {
+      console.log('[EnrichmentService] IPsum ready');
+    } else {
+      console.warn('[EnrichmentService] IPsum not available - check network connection');
     }
   }
 
   /**
-   * Batch check multiple IPs (max 100 per request)
+   * Update databases if needed (call daily from worker)
    */
-  async checkIpReputationBatch(
-    ips: string[]
-  ): Promise<Record<string, IpReputationData | null>> {
-    const results: Record<string, IpReputationData | null> = {};
+  async updateDatabasesIfNeeded(): Promise<{ geoLite2: boolean; ipsum: boolean }> {
+    const results = { geoLite2: false, ipsum: false };
 
-    // Process in batches of 10 to avoid rate limits
-    for (let i = 0; i < ips.length; i += 10) {
-      const batch = ips.slice(i, i + 10);
-      const batchResults = await Promise.all(
-        batch.map((ip) => this.checkIpReputation(ip))
-      );
+    if (geoLite2Service.needsUpdate()) {
+      console.log('[EnrichmentService] GeoLite2 database needs update');
+      results.geoLite2 = await geoLite2Service.downloadDatabase();
+    }
 
-      batch.forEach((ip, index) => {
-        results[ip] = batchResults[index];
-      });
+    if (ipsumService.needsUpdate()) {
+      console.log('[EnrichmentService] IPsum database needs update');
+      results.ipsum = await ipsumService.downloadDatabase();
     }
 
     return results;
   }
 
   /**
-   * Get geographic information for an IP using MaxMind GeoIP2 API
-   * https://dev.maxmind.com/geoip/docs/web-services
+   * Check IP reputation using local IPsum database
+   * No API calls - instant local lookup
    */
-  async getGeoIpData(ip: string): Promise<GeoIpData | null> {
-    if (!this.maxMindLicenseKey) {
-      console.warn(
-        'MaxMind license key not configured. Skipping GeoIP lookup.'
-      );
+  checkIpReputation(ip: string): IpReputationData | null {
+    if (!ipsumService.ready()) {
+      console.warn('[EnrichmentService] IPsum not ready');
       return null;
     }
 
-    try {
+    const result = ipsumService.checkIp(ip);
 
-      const accountId = process.env.MAXMIND_ACCOUNT_ID ?? '';
-      const auth = Buffer.from(
-        `${accountId}:${this.maxMindLicenseKey}`
-      ).toString('base64');
+    return {
+      ip: result.ip,
+      reputation: result.reputation,
+      abuseConfidenceScore: result.score * 10, // Convert to 0-100 scale (approx)
+      source: 'IPsum',
+      lastChecked: result.lastChecked,
+    };
+  }
 
-      const response = await fetch(
-        `https://geoip.maxmind.com/geoip/v2.1/city/${encodeURIComponent(ip)}`,
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Basic ${auth}`,
-            Accept: 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(
-          `MaxMind API error: ${response.status} ${response.statusText}`
-        );
-        return null;
-      }
-
-      const data = await response.json();
-
-      return {
-        ip,
-        country: data.country?.names?.en ?? 'Unknown',
-        countryCode: data.country?.iso_code ?? 'XX',
-        city: data.city?.names?.en ?? null,
-        latitude: data.location?.latitude ?? 0,
-        longitude: data.location?.longitude ?? 0,
-        timezone: data.location?.time_zone ?? null,
-        source: 'MaxMind',
-      };
-    } catch (error) {
-      console.error('Error getting GeoIP data:', error);
-      return null;
+  /**
+   * Batch check multiple IPs
+   */
+  checkIpReputationBatch(ips: string[]): Record<string, IpReputationData | null> {
+    const results: Record<string, IpReputationData | null> = {};
+    for (const ip of ips) {
+      results[ip] = this.checkIpReputation(ip);
     }
+    return results;
+  }
+
+  /**
+   * Get geographic information for an IP using local GeoLite2 database
+   */
+  getGeoIpData(ip: string): GeoIpData | null {
+    const data = geoLite2Service.lookup(ip);
+    if (!data) return null;
+
+    return {
+      ip: data.ip,
+      country: data.country,
+      countryCode: data.countryCode,
+      city: data.city,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      timezone: data.timezone,
+      source: 'GeoLite2',
+    };
   }
 
   /**
    * Batch GeoIP lookup for multiple IPs
    */
-  async getGeoIpDataBatch(
-    ips: string[]
-  ): Promise<Record<string, GeoIpData | null>> {
+  getGeoIpDataBatch(ips: string[]): Record<string, GeoIpData | null> {
     const results: Record<string, GeoIpData | null> = {};
-
-    // Process in batches of 10 to avoid rate limits
-    for (let i = 0; i < ips.length; i += 10) {
-      const batch = ips.slice(i, i + 10);
-      const batchResults = await Promise.all(
-        batch.map((ip) => this.getGeoIpData(ip))
-      );
-
-      batch.forEach((ip, index) => {
-        results[ip] = batchResults[index];
-      });
+    for (const ip of ips) {
+      results[ip] = this.getGeoIpData(ip);
     }
-
     return results;
   }
 
+  /**
+   * Full enrichment for an IP (reputation + geo)
+   */
+  enrichIp(ip: string): {
+    reputation: IpReputationData | null;
+    geo: GeoIpData | null;
+  } {
+    return {
+      reputation: this.checkIpReputation(ip),
+      geo: this.getGeoIpData(ip),
+    };
+  }
 
   /**
    * Extract IP addresses from log message or metadata
@@ -181,8 +132,8 @@ export class EnrichmentService {
     const matches = text.match(ipv4Regex);
     if (!matches) return [];
 
-    // Filter out private/local IPs
-    return matches.filter((ip) => !this.isPrivateIp(ip));
+    // Filter out private/local IPs and deduplicate
+    return [...new Set(matches.filter((ip) => !this.isPrivateIp(ip)))];
   }
 
   /**
@@ -206,6 +157,9 @@ export class EnrichmentService {
     // 169.254.0.0/16 (link-local)
     if (parts[0] === 169 && parts[1] === 254) return true;
 
+    // 0.0.0.0
+    if (parts.every((p) => p === 0)) return true;
+
     return false;
   }
 
@@ -217,8 +171,49 @@ export class EnrichmentService {
     geoIp: boolean;
   } {
     return {
-      ipReputation: this.abuseIpDbApiKey !== null,
-      geoIp: this.maxMindLicenseKey !== null,
+      ipReputation: ipsumService.ready(),
+      geoIp: geoLite2Service.isReady(),
+    };
+  }
+
+  /**
+   * Get detailed status of enrichment services
+   */
+  getStatus(): {
+    ipReputation: {
+      configured: boolean;
+      ready: boolean;
+      totalIps: number;
+      lastUpdate: Date | null;
+      source: string;
+    };
+    geoIp: {
+      configured: boolean;
+      ready: boolean;
+      lastUpdate: Date | null;
+      source: string;
+    };
+  } {
+    const geoInfo = geoLite2Service.getInfo();
+    const ipsumInfo = ipsumService.getInfo();
+
+    return {
+      ipReputation: {
+        configured: true, // No API key needed
+        ready: ipsumInfo.ready,
+        totalIps: ipsumInfo.totalIps,
+        lastUpdate: ipsumInfo.lastUpdate,
+        source: 'IPsum (30+ threat intel feeds)',
+      },
+      geoIp: {
+        configured: true, // No API key needed
+        ready: geoInfo.ready,
+        lastUpdate: geoInfo.lastUpdate,
+        source: 'GeoLite2',
+      },
     };
   }
 }
+
+// Singleton instance
+export const enrichmentService = new EnrichmentService();
