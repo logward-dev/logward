@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📚 Documentation
+    url: https://logward.dev/docs
+    about: Check our documentation for guides and API references
+  - name: 💬 Community Discussions
+    url: https://github.com/logward-dev/logward/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 🔒 Security Issue
+    url: https://github.com/logward-dev/logward/security/advisories/new
+    about: Report security vulnerabilities privately
