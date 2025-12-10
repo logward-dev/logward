@@ -171,7 +171,7 @@ mkdir logward && cd logward
 
 # 2. Download configuration files
 curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/docker-compose.yml
-curl -O https://raw.githubusercontent.com/logward-dev/logward/main/.env.example
+curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/.env.example
 mv .env.example .env
 
 # 3. Configure secure passwords (IMPORTANT!)
@@ -182,7 +182,8 @@ nano .env
 docker compose up -d
 
 # 5. Access the dashboard
-# Open http://localhost:3000 in your browser`}
+# Frontend: http://localhost:3000
+# API: http://localhost:8080`}
             />
         </div>
 
@@ -257,16 +258,15 @@ docker compose up -d
                             <td class="p-3 border-b border-border">Redis password</td>
                         </tr>
                         <tr>
-                            <td class="p-3 border-b border-border font-mono text-xs">API_KEY_SECRET</td>
-                            <td class="p-3 border-b border-border">Encryption key (32+ characters)</td>
-                        </tr>
-                        <tr>
-                            <td class="p-3 font-mono text-xs">PUBLIC_API_URL</td>
-                            <td class="p-3">Backend URL (default: http://localhost:8080)</td>
+                            <td class="p-3 font-mono text-xs">API_KEY_SECRET</td>
+                            <td class="p-3">Encryption key (32+ characters)</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+            <p class="text-sm text-muted-foreground mt-3">
+                Database migrations run automatically on first start.
+            </p>
         </div>
 
         <Card class="border-primary/30 bg-primary/5">
@@ -353,7 +353,7 @@ docker compose up -d
 
                 <div>
                     <h4 class="text-sm font-semibold mb-2">
-                        Self-Hosted (localhost:8080)
+                        Self-Hosted
                     </h4>
                     <CodeBlock
                         lang="bash"

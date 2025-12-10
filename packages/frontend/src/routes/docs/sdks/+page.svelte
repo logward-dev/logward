@@ -29,7 +29,7 @@
                 <p class="text-sm text-muted-foreground mb-2">
                     No problem! LogWard supports stdout-based logging for
                     <strong>any language</strong> (Rust, Ruby, Java, .NET, etc.).
-                    Just write to stdout and let Fluent Bit collect your logs automatically.
+                    Just write to stdout and configure Fluent Bit to collect your logs.
                 </p>
                 <a
                     href="/docs/no-sdk-setup"

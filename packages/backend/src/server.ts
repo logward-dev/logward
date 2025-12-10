@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { config } from './config/index.js';
+import { connection } from './queue/connection.js';
 import authPlugin from './modules/auth/plugin.js';
 import { ingestionRoutes } from './modules/ingestion/index.js';
 import { queryRoutes } from './modules/query/index.js';
@@ -34,6 +35,9 @@ export async function build(opts = {}) {
   const fastify = Fastify({
     logger: true,
     bodyLimit: 10 * 1024 * 1024, // 10MB for large OTLP batches
+    // Trust proxy headers when behind reverse proxy (Traefik, nginx, etc.)
+    // This ensures rate limiting uses real client IP, not proxy IP
+    trustProxy: config.TRUST_PROXY,
     ...opts,
   });
 
@@ -59,9 +63,16 @@ export async function build(opts = {}) {
     crossOriginEmbedderPolicy: false, // Allow embedding for SSE
   });
 
+  // Rate limiting with Redis store for horizontal scaling
+  // Using Redis ensures rate limits are shared across all backend instances
   await fastify.register(rateLimit, {
     max: config.RATE_LIMIT_MAX,
     timeWindow: config.RATE_LIMIT_WINDOW,
+    redis: connection,
+    // Use real client IP when behind proxy (requires trustProxy: true)
+    keyGenerator: (request) => {
+      return request.ip;
+    },
   });
 
   // Internal logging plugin (logs all requests except ingestion endpoints)
