@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Invitation acceptance flow with automatic org membership
   - Invitation expiration handling
 
+- **Horizontal Scaling Documentation**: Guide for scaling LogWard across multiple instances
+  - Traefik reverse proxy configuration with load balancing
+  - Docker Compose overlay for scaled deployments
+  - Sticky sessions for SSE connections
+  - Health check configuration for backend instances
+  - Environment variables for scaling configuration
+
 ### Changed
 
 - **Homepage**: Added Go and C# to "Works with your stack" section
