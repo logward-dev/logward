@@ -366,7 +366,7 @@
         </p>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <a href="/docs/sdks/nodejs" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
           <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg" alt="Node.js" class="w-12 h-12 mx-auto mb-3 group-hover:scale-110 transition-transform" />
           <span class="font-medium">Node.js</span>
@@ -376,6 +376,11 @@
           <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python" class="w-12 h-12 mx-auto mb-3 group-hover:scale-110 transition-transform" />
           <span class="font-medium">Python</span>
           <div class="text-xs text-muted-foreground mt-1">pip install</div>
+        </a>
+        <a href="/docs/sdks/go" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
+          <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original-wordmark.svg" alt="Go" class="w-12 h-12 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+          <span class="font-medium">Go</span>
+          <div class="text-xs text-muted-foreground mt-1">go get</div>
         </a>
         <a href="/docs/sdks/php" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
           <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/php/php-original.svg" alt="PHP" class="w-12 h-12 mx-auto mb-3 group-hover:scale-110 transition-transform" />
@@ -387,7 +392,12 @@
           <span class="font-medium">Kotlin</span>
           <div class="text-xs text-muted-foreground mt-1">gradle</div>
         </a>
-        <a href="/docs/sdks/opentelemetry" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
+        <a href="/docs/sdks/csharp" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
+          <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/csharp/csharp-original.svg" alt="C#" class="w-12 h-12 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+          <span class="font-medium">C# / .NET</span>
+          <div class="text-xs text-muted-foreground mt-1">dotnet add</div>
+        </a>
+        <a href="/docs/opentelemetry" class="group p-6 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-card/80 transition-all text-center">
           <div class="w-12 h-12 mx-auto mb-3 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform" aria-hidden="true">
             <GitBranch class="w-7 h-7 text-primary" />
           </div>

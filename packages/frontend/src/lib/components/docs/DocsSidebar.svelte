@@ -57,6 +57,7 @@
                 { title: "Go", href: "/docs/sdks/go" },
                 { title: "PHP", href: "/docs/sdks/php" },
                 { title: "Kotlin", href: "/docs/sdks/kotlin" },
+                { title: "C# / .NET", href: "/docs/sdks/csharp" },
             ],
         },
         {

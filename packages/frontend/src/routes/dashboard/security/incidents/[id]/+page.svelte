@@ -47,6 +47,7 @@
 	import IpReputationCard from '$lib/components/siem/enrichment/IpReputationCard.svelte';
 	import GeoIpCard from '$lib/components/siem/enrichment/GeoIpCard.svelte';
 	import GeoIpMap from '$lib/components/siem/enrichment/GeoIpMap.svelte';
+	import { exportIncidentToPdf } from '$lib/utils/siem';
 
 	// State
 	let incident = $state<Incident | null>(null);
@@ -137,6 +138,20 @@
 	function handleLogClick(logId: string, projectId: string) {
 		// Navigate to log search with the specific log ID and project ID
 		goto(`/dashboard/search?logId=${logId}&projectId=${projectId}`);
+	}
+
+	async function handleExportPdf() {
+		if (!incident) return;
+		try {
+			await exportIncidentToPdf({
+				incident,
+				detections,
+				comments,
+				history,
+			});
+		} catch (e) {
+			toastStore.error(e instanceof Error ? e.message : 'Failed to export PDF');
+		}
 	}
 
 	function formatDate(dateStr: string): string {
@@ -250,7 +265,7 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<IncidentStatusDropdown {incident} onUpdate={handleIncidentUpdate} />
-					<IncidentActionsDropdown {incident} />
+					<IncidentActionsDropdown {incident} onExportPdf={handleExportPdf} />
 				</div>
 			</div>
 		</div>

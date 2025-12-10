@@ -50,6 +50,9 @@ Designed for developers and European SMBs who need **GDPR compliance**, **data o
 ### Distributed Tracing
 ![LogWard Traces](docs/images/traces.png)
 
+### SIEM Dashboard
+![LogWard Security](docs/images/security.png)
+
 ### Alerts & Notifications
 ![LogWard Alerts](docs/images/alerts.png)
 
@@ -127,7 +130,8 @@ We have ready-to-use SDKs for the most popular languages.
 | **Python** | ✅ Ready | [`logward-sdk`](https://pypi.org/project/logward-sdk/) |
 | **Go** | ✅ Ready | [`logward-sdk-go`](https://github.com/logward-dev/logward-sdk-go) |
 | **PHP** | ✅ Ready | [`logward-dev/sdk-php`](https://packagist.org/packages/logward-dev/sdk-php) |
-| **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](#) |
+| **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](https://github.com/logward-dev/logward-sdk-kotlin) |
+| **C# / .NET** | ✅ Ready | [`LogWard.SDK`](https://github.com/logward-dev/lgoward-sdk-csharp) |
 | **Docker** | ✅ Ready | Use Fluent Bit / Syslog driver |
 | **HTTP** | ✅ Ready | [API Reference](#) |
 | **OpenTelemetry** | ✅ Ready | OTLP endpoint (logs + traces) |
@@ -142,7 +146,8 @@ We have ready-to-use SDKs for the most popular languages.
 * ✅ **Multi-Organization:** Isolate teams and projects strictly.
 * ✅ **Alerting:** Get notified via Email or Webhook (Slack/Discord) on error spikes.
 * ✅ **Retention Policy:** Automatic cleanup of old logs via TimescaleDB.
-* ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs, effectively turning LogWard into a lightweight SIEM for threat detection.
+* ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs for threat detection.
+* ✅ **SIEM Dashboard:** Security dashboard with incident management, MITRE ATT&CK mapping, and PDF report export. *(New in 0.3.0)*
 * ✅ **OpenTelemetry Support:** Native OTLP ingestion for logs and traces (protobuf + JSON).
 * ✅ **Distributed Tracing:** Trace viewer with span timeline, service dependencies graph, and trace-to-logs correlation.
 
@@ -171,6 +176,27 @@ detection:
     condition: selection
 level: high
 ```
+
+---
+
+## 🚨 SIEM Dashboard & Incident Management (New in 0.3.0)
+
+LogWard now includes a full-featured **Security Information and Event Management (SIEM)** dashboard, turning your log platform into a lightweight security operations center.
+
+### Security Dashboard
+* **Summary Stats:** Total detections, open incidents, critical alerts at a glance
+* **Top Threats Chart:** Sigma rules ranked by detection count
+* **Detection Timeline:** Time-series visualization of security events
+* **Affected Services:** Quick view of which services triggered detections
+* **Severity Distribution:** Pie chart breakdown (Critical/High/Medium/Low)
+* **MITRE ATT&CK Heatmap:** Visualize detected techniques across the ATT&CK matrix
+
+### Incident Management
+* **Incident Workflow:** Track incidents through Open → Investigating → Resolved → False Positive
+* **Comments & Collaboration:** Add notes and discuss incidents with your team
+* **Activity Timeline:** Full audit trail of all status changes and actions
+* **Detection Events:** View matched fields and log context for each detection
+* **PDF Export:** Generate incident reports for compliance and documentation
 
 ---
 
