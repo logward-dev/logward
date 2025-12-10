@@ -21,6 +21,8 @@ const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().default('8080').transform(Number),
   HOST: z.string().default('0.0.0.0'),
+  // Trust proxy headers (X-Forwarded-For, etc.) - enable when behind reverse proxy
+  TRUST_PROXY: z.string().default('false').transform((val) => val === 'true'),
 
   // Database
   DATABASE_URL: z.string().url(),

@@ -81,15 +81,15 @@
             </CardHeader>
             <CardContent class="text-sm">
                 <p class="text-muted-foreground mb-3">
-                    LogWard includes Fluent Bit pre-configured to collect logs
-                    from all Docker containers.
+                    Add Fluent Bit to your LogWard installation to collect logs
+                    from all Docker containers automatically.
                 </p>
                 <ul class="space-y-2 ml-2">
                     <li class="flex items-start gap-2">
                         <CheckCircle2
                             class="w-4 h-4 text-primary mt-0.5 flex-shrink-0"
                         />
-                        <span>Fluent Bit included in docker-compose</span>
+                        <span>Optional Fluent Bit configuration</span>
                     </li>
                     <li class="flex items-start gap-2">
                         <CheckCircle2
@@ -519,14 +519,14 @@ echo json_encode($logData) . "\\n";
 
     <div class="mb-8 space-y-6">
         <p>
-            Fluent Bit is already configured in LogWard's <code
-                >docker-compose.yml</code
-            >:
+            Add Fluent Bit to your <code>docker-compose.yml</code> to enable
+            automatic log collection from Docker containers:
         </p>
 
         <CodeBlock
             lang="yaml"
-            code={`fluent-bit:
+            code={`# Add this service to your docker-compose.yml
+fluent-bit:
   image: fluent/fluent-bit:latest
   container_name: logward-fluent-bit
   volumes:

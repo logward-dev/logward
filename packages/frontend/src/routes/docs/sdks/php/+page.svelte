@@ -207,7 +207,7 @@ protected $middleware = [
 
 // config/services.php
 'logward' => [
-    'api_url' => env('LOGWARD_API_URL', 'http://localhost:8080'),
+    'api_url' => env('LOGWARD_API_URL', 'http://localhost'),
     'api_key' => env('LOGWARD_API_KEY'),
 ],`}
             />
