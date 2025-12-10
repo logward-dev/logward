@@ -150,8 +150,8 @@ docker compose up -d`}
                 <CodeBlock
                     lang="bash"
                     code={`# In your .env file
-LOGWARD_BACKEND_IMAGE=logward/backend:0.2.4
-LOGWARD_FRONTEND_IMAGE=logward/frontend:0.2.4`}
+LOGWARD_BACKEND_IMAGE=logward/backend:0.3.0
+LOGWARD_FRONTEND_IMAGE=logward/frontend:0.3.0`}
                 />
             </CardContent>
         </Card>

@@ -5,6 +5,69 @@ All notable changes to LogWard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-10
+
+### Added
+
+- **SIEM Dashboard**: Full-featured Security Information and Event Management interface
+  - Security Dashboard with 6 real-time widgets:
+    - Summary stats (total detections, incidents, open, critical)
+    - Top threats chart (Sigma rules ranked by detection count)
+    - Detection timeline (time-series visualization)
+    - Affected services list
+    - Severity distribution pie chart
+    - MITRE ATT&CK heatmap (techniques across tactics matrix)
+  - Incident List page with filtering (status, severity) and pagination
+  - Incident Detail page with three tabs:
+    - Detections: matched log events with field details
+    - Comments: collaboration thread for incident response
+    - History: full activity timeline of status changes
+  - Incident status workflow (Open → Investigating → Resolved → False Positive)
+  - Assignee management for incident ownership
+  - PDF export for incident reports (print-based generation)
+  - Real-time updates via SSE (Server-Sent Events)
+
+- **C# / .NET SDK**: Official SDK for .NET 6/7/8 applications
+  - Full documentation at `/docs/sdks/csharp`
+  - Automatic batching with configurable size and interval
+  - Retry logic with exponential backoff
+  - Circuit breaker pattern for fault tolerance
+  - Query API for searching and filtering logs
+  - Trace ID context for distributed tracing
+  - ASP.NET Core middleware for auto-logging HTTP requests
+  - Dependency injection support
+  - Thread-safe, full async/await support
+
+- **IP Reputation & GeoIP Enrichment** (Backend ready, UI in incident detail)
+  - IP reputation lookup integration
+  - GeoIP data display with map visualization
+  - Enrichment cards in incident detail view
+
+- **Organization Invitations**: Invite users to join your organization
+  - Send email invitations to new team members
+  - Pending invitations management (view, resend, revoke)
+  - Role assignment on invite (admin, member)
+  - Invitation acceptance flow with automatic org membership
+  - Invitation expiration handling
+
+### Changed
+
+- **Homepage**: Added Go and C# to "Works with your stack" section
+- **SDK Overview**: Added C# SDK card with installation and features
+- **Sidebar Navigation**: Added C# / .NET link to SDKs section
+- **README**:
+  - Added SIEM Dashboard screenshot
+  - Added SIEM feature to Alpha features list
+  - New dedicated section for SIEM Dashboard & Incident Management
+  - Added C# SDK to SDKs table
+  - Updated Kotlin SDK link to GitHub repository
+
+### Fixed
+
+- PDF export now properly connected in incident detail page (was missing `onExportPdf` prop)
+
+---
+
 ## [0.2.4] - 2025-12-04
 
 ### Added
