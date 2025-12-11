@@ -7,7 +7,7 @@
         CardHeader,
         CardTitle,
     } from "$lib/components/ui/card";
-    import { AlertCircle, CheckCircle2, Package, Server } from "lucide-svelte";
+    import { AlertCircle, CheckCircle2, Package, Server, Scale, Layers } from "lucide-svelte";
 </script>
 
 <div class="docs-content">
@@ -48,11 +48,9 @@
                 code={`# Create project directory
 mkdir logward && cd logward
 
-# Download docker-compose.yml
+# Download docker-compose.yml and environment template
 curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/docker-compose.yml
-
-# Download environment template
-curl -O https://raw.githubusercontent.com/logward-dev/logward/main/.env.example
+curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/.env.example
 mv .env.example .env
 
 # Edit .env with secure passwords
@@ -86,18 +84,16 @@ docker compose up -d`}
                             <td class="p-3 border-b border-border font-mono text-xs">another_secure_password</td>
                         </tr>
                         <tr>
-                            <td class="p-3 border-b border-border font-mono text-xs">API_KEY_SECRET</td>
-                            <td class="p-3 border-b border-border">Encryption key (32+ chars)</td>
-                            <td class="p-3 border-b border-border font-mono text-xs">your_32_character_secret_key_here</td>
-                        </tr>
-                        <tr>
-                            <td class="p-3 font-mono text-xs">PUBLIC_API_URL</td>
-                            <td class="p-3">Backend API URL</td>
-                            <td class="p-3 font-mono text-xs">http://localhost:8080</td>
+                            <td class="p-3 font-mono text-xs">API_KEY_SECRET</td>
+                            <td class="p-3">Encryption key (32+ chars)</td>
+                            <td class="p-3 font-mono text-xs">your_32_character_secret_key_here</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+            <p class="text-sm text-muted-foreground mt-3">
+                Database migrations run automatically on first start.
+            </p>
         </div>
 
         <div>
@@ -154,8 +150,8 @@ docker compose up -d`}
                 <CodeBlock
                     lang="bash"
                     code={`# In your .env file
-LOGWARD_BACKEND_IMAGE=logward/backend:0.2.4
-LOGWARD_FRONTEND_IMAGE=logward/frontend:0.2.4`}
+LOGWARD_BACKEND_IMAGE=logward/backend:0.3.0
+LOGWARD_FRONTEND_IMAGE=logward/frontend:0.3.0`}
                 />
             </CardContent>
         </Card>
@@ -172,12 +168,278 @@ LOGWARD_FRONTEND_IMAGE=logward/frontend:0.2.4`}
                         Ready to Go
                     </p>
                     <p class="text-sm text-muted-foreground">
-                        Access LogWard at <code>http://localhost:3000</code> -
-                        database migrations run automatically on first start.
+                        Frontend: <code>http://localhost:3000</code> | API: <code>http://localhost:8080</code>
                     </p>
                 </div>
             </div>
         </div>
+    </div>
+
+    <h2
+        id="remote-deployment"
+        class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
+    >
+        Remote Deployment
+    </h2>
+
+    <div class="mb-12 space-y-6">
+        <Card class="border-yellow-500/30 bg-yellow-500/5">
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <AlertCircle class="w-5 h-5 text-yellow-500 mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Important: Configure API URL</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                <p class="mb-3">
+                    When deploying on a remote server (not localhost), you must configure
+                    <code>PUBLIC_API_URL</code> so the frontend knows where to find the backend.
+                </p>
+                <p>
+                    Without this, users accessing <code>http://your-server:3000</code> will get errors
+                    because the frontend will try to connect to <code>localhost:8080</code> (which doesn't exist on their machine).
+                </p>
+            </CardContent>
+        </Card>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Configure for Remote Access</h3>
+            <p class="text-sm text-muted-foreground mb-3">
+                In your <code>.env</code> file, set the public URL where the backend API is accessible:
+            </p>
+            <CodeBlock
+                lang="bash"
+                code={`# .env file on your server
+
+# Replace with your server's IP or domain
+PUBLIC_API_URL=http://your-server-ip:8080
+
+# Or if using a domain
+PUBLIC_API_URL=https://api.yourdomain.com`}
+            />
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Example: VPS Deployment</h3>
+            <CodeBlock
+                lang="bash"
+                code={`# Server IP: 192.168.1.100
+
+# .env configuration
+DB_PASSWORD=secure_password
+REDIS_PASSWORD=secure_password
+API_KEY_SECRET=your_32_character_secret_key_here
+PUBLIC_API_URL=http://192.168.1.100:8080
+
+# Access points:
+# Frontend: http://192.168.1.100:3000
+# API: http://192.168.1.100:8080`}
+            />
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">With Reverse Proxy (nginx/Traefik)</h3>
+            <p class="text-sm text-muted-foreground mb-3">
+                If you're using a reverse proxy in front of LogWard, configure accordingly:
+            </p>
+            <CodeBlock
+                lang="bash"
+                code={`# With nginx/Traefik proxying to LogWard
+
+# If frontend and API are on same domain (recommended)
+# nginx proxies / to frontend:3000 and /api to backend:8080
+PUBLIC_API_URL=
+
+# If API is on a subdomain
+# frontend at example.com, api at api.example.com
+PUBLIC_API_URL=https://api.example.com`}
+            />
+        </div>
+
+        <Card>
+            <CardHeader>
+                <CardTitle class="text-base">Quick Reference: PUBLIC_API_URL</CardTitle>
+            </CardHeader>
+            <CardContent class="text-sm">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm border border-border rounded-lg">
+                        <thead class="bg-muted">
+                            <tr>
+                                <th class="text-left p-3 border-b border-border">Scenario</th>
+                                <th class="text-left p-3 border-b border-border">PUBLIC_API_URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="p-3 border-b border-border">Local development</td>
+                                <td class="p-3 border-b border-border font-mono text-xs">http://localhost:8080</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 border-b border-border">Remote server (IP)</td>
+                                <td class="p-3 border-b border-border font-mono text-xs">http://192.168.1.100:8080</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 border-b border-border">With domain</td>
+                                <td class="p-3 border-b border-border font-mono text-xs">https://api.example.com</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 border-b border-border">Same-origin proxy</td>
+                                <td class="p-3 border-b border-border font-mono text-xs">(empty - uses relative URLs)</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3">LogWard Cloud</td>
+                                <td class="p-3 font-mono text-xs">https://api.logward.dev</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </CardContent>
+        </Card>
+    </div>
+
+    <h2
+        id="horizontal-scaling"
+        class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
+    >
+        Horizontal Scaling
+    </h2>
+
+    <div class="mb-12 space-y-6">
+        <Card>
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <Layers class="w-5 h-5 text-primary mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Scale Without Code Changes</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                LogWard is designed for horizontal scaling. Backend and worker services are
+                stateless - all state is stored in PostgreSQL and Redis. For high availability,
+                use the Traefik overlay to run multiple backend instances behind a load balancer.
+            </CardContent>
+        </Card>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Enable Horizontal Scaling</h3>
+            <p class="text-sm text-muted-foreground mb-3">
+                The default <code>docker-compose.yml</code> runs a single instance of each service.
+                For horizontal scaling, download and use the Traefik overlay:
+            </p>
+            <CodeBlock
+                lang="bash"
+                code={`# Download Traefik overlay (adds load balancer)
+curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/docker-compose.traefik.yml
+
+# Start with horizontal scaling support
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+
+# Scale to 3 backend instances and 2 workers
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --scale backend=3 --scale worker=2
+
+# Check running instances
+docker compose ps`}
+            />
+        </div>
+
+        <Card class="border-yellow-500/30 bg-yellow-500/5">
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <AlertCircle class="w-5 h-5 text-yellow-500 mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Traefik Changes Access URLs</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                <p class="mb-2">
+                    When using the Traefik overlay, access changes to a single port:
+                </p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong>With Traefik:</strong> <code>http://localhost:3080</code> (frontend + API on same port)</li>
+                    <li><strong>Without Traefik:</strong> Frontend at <code>:3000</code>, API at <code>:8080</code></li>
+                </ul>
+                <p class="mt-2">
+                    The <code>LOGWARD_PORT</code> environment variable controls the Traefik port (default: 3080).
+                </p>
+            </CardContent>
+        </Card>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Architecture</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm border border-border rounded-lg">
+                    <thead class="bg-muted">
+                        <tr>
+                            <th class="text-left p-3 border-b border-border">Component</th>
+                            <th class="text-left p-3 border-b border-border">Default</th>
+                            <th class="text-left p-3 border-b border-border">With Traefik</th>
+                            <th class="text-left p-3 border-b border-border">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">Traefik</td>
+                            <td class="p-3 border-b border-border text-muted-foreground">-</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">Load balancer, reverse proxy</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">Backend</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">N instances</td>
+                            <td class="p-3 border-b border-border">Stateless API servers</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">Worker</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">N instances</td>
+                            <td class="p-3 border-b border-border">Background job processors (BullMQ)</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">Frontend</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">N instances</td>
+                            <td class="p-3 border-b border-border">SvelteKit SSR</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">Redis</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">1 instance</td>
+                            <td class="p-3 border-b border-border">Rate limiting, job queues, cache</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 font-mono text-xs">PostgreSQL</td>
+                            <td class="p-3">1 instance</td>
+                            <td class="p-3">1 instance</td>
+                            <td class="p-3">TimescaleDB for time-series data</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <Card class="border-blue-500/30 bg-blue-500/5">
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <Scale class="w-5 h-5 text-blue-500 mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Why Scaling Works</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong>Rate limiting:</strong> Stored in Redis (shared across all backend instances)</li>
+                    <li><strong>Sessions:</strong> Stored in Redis (no sticky sessions required)</li>
+                    <li><strong>Job queues:</strong> BullMQ distributes work across all workers automatically</li>
+                    <li><strong>Health checks:</strong> Traefik removes unhealthy instances from rotation</li>
+                </ul>
+            </CardContent>
+        </Card>
     </div>
 
     <h2
@@ -259,6 +521,9 @@ docker compose ps
 
 # Check backend health
 curl http://localhost:8080/health
+
+# With Traefik overlay
+curl http://localhost:3080/health
 
 # Check database
 docker compose exec postgres psql -U logward -d logward -c "SELECT COUNT(*) FROM logs;"`}

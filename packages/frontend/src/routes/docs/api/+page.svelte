@@ -8,12 +8,16 @@
     <Breadcrumbs />
 
     <h1 class="text-3xl font-bold mb-4">API Reference</h1>
-    <p class="text-lg text-muted-foreground mb-8">
-        Complete API documentation for LogWard. Base URL: <code
-            class="px-1.5 py-0.5 bg-muted rounded text-sm"
-            >http://localhost:8080/api/v1</code
-        >
+    <p class="text-lg text-muted-foreground mb-4">
+        Complete API documentation for LogWard.
     </p>
+    <div class="mb-8 text-sm">
+        <p class="font-semibold mb-2">Base URL:</p>
+        <ul class="space-y-1 ml-4">
+            <li><strong>Cloud:</strong> <code class="px-1.5 py-0.5 bg-muted rounded">https://api.logward.dev/api/v1</code></li>
+            <li><strong>Self-Hosted:</strong> <code class="px-1.5 py-0.5 bg-muted rounded">http://localhost:8080/api/v1</code> (or your domain)</li>
+        </ul>
+    </div>
 
     <h2
         id="authentication"

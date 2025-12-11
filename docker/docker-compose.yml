@@ -5,52 +5,19 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: logward-postgres
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME:-logward}
+      POSTGRES_USER: ${DB_USER:-logward}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=100"
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "effective_cache_size=768MB"
-      - "-c"
-      - "work_mem=16MB"
-      - "-c"
-      - "maintenance_work_mem=128MB"
-      # Parallel query settings for faster aggregations
-      - "-c"
-      - "max_parallel_workers_per_gather=4"
-      - "-c"
-      - "max_parallel_workers=8"
-      - "-c"
-      - "parallel_tuple_cost=0.01"
-      - "-c"
-      - "parallel_setup_cost=100"
-      - "-c"
-      - "min_parallel_table_scan_size=8MB"
-      # Write-ahead log tuning for ingestion
-      - "-c"
-      - "wal_buffers=16MB"
-      - "-c"
-      - "checkpoint_completion_target=0.9"
-      # Logging for slow queries (>100ms)
-      - "-c"
-      - "log_min_duration_statement=100"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-logward}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    networks:
-      - logward-network
 
   redis:
     image: redis:7-alpine
@@ -66,8 +33,6 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    networks:
-      - logward-network
 
   backend:
     image: ${LOGWARD_BACKEND_IMAGE:-logward/backend:latest}
@@ -76,9 +41,9 @@ services:
       - "8080:8080"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      DATABASE_URL: postgresql://${DB_USER:-logward}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-logward}
       DATABASE_HOST: postgres
-      DB_USER: ${DB_USER}
+      DB_USER: ${DB_USER:-logward}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       API_KEY_SECRET: ${API_KEY_SECRET}
       PORT: 8080
@@ -88,29 +53,28 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@logward.local}
-      INTERNAL_LOGGING_ENABLED: ${INTERNAL_LOGGING_ENABLED:-false}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      SERVICE_NAME: logward-backend
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
-    networks:
-      - logward-network
 
   worker:
     image: ${LOGWARD_BACKEND_IMAGE:-logward/backend:latest}
     container_name: logward-worker
     command: ["worker"]
-    healthcheck:
-      disable: true
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      DATABASE_URL: postgresql://${DB_USER:-logward}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-logward}
       DATABASE_HOST: postgres
-      DB_USER: ${DB_USER}
+      DB_USER: ${DB_USER:-logward}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       API_KEY_SECRET: ${API_KEY_SECRET}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -118,17 +82,12 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@logward.local}
-      INTERNAL_LOGGING_ENABLED: ${INTERNAL_LOGGING_ENABLED:-false}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      SERVICE_NAME: logward-worker
     depends_on:
-      backend:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - logward-network
 
   frontend:
     image: ${LOGWARD_FRONTEND_IMAGE:-logward/frontend:latest}
@@ -141,34 +100,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    networks:
-      - logward-network
-
-  fluent-bit:
-    image: fluent/fluent-bit:latest
-    container_name: logward-fluent-bit
-    volumes:
-      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-      - ./parsers.conf:/fluent-bit/etc/parsers.conf:ro
-      - ./extract_container_id.lua:/fluent-bit/etc/extract_container_id.lua:ro
-      - ./wrap_logs.lua:/fluent-bit/etc/wrap_logs.lua:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      LOGWARD_API_KEY: ${FLUENT_BIT_API_KEY:-}
-      LOGWARD_API_HOST: backend
-    depends_on:
-      - backend
-    restart: unless-stopped
-    networks:
-      - logward-network
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
-
-networks:
-  logward-network:
-    driver: bridge

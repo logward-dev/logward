@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth';
   import { organizationStore } from '$lib/stores/organization';
   import { toastStore } from '$lib/stores/toast';
@@ -13,12 +14,15 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import Footer from '$lib/components/Footer.svelte';
 
-  let email = '';
-  let password = '';
-  let error = '';
-  let loading = false;
-  let emailError = '';
-  let passwordError = '';
+  // Get redirect URL from query params (e.g., for invitation flow)
+  let redirectUrl = $derived($page.url.searchParams.get('redirect'));
+
+  let email = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
+  let emailError = $state('');
+  let passwordError = $state('');
   let token = $state<string | null>(null);
   let organizationsAPI = $derived(new OrganizationsAPI(() => token));
 
@@ -68,7 +72,10 @@
 
       toastStore.success('Welcome back!');
 
-      if (orgs.length === 0) {
+      // If there's a redirect URL (e.g., invitation), go there
+      if (redirectUrl) {
+        goto(redirectUrl);
+      } else if (orgs.length === 0) {
         // No organizations -> redirect to onboarding tutorial
         goto('/onboarding');
       } else {
@@ -100,7 +107,7 @@
           </div>
       </CardHeader>
 
-      <form on:submit|preventDefault={handleSubmit}>
+      <form onsubmit={(e: SubmitEvent) => { e.preventDefault(); handleSubmit(); }}>
         <CardContent class="space-y-4">
           {#if error}
             <Alert variant="destructive">
@@ -153,7 +160,7 @@
 
           <p class="text-sm text-muted-foreground text-center">
             Don't have an account?
-            <a href="/register" class="text-primary hover:underline">Sign up</a>
+            <a href="/register{redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : ''}" class="text-primary hover:underline">Sign up</a>
           </p>
         </CardFooter>
       </form>

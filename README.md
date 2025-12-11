@@ -15,7 +15,7 @@
   <a href="https://github.com/logward-dev/logward/actions/workflows/ci.yml"><img src="https://github.com/logward-dev/logward/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/logward-dev/logward"><img src="https://codecov.io/gh/logward-dev/logward/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://hub.docker.com/r/logward/backend"><img src="https://img.shields.io/docker/v/logward/backend?label=docker&logo=docker" alt="Docker"></a>
-  <img src="https://img.shields.io/badge/version-0.2.4-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status">
   <img src="https://img.shields.io/badge/cloud-free_during_alpha-success.svg" alt="Free Cloud">
@@ -50,6 +50,9 @@ Designed for developers and European SMBs who need **GDPR compliance**, **data o
 ### Distributed Tracing
 ![LogWard Traces](docs/images/traces.png)
 
+### SIEM Dashboard
+![LogWard Security](docs/images/security.png)
+
 ### Alerts & Notifications
 ![LogWard Alerts](docs/images/alerts.png)
 
@@ -78,88 +81,19 @@ Total control over your data. **No build required** - uses pre-built images from
 
 **Prerequisites:** Docker & Docker Compose.
 
-1.  **Create `docker-compose.yml`**
-    ```yaml
-    services:
-      postgres:
-        image: timescale/timescaledb:latest-pg16
-        environment:
-          POSTGRES_DB: logward
-          POSTGRES_USER: logward
-          POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
-        volumes:
-          - postgres_data:/var/lib/postgresql/data
-        healthcheck:
-          test: ["CMD-SHELL", "pg_isready -U logward"]
-          interval: 10s
-          timeout: 5s
-          retries: 5
-
-      redis:
-        image: redis:7-alpine
-        command: redis-server --requirepass ${REDIS_PASSWORD:-password}
-        volumes:
-          - redis_data:/data
-        healthcheck:
-          test: ["CMD", "sh", "-c", "redis-cli -a ${REDIS_PASSWORD:-password} ping | grep -q PONG"]
-          interval: 10s
-          timeout: 3s
-          retries: 5
-
-      backend:
-        image: logward/backend:latest
-        ports:
-          - "8080:8080"
-        environment:
-          DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
-          DATABASE_HOST: postgres
-          DB_USER: logward
-          REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
-          API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
-        depends_on:
-          postgres:
-            condition: service_healthy
-          redis:
-            condition: service_healthy
-        healthcheck:
-          test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
-          interval: 30s
-          timeout: 3s
-          retries: 3
-          start_period: 40s
-
-      worker:
-        image: logward/backend:latest
-        command: ["worker"]
-        environment:
-          DATABASE_URL: postgresql://logward:${DB_PASSWORD:-password}@postgres:5432/logward
-          DATABASE_HOST: postgres
-          DB_USER: logward
-          REDIS_URL: redis://:${REDIS_PASSWORD:-password}@redis:6379
-          API_KEY_SECRET: ${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
-        depends_on:
-          backend:
-            condition: service_healthy
-          redis:
-            condition: service_healthy
-
-      frontend:
-        image: logward/frontend:latest
-        ports:
-          - "3000:3000"
-        environment:
-          PUBLIC_API_URL: http://localhost:8080
-        depends_on:
-          - backend
-
-    volumes:
-      postgres_data:
-      redis_data:
+1.  **Download configuration**
+    ```bash
+    mkdir logward && cd logward
+    curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/docker-compose.yml
+    curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/.env.example
+    mv .env.example .env
     ```
 
-    > **Note:** Database migrations run automatically when the backend starts. When upgrading, just pull the new images and restart.
-
-2.  **Create `.env`** with secure passwords
+2.  **Edit `.env`** with secure passwords
+    ```bash
+    nano .env
+    ```
+    Required variables:
     ```bash
     DB_PASSWORD=your_secure_db_password
     REDIS_PASSWORD=your_secure_redis_password
@@ -172,13 +106,17 @@ Total control over your data. **No build required** - uses pre-built images from
     ```
 
 4.  **Access LogWard**
-    * **URL:** `http://localhost:3000`
+    * **Frontend:** `http://localhost:3000`
+    * **API:** `http://localhost:8080`
     * **First Time?** Click "Sign up" to create your account
-    * **Then:** Create your first organization and project
+
+> **Note:** Database migrations run automatically on first start.
 
 **Docker Images:** [Docker Hub](https://hub.docker.com/r/logward/backend) | [GitHub Container Registry](https://github.com/logward-dev/logward/pkgs/container/logward-backend)
 
-> **Production:** Pin versions with `image: logward/backend:0.2.4` instead of `latest`.
+> **Production:** Pin versions with `LOGWARD_BACKEND_IMAGE=logward/backend:0.3.0` in your `.env` file.
+
+> **Horizontal Scaling:** For scaling multiple backend instances, see [deployment docs](https://logward.dev/docs/deployment#horizontal-scaling).
 
 ---
 
@@ -192,7 +130,8 @@ We have ready-to-use SDKs for the most popular languages.
 | **Python** | ✅ Ready | [`logward-sdk`](https://pypi.org/project/logward-sdk/) |
 | **Go** | ✅ Ready | [`logward-sdk-go`](https://github.com/logward-dev/logward-sdk-go) |
 | **PHP** | ✅ Ready | [`logward-dev/sdk-php`](https://packagist.org/packages/logward-dev/sdk-php) |
-| **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](#) |
+| **Kotlin** | ✅ Ready | [`logward-sdk-kotlin`](https://github.com/logward-dev/logward-sdk-kotlin) |
+| **C# / .NET** | ✅ Ready | [`LogWard.SDK`](https://github.com/logward-dev/lgoward-sdk-csharp) |
 | **Docker** | ✅ Ready | Use Fluent Bit / Syslog driver |
 | **HTTP** | ✅ Ready | [API Reference](#) |
 | **OpenTelemetry** | ✅ Ready | OTLP endpoint (logs + traces) |
@@ -207,7 +146,8 @@ We have ready-to-use SDKs for the most popular languages.
 * ✅ **Multi-Organization:** Isolate teams and projects strictly.
 * ✅ **Alerting:** Get notified via Email or Webhook (Slack/Discord) on error spikes.
 * ✅ **Retention Policy:** Automatic cleanup of old logs via TimescaleDB.
-* ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs, effectively turning LogWard into a lightweight SIEM for threat detection.
+* ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs for threat detection.
+* ✅ **SIEM Dashboard:** Security dashboard with incident management, MITRE ATT&CK mapping, and PDF report export. *(New in 0.3.0)*
 * ✅ **OpenTelemetry Support:** Native OTLP ingestion for logs and traces (protobuf + JSON).
 * ✅ **Distributed Tracing:** Trace viewer with span timeline, service dependencies graph, and trace-to-logs correlation.
 
@@ -236,6 +176,27 @@ detection:
     condition: selection
 level: high
 ```
+
+---
+
+## 🚨 SIEM Dashboard & Incident Management (New in 0.3.0)
+
+LogWard now includes a full-featured **Security Information and Event Management (SIEM)** dashboard, turning your log platform into a lightweight security operations center.
+
+### Security Dashboard
+* **Summary Stats:** Total detections, open incidents, critical alerts at a glance
+* **Top Threats Chart:** Sigma rules ranked by detection count
+* **Detection Timeline:** Time-series visualization of security events
+* **Affected Services:** Quick view of which services triggered detections
+* **Severity Distribution:** Pie chart breakdown (Critical/High/Medium/Low)
+* **MITRE ATT&CK Heatmap:** Visualize detected techniques across the ATT&CK matrix
+
+### Incident Management
+* **Incident Workflow:** Track incidents through Open → Investigating → Resolved → False Positive
+* **Comments & Collaboration:** Add notes and discuss incidents with your team
+* **Activity Timeline:** Full audit trail of all status changes and actions
+* **Detection Events:** View matched fields and log context for each detection
+* **PDF Export:** Generate incident reports for compliance and documentation
 
 ---
 

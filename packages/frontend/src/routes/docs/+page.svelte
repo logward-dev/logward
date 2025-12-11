@@ -194,88 +194,17 @@ curl -X POST https://api.logward.dev/api/v1/ingest \\
                 </CardHeader>
                 <CardContent class="space-y-4">
                     <p class="text-sm text-muted-foreground">
-                        1. Create a <code>docker-compose.yml</code> file:
+                        1. Download configuration files:
                     </p>
                     <CodeBlock
-                        lang="yaml"
-                        code={`services:
-  postgres:
-    image: timescale/timescaledb:latest-pg16
-    environment:
-      POSTGRES_DB: logward
-      POSTGRES_USER: logward
-      POSTGRES_PASSWORD: \${DB_PASSWORD:-password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U logward"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    command: redis-server --requirepass \${REDIS_PASSWORD:-password}
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "sh", "-c", "redis-cli -a \${REDIS_PASSWORD:-password} ping | grep -q PONG"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  backend:
-    image: logward/backend:latest
-    ports:
-      - "8080:8080"
-    environment:
-      DATABASE_URL: postgresql://logward:\${DB_PASSWORD:-password}@postgres:5432/logward
-      DATABASE_HOST: postgres
-      DB_USER: logward
-      REDIS_URL: redis://:\${REDIS_PASSWORD:-password}@redis:6379
-      API_KEY_SECRET: \${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 40s
-
-  worker:
-    image: logward/backend:latest
-    command: ["worker"]
-    environment:
-      DATABASE_URL: postgresql://logward:\${DB_PASSWORD:-password}@postgres:5432/logward
-      DATABASE_HOST: postgres
-      DB_USER: logward
-      REDIS_URL: redis://:\${REDIS_PASSWORD:-password}@redis:6379
-      API_KEY_SECRET: \${API_KEY_SECRET:-change_me_32_chars_secret_key!!}
-    depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  frontend:
-    image: logward/frontend:latest
-    ports:
-      - "3000:3000"
-    environment:
-      PUBLIC_API_URL: http://localhost:8080
-    depends_on:
-      - backend
-
-volumes:
-  postgres_data:
-  redis_data:`}
+                        lang="bash"
+                        code={`mkdir logward && cd logward
+curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/docker-compose.yml
+curl -O https://raw.githubusercontent.com/logward-dev/logward/main/docker/.env.example
+mv .env.example .env`}
                     />
                     <p class="text-sm text-muted-foreground">
-                        2. Create a <code>.env</code> file with secure passwords:
+                        2. Edit <code>.env</code> with secure passwords:
                     </p>
                     <CodeBlock
                         lang="bash"
@@ -290,10 +219,11 @@ API_KEY_SECRET=your_32_character_secret_key_here`}
                         lang="bash"
                         code={`docker compose up -d
 
-# Access LogWard at http://localhost:3000`}
+# Frontend: http://localhost:3000
+# API: http://localhost:8080`}
                     />
                     <p class="text-xs text-muted-foreground mt-2">
-                        <strong>Note:</strong> Database migrations run automatically when the backend starts.
+                        <strong>Note:</strong> Database migrations run automatically on first start.
                     </p>
                 </CardContent>
             </Card>
@@ -431,7 +361,7 @@ API_KEY_SECRET=your_32_character_secret_key_here`}
 
             <div>
                 <h4 class="text-sm font-semibold mb-2">
-                    Self-Hosted (localhost:8080)
+                    Self-Hosted
                 </h4>
                 <CodeBlock
                     lang="bash"

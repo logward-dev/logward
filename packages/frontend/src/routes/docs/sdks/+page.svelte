@@ -29,7 +29,7 @@
                 <p class="text-sm text-muted-foreground mb-2">
                     No problem! LogWard supports stdout-based logging for
                     <strong>any language</strong> (Rust, Ruby, Java, .NET, etc.).
-                    Just write to stdout and let Fluent Bit collect your logs automatically.
+                    Just write to stdout and configure Fluent Bit to collect your logs.
                 </p>
                 <a
                     href="/docs/no-sdk-setup"
@@ -276,6 +276,53 @@
                         </ul>
                     </div>
                     <a href="/docs/sdks/kotlin">
+                        <Button variant="outline" size="sm" class="w-full mt-2"
+                            >View Documentation</Button
+                        >
+                    </a>
+                </div>
+            </CardContent>
+        </Card>
+
+        <!-- C# / .NET SDK -->
+        <Card>
+            <CardHeader>
+                <div class="flex items-center justify-between">
+                    <CardTitle class="flex items-center gap-2">
+                        <Package class="w-5 h-5 text-primary" />
+                        C# / .NET SDK
+                    </CardTitle>
+                    <a
+                        href="https://github.com/logward-dev/lgoward-sdk-csharp"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <Button variant="ghost" size="sm" class="gap-1">
+                            <ExternalLink class="w-4 h-4" />
+                        </Button>
+                    </a>
+                </div>
+                <CardDescription
+                    >Official SDK for .NET 6/7/8 applications</CardDescription
+                >
+            </CardHeader>
+            <CardContent>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm font-semibold mb-1">Installation:</p>
+                        <code class="text-xs bg-muted px-2 py-1 rounded"
+                            >dotnet add package LogWard.SDK</code
+                        >
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold mb-1">Features:</p>
+                        <ul class="text-sm text-muted-foreground space-y-1">
+                            <li>✅ ASP.NET Core middleware</li>
+                            <li>✅ Dependency injection support</li>
+                            <li>✅ Full async/await & thread-safe</li>
+                        </ul>
+                    </div>
+                    <a href="/docs/sdks/csharp">
                         <Button variant="outline" size="sm" class="w-full mt-2"
                             >View Documentation</Button
                         >

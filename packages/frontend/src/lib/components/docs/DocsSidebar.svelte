@@ -57,6 +57,7 @@
                 { title: "Go", href: "/docs/sdks/go" },
                 { title: "PHP", href: "/docs/sdks/php" },
                 { title: "Kotlin", href: "/docs/sdks/kotlin" },
+                { title: "C# / .NET", href: "/docs/sdks/csharp" },
             ],
         },
         {
@@ -222,11 +223,6 @@
     .section-header:hover {
         background: hsl(var(--muted) / 0.5);
         color: hsl(var(--foreground));
-    }
-
-    .chevron :global(svg) {
-        flex-shrink: 0;
-        transition: transform 0.2s;
     }
 
     .section-title {

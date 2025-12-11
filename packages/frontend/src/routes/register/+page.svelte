@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth';
   import { toastStore } from '$lib/stores/toast';
   import { authAPI } from '$lib/api/auth';
@@ -11,16 +12,19 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import Footer from '$lib/components/Footer.svelte';
 
-  let name = '';
-  let email = '';
-  let password = '';
-  let confirmPassword = '';
-  let error = '';
-  let loading = false;
-  let nameError = '';
-  let emailError = '';
-  let passwordError = '';
-  let confirmPasswordError = '';
+  // Get redirect URL from query params (e.g., for invitation flow)
+  let redirectUrl = $derived($page.url.searchParams.get('redirect'));
+
+  let name = $state('');
+  let email = $state('');
+  let password = $state('');
+  let confirmPassword = $state('');
+  let error = $state('');
+  let loading = $state(false);
+  let nameError = $state('');
+  let emailError = $state('');
+  let passwordError = $state('');
+  let confirmPasswordError = $state('');
 
   function validateForm(): boolean {
     nameError = '';
@@ -75,8 +79,13 @@
       authStore.setAuth(response.user, response.session.token);
       toastStore.success('Account created successfully!');
 
-      // New users don't have organizations yet -> redirect to onboarding tutorial
-      goto('/onboarding');
+      // If there's a redirect URL (e.g., invitation), go there; otherwise go to onboarding
+      if (redirectUrl) {
+        goto(redirectUrl);
+      } else {
+        // New users don't have organizations yet -> redirect to onboarding tutorial
+        goto('/onboarding');
+      }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : 'Registration failed';
       error = errorMsg;
@@ -102,7 +111,7 @@
             </div>
         </CardHeader>
 
-      <form on:submit|preventDefault={handleSubmit}>
+      <form onsubmit={(e: SubmitEvent) => { e.preventDefault(); handleSubmit(); }}>
         <CardContent class="space-y-4">
           {#if error}
             <Alert variant="destructive">
@@ -187,7 +196,7 @@
 
           <p class="text-sm text-muted-foreground text-center">
             Already have an account?
-            <a href="/login" class="text-primary hover:underline">Sign in</a>
+            <a href="/login{redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : ''}" class="text-primary hover:underline">Sign in</a>
           </p>
         </CardFooter>
       </form>

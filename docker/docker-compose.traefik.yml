@@ -1,0 +1,97 @@
+# Advanced Docker Compose with Traefik Reverse Proxy
+# ===================================================
+#
+# Use this configuration when you need:
+# - Horizontal scaling (multiple backend/worker instances)
+# - Single entry point (one port for everything)
+# - Load balancing across instances
+# - Automatic container discovery
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+#
+# Scale instances:
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --scale backend=3 --scale worker=2
+#
+# Access:
+#   - LogWard UI: http://localhost:3080
+#   - Traefik Dashboard: http://localhost:8081 (dev only)
+
+version: '3.8'
+
+services:
+  # Traefik reverse proxy - single entry point
+  traefik:
+    image: traefik:v3.2
+    container_name: logward-traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entryPoints.web.address=:80"
+      - "--ping=true"
+      - "--accesslog=true"
+    ports:
+      - "${LOGWARD_PORT:-3080}:80"
+      - "8081:8080"  # Traefik dashboard (remove in production)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Override backend for Traefik integration
+  backend:
+    # Remove container_name for scaling
+    container_name: ""
+    # Remove direct port exposure (access via Traefik only)
+    ports: []
+    environment:
+      # Trust proxy headers from Traefik
+      TRUST_PROXY: "true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/health`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=8080"
+      - "traefik.http.services.backend.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.backend.loadbalancer.healthcheck.interval=10s"
+    deploy:
+      replicas: ${BACKEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # Override worker for scaling
+  worker:
+    container_name: ""
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Override frontend for Traefik integration
+  frontend:
+    container_name: ""
+    ports: []
+    environment:
+      # Empty = relative URLs (works with Traefik)
+      PUBLIC_API_URL: ""
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    deploy:
+      replicas: ${FRONTEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
