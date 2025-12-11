@@ -127,17 +127,6 @@
         opacity: 0.8;
     }
 
-    .brand-text {
-        background: linear-gradient(
-            135deg,
-            hsl(var(--primary)),
-            hsl(var(--accent))
-        );
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
     .navbar-links {
         display: flex;
         align-items: center;

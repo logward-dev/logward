@@ -15,16 +15,16 @@
   // Get redirect URL from query params (e.g., for invitation flow)
   let redirectUrl = $derived($page.url.searchParams.get('redirect'));
 
-  let name = '';
-  let email = '';
-  let password = '';
-  let confirmPassword = '';
-  let error = '';
-  let loading = false;
-  let nameError = '';
-  let emailError = '';
-  let passwordError = '';
-  let confirmPasswordError = '';
+  let name = $state('');
+  let email = $state('');
+  let password = $state('');
+  let confirmPassword = $state('');
+  let error = $state('');
+  let loading = $state(false);
+  let nameError = $state('');
+  let emailError = $state('');
+  let passwordError = $state('');
+  let confirmPasswordError = $state('');
 
   function validateForm(): boolean {
     nameError = '';
@@ -111,7 +111,7 @@
             </div>
         </CardHeader>
 
-      <form on:submit|preventDefault={handleSubmit}>
+      <form onsubmit={(e: SubmitEvent) => { e.preventDefault(); handleSubmit(); }}>
         <CardContent class="space-y-4">
           {#if error}
             <Alert variant="destructive">

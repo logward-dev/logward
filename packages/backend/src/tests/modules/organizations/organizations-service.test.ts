@@ -1,7 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { db } from '../../../database/index.js';
 import { OrganizationsService } from '../../../modules/organizations/service.js';
 import { createTestUser, createTestOrganization, createTestContext } from '../../helpers/factories.js';
+
+// Mock the notifications service
+vi.mock('../../../modules/notifications/service.js', () => ({
+    notificationsService: {
+        createNotification: vi.fn(() => Promise.resolve({ id: 'test-notification-id' })),
+    },
+}));
 
 describe('OrganizationsService', () => {
     let orgService: OrganizationsService;
@@ -319,6 +326,587 @@ describe('OrganizationsService', () => {
             await expect(
                 orgService.getOrganizationMembers(organization.id, outsider.id)
             ).rejects.toThrow('You do not have access to this organization');
+        });
+    });
+
+    describe('getOrganizationBySlug', () => {
+        it('should return organization by slug', async () => {
+            const user = await createTestUser();
+
+            const created = await orgService.createOrganization({
+                userId: user.id,
+                name: 'Slug Test Org',
+            });
+
+            const result = await orgService.getOrganizationBySlug(created.slug, user.id);
+
+            expect(result).not.toBeNull();
+            expect(result?.id).toBe(created.id);
+            expect(result?.name).toBe('Slug Test Org');
+        });
+
+        it('should return null for non-existent slug', async () => {
+            const user = await createTestUser();
+
+            const result = await orgService.getOrganizationBySlug('non-existent-slug', user.id);
+
+            expect(result).toBeNull();
+        });
+
+        it('should return null if user is not a member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const outsider = await createTestUser({ email: 'outsider@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Private Org',
+            });
+
+            const result = await orgService.getOrganizationBySlug(org.slug, outsider.id);
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('deleteOrganization', () => {
+        it('should delete organization as owner', async () => {
+            const user = await createTestUser();
+
+            const org = await orgService.createOrganization({
+                userId: user.id,
+                name: 'To Delete',
+            });
+
+            await orgService.deleteOrganization(org.id, user.id);
+
+            const result = await orgService.getOrganizationById(org.id, user.id);
+            expect(result).toBeNull();
+        });
+
+        it('should throw error for non-existent organization', async () => {
+            const user = await createTestUser();
+
+            await expect(
+                orgService.deleteOrganization('00000000-0000-0000-0000-000000000000', user.id)
+            ).rejects.toThrow('Organization not found');
+        });
+
+        it('should throw error if user is not owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Protected Org',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .execute();
+
+            await expect(
+                orgService.deleteOrganization(org.id, member.id)
+            ).rejects.toThrow('Only the organization owner can delete it');
+        });
+    });
+
+    describe('getOrganizationMembersWithDetails', () => {
+        it('should return members with user details', async () => {
+            const { organization, user } = await createTestContext();
+
+            const members = await orgService.getOrganizationMembersWithDetails(
+                organization.id,
+                user.id
+            );
+
+            expect(members).toHaveLength(1);
+            expect(members[0].user).toBeDefined();
+            expect(members[0].user.email).toBe(user.email);
+            expect(members[0].user.name).toBe(user.name);
+        });
+
+        it('should throw error if user is not a member', async () => {
+            const { organization } = await createTestContext();
+            const outsider = await createTestUser({ email: 'outsider2@test.com' });
+
+            await expect(
+                orgService.getOrganizationMembersWithDetails(organization.id, outsider.id)
+            ).rejects.toThrow('You do not have access to this organization');
+        });
+    });
+
+    describe('isOwnerOrAdmin', () => {
+        it('should return true for owner', async () => {
+            const user = await createTestUser();
+
+            const org = await orgService.createOrganization({
+                userId: user.id,
+                name: 'Owner Test',
+            });
+
+            const result = await orgService.isOwnerOrAdmin(org.id, user.id);
+            expect(result).toBe(true);
+        });
+
+        it('should return true for admin', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const admin = await createTestUser({ email: 'admin@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Admin Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin.id,
+                    role: 'admin',
+                })
+                .execute();
+
+            const result = await orgService.isOwnerOrAdmin(org.id, admin.id);
+            expect(result).toBe(true);
+        });
+
+        it('should return false for member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Member Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const result = await orgService.isOwnerOrAdmin(org.id, member.id);
+            expect(result).toBe(false);
+        });
+
+        it('should return false for non-member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const outsider = await createTestUser({ email: 'outsider@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Non-Member Test',
+            });
+
+            const result = await orgService.isOwnerOrAdmin(org.id, outsider.id);
+            expect(result).toBe(false);
+        });
+    });
+
+    describe('updateMemberRole', () => {
+        it('should update member role as owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Role Update Test',
+            });
+
+            const membership = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await orgService.updateMemberRole(org.id, membership.id, 'admin', owner.id);
+
+            const updated = await db
+                .selectFrom('organization_members')
+                .select('role')
+                .where('id', '=', membership.id)
+                .executeTakeFirst();
+
+            expect(updated?.role).toBe('admin');
+        });
+
+        it('should throw error if non-owner/admin tries to change role', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member1 = await createTestUser({ email: 'member1@test.com' });
+            const member2 = await createTestUser({ email: 'member2@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Role Perm Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member1.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const membership2 = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member2.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.updateMemberRole(org.id, membership2.id, 'admin', member1.id)
+            ).rejects.toThrow('Only owners and admins can change member roles');
+        });
+
+        it('should throw error when trying to change owner role as non-owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const admin = await createTestUser({ email: 'admin@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Owner Role Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin.id,
+                    role: 'admin',
+                })
+                .execute();
+
+            const ownerMembership = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', owner.id)
+                .where('organization_id', '=', org.id)
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.updateMemberRole(org.id, ownerMembership.id, 'admin', admin.id)
+            ).rejects.toThrow('Only the owner can change the owner role');
+        });
+
+        it('should throw error when trying to promote to owner as non-owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const admin = await createTestUser({ email: 'admin@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Promote Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin.id,
+                    role: 'admin',
+                })
+                .execute();
+
+            const memberMembership = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.updateMemberRole(org.id, memberMembership.id, 'owner', admin.id)
+            ).rejects.toThrow('Only the owner can promote someone to owner');
+        });
+
+        it('should prevent owner from self-demotion', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Self Demotion Test',
+            });
+
+            const ownerMembership = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', owner.id)
+                .where('organization_id', '=', org.id)
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.updateMemberRole(org.id, ownerMembership.id, 'admin', owner.id)
+            ).rejects.toThrow('Cannot demote yourself from owner');
+        });
+
+        it('should throw error for non-existent member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Non-Existent Member Test',
+            });
+
+            await expect(
+                orgService.updateMemberRole(org.id, '00000000-0000-0000-0000-000000000000', 'admin', owner.id)
+            ).rejects.toThrow('Member not found');
+        });
+    });
+
+    describe('removeMember', () => {
+        it('should remove member as owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Remove Member Test',
+            });
+
+            const membership = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await orgService.removeMember(org.id, membership.id, owner.id);
+
+            const check = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('id', '=', membership.id)
+                .executeTakeFirst();
+
+            expect(check).toBeUndefined();
+        });
+
+        it('should throw error if not a member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const outsider = await createTestUser({ email: 'outsider@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Not Member Test',
+            });
+
+            await expect(
+                orgService.removeMember(org.id, '00000000-0000-0000-0000-000000000000', outsider.id)
+            ).rejects.toThrow('You are not a member of this organization');
+        });
+
+        it('should throw error for non-owner/admin', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member1 = await createTestUser({ email: 'member1@test.com' });
+            const member2 = await createTestUser({ email: 'member2@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Permission Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member1.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const membership2 = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member2.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.removeMember(org.id, membership2.id, member1.id)
+            ).rejects.toThrow('Only owners and admins can remove members');
+        });
+
+        it('should not allow removing yourself', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Self Remove Test',
+            });
+
+            const ownerMembership = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', owner.id)
+                .where('organization_id', '=', org.id)
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.removeMember(org.id, ownerMembership.id, owner.id)
+            ).rejects.toThrow('Cannot remove yourself');
+        });
+
+        it('should not allow removing owner', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const admin = await createTestUser({ email: 'admin@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Remove Owner Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin.id,
+                    role: 'admin',
+                })
+                .execute();
+
+            const ownerMembership = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', owner.id)
+                .where('organization_id', '=', org.id)
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.removeMember(org.id, ownerMembership.id, admin.id)
+            ).rejects.toThrow('Cannot remove the organization owner');
+        });
+
+        it('should not allow admin to remove other admin', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const admin1 = await createTestUser({ email: 'admin1@test.com' });
+            const admin2 = await createTestUser({ email: 'admin2@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Admin Remove Admin Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin1.id,
+                    role: 'admin',
+                })
+                .execute();
+
+            const admin2Membership = await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: admin2.id,
+                    role: 'admin',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            await expect(
+                orgService.removeMember(org.id, admin2Membership.id, admin1.id)
+            ).rejects.toThrow('Admins can only remove members');
+        });
+
+        it('should throw error for non-existent member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Non-Existent Remove Test',
+            });
+
+            await expect(
+                orgService.removeMember(org.id, '00000000-0000-0000-0000-000000000000', owner.id)
+            ).rejects.toThrow('Member not found');
+        });
+    });
+
+    describe('leaveOrganization', () => {
+        it('should allow member to leave', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const member = await createTestUser({ email: 'member@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Leave Test',
+            });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    organization_id: org.id,
+                    user_id: member.id,
+                    role: 'member',
+                })
+                .execute();
+
+            await orgService.leaveOrganization(org.id, member.id);
+
+            const check = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', member.id)
+                .where('organization_id', '=', org.id)
+                .executeTakeFirst();
+
+            expect(check).toBeUndefined();
+        });
+
+        it('should throw error for non-member', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+            const outsider = await createTestUser({ email: 'outsider@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Leave Non-Member Test',
+            });
+
+            await expect(
+                orgService.leaveOrganization(org.id, outsider.id)
+            ).rejects.toThrow('You are not a member of this organization');
+        });
+
+        it('should not allow owner to leave', async () => {
+            const owner = await createTestUser({ email: 'owner@test.com' });
+
+            const org = await orgService.createOrganization({
+                userId: owner.id,
+                name: 'Owner Leave Test',
+            });
+
+            await expect(
+                orgService.leaveOrganization(org.id, owner.id)
+            ).rejects.toThrow('Cannot leave as owner');
         });
     });
 });

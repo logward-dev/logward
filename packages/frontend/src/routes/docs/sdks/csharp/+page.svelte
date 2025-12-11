@@ -502,7 +502,7 @@ app.Run();`}
                         <tr>
                             <td class="p-3 border-b border-border"><code>SkipPaths</code></td>
                             <td class="p-3 border-b border-border">HashSet&lt;string&gt;</td>
-                            <td class="p-3 border-b border-border">{}</td>
+                            <td class="p-3 border-b border-border">{'{}' /* empty HashSet */}</td>
                             <td class="p-3 border-b border-border">Paths to skip</td>
                         </tr>
                         <tr>

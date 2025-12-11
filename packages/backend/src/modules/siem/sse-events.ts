@@ -193,6 +193,13 @@ export async function registerSiemSseRoutes(fastify: FastifyInstance) {
         // Keep connection open
         reply.hijack();
       } catch (error: any) {
+        // Handle Zod validation errors with 400
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error setting up SIEM SSE:', error);
         return reply.status(500).send({
           error: 'Failed to establish SSE connection',

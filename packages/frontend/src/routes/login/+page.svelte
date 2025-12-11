@@ -17,12 +17,12 @@
   // Get redirect URL from query params (e.g., for invitation flow)
   let redirectUrl = $derived($page.url.searchParams.get('redirect'));
 
-  let email = '';
-  let password = '';
-  let error = '';
-  let loading = false;
-  let emailError = '';
-  let passwordError = '';
+  let email = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
+  let emailError = $state('');
+  let passwordError = $state('');
   let token = $state<string | null>(null);
   let organizationsAPI = $derived(new OrganizationsAPI(() => token));
 
@@ -107,7 +107,7 @@
           </div>
       </CardHeader>
 
-      <form on:submit|preventDefault={handleSubmit}>
+      <form onsubmit={(e: SubmitEvent) => { e.preventDefault(); handleSubmit(); }}>
         <CardContent class="space-y-4">
           {#if error}
             <Alert variant="destructive">

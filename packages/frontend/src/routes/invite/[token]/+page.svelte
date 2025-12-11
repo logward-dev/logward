@@ -28,8 +28,8 @@
   }
 
   let token = $derived($page.params.token);
-  let user: any = null;
-  let authToken: string | null = null;
+  let user = $state<any>(null);
+  let authToken = $state<string | null>(null);
 
   let loading = $state(true);
   let accepting = $state(false);

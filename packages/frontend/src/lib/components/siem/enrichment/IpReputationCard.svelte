@@ -100,6 +100,7 @@
 		<div class="space-y-3">
 			{#each ipEntries as [ip, data]}
 				{@const config = getReputationConfig(data.reputation)}
+				{@const ReputationIcon = config.icon}
 				{@const isExpanded = expandedIps.has(ip)}
 				<div class="border rounded-lg p-3">
 					<button
@@ -112,7 +113,7 @@
 							<div class="flex items-center gap-2 flex-wrap">
 								<span class="font-mono text-sm font-medium">{ip}</span>
 								<Badge class={config.color}>
-									<svelte:component this={config.icon} class="w-3 h-3 mr-1" />
+									<ReputationIcon class="w-3 h-3 mr-1" />
 									{config.label}
 								</Badge>
 								{#if data.reputation === 'malicious'}

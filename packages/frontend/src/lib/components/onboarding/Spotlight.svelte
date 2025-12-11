@@ -33,7 +33,12 @@
 
   let targetRect = $state<DOMRect | null>(null);
   let windowSize = $state({ width: 0, height: 0 });
-  let calculatedPosition = $state(tooltipPosition);
+  let calculatedPosition = $state<'top' | 'bottom' | 'left' | 'right' | 'auto'>('auto');
+
+  // Sync calculatedPosition with tooltipPosition prop
+  $effect(() => {
+    calculatedPosition = tooltipPosition;
+  });
 
   function updateTargetRect() {
     if (!target) {

@@ -9,6 +9,9 @@
     } from "lucide-svelte";
     import { cn } from "$lib/utils";
     import Footer from "$lib/components/Footer.svelte";
+    import type { Snippet } from "svelte";
+
+    let { children }: { children: Snippet } = $props();
 
     const navigation = [
         {
@@ -82,7 +85,7 @@
 
     <div class="flex-1 overflow-auto flex flex-col">
         <main class="flex-1">
-            <slot />
+            {@render children()}
         </main>
         <Footer />
     </div>

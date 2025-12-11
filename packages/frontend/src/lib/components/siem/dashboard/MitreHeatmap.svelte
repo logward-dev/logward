@@ -13,7 +13,7 @@
 
 	let { cells, onCellClick }: Props = $props();
 
-	let chartContainer: HTMLDivElement;
+	let chartContainer = $state<HTMLDivElement | null>(null);
 	let chart: echarts.ECharts | null = null;
 
 	// MITRE ATT&CK tactic abbreviations (for compact display)
@@ -63,6 +63,7 @@
 	}
 
 	onMount(() => {
+		if (!chartContainer) return;
 		chart = echarts.init(chartContainer);
 		updateChart();
 

@@ -414,4 +414,274 @@ describe('Organizations Routes', () => {
             expect(response.statusCode).toBe(401);
         });
     });
+
+    describe('PUT /api/v1/organizations/:id/members/:memberId/role', () => {
+        it('should update member role as owner', async () => {
+            const member = await createTestUser({ email: 'member@test.com' });
+            const membership = await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${membership.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    role: 'admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(JSON.parse(response.payload).success).toBe(true);
+        });
+
+        it('should return 403 for regular member trying to change role', async () => {
+            const member1 = await createTestUser({ email: 'member1@test.com' });
+            const member2 = await createTestUser({ email: 'member2@test.com' });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member1.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const membership2 = await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member2.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const member1Session = await createTestSession(member1.id);
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${membership2.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${member1Session.token}`,
+                },
+                payload: {
+                    role: 'admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+
+        it('should return 404 for non-existent member', async () => {
+            const fakeId = '00000000-0000-0000-0000-000000000000';
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${fakeId}/role`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    role: 'admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(404);
+        });
+
+        it('should return 400 for invalid role value', async () => {
+            const member = await createTestUser({ email: 'member@test.com' });
+            const membership = await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${membership.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    role: 'invalid-role',
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+    });
+
+    describe('DELETE /api/v1/organizations/:id/members/:memberId', () => {
+        it('should remove member as owner', async () => {
+            const member = await createTestUser({ email: 'toremove@test.com' });
+            const membership = await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${membership.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(204);
+        });
+
+        it('should return 403 for regular member trying to remove', async () => {
+            const member1 = await createTestUser({ email: 'member1@test.com' });
+            const member2 = await createTestUser({ email: 'member2@test.com' });
+
+            await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member1.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const membership2 = await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member2.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const member1Session = await createTestSession(member1.id);
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${membership2.id}`,
+                headers: {
+                    Authorization: `Bearer ${member1Session.token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+
+        it('should return 404 for non-existent member', async () => {
+            const fakeId = '00000000-0000-0000-0000-000000000000';
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${fakeId}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(404);
+        });
+
+        it('should return 400 when owner tries to remove themselves', async () => {
+            const ownerMembership = await db
+                .selectFrom('organization_members')
+                .select('id')
+                .where('user_id', '=', testUser.id)
+                .where('organization_id', '=', testOrganization.id)
+                .executeTakeFirstOrThrow();
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: `/api/v1/organizations/${testOrganization.id}/members/${ownerMembership.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+    });
+
+    describe('POST /api/v1/organizations/:id/leave', () => {
+        it('should allow member to leave organization', async () => {
+            const member = await createTestUser({ email: 'leaver@test.com' });
+            await db
+                .insertInto('organization_members')
+                .values({
+                    user_id: member.id,
+                    organization_id: testOrganization.id,
+                    role: 'member',
+                })
+                .execute();
+
+            const memberSession = await createTestSession(member.id);
+
+            const response = await app.inject({
+                method: 'POST',
+                url: `/api/v1/organizations/${testOrganization.id}/leave`,
+                headers: {
+                    Authorization: `Bearer ${memberSession.token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(204);
+        });
+
+        it('should return 400 when owner tries to leave', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/api/v1/organizations/${testOrganization.id}/leave`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+
+        it('should return 404 for non-member', async () => {
+            const outsider = await createTestUser({ email: 'outsider@test.com' });
+            const outsiderSession = await createTestSession(outsider.id);
+
+            const response = await app.inject({
+                method: 'POST',
+                url: `/api/v1/organizations/${testOrganization.id}/leave`,
+                headers: {
+                    Authorization: `Bearer ${outsiderSession.token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(404);
+        });
+
+        it('should return 400 for invalid UUID', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/v1/organizations/invalid-uuid/leave',
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+    });
 });

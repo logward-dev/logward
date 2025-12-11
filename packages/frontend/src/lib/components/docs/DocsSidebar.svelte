@@ -225,11 +225,6 @@
         color: hsl(var(--foreground));
     }
 
-    .chevron :global(svg) {
-        flex-shrink: 0;
-        transition: transform 0.2s;
-    }
-
     .section-title {
         flex: 1;
     }

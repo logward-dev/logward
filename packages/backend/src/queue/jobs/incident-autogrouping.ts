@@ -56,8 +56,6 @@ async function groupByTraceId(organizationId: string): Promise<void> {
         db.fn.max('severity').as('maxSeverity'), // Highest severity wins
         sql<string[]>`array_agg(id)`.as('eventIds'),
         sql<string[]>`array_agg(service)`.as('services'),
-        sql<string[][]>`array_agg(mitre_tactics)`.as('allTactics'),
-        sql<string[][]>`array_agg(mitre_techniques)`.as('allTechniques'),
         db.fn.min('time').as('firstSeen'),
         db.fn.max('time').as('lastSeen'),
       ])
@@ -72,12 +70,18 @@ async function groupByTraceId(organizationId: string): Promise<void> {
 
     for (const group of traceGroups) {
       const services = (group.services || []) as string[];
-      const tactics = (group.allTactics || []) as (string[] | null)[];
-      const techniques = (group.allTechniques || []) as (string[] | null)[];
+      const eventIds = (group.eventIds || []) as string[];
+
+      // Fetch MITRE data separately to avoid NULL array aggregation issues
+      const eventsWithMitre = await db
+        .selectFrom('detection_events')
+        .select(['mitre_tactics', 'mitre_techniques'])
+        .where('id', 'in', eventIds)
+        .execute();
 
       const affectedServices = Array.from(new Set(services.flat())).filter(Boolean) as string[];
-      const allTactics = Array.from(new Set(tactics.flat().filter(Boolean))) as string[];
-      const allTechniques = Array.from(new Set(techniques.flat().filter(Boolean))) as string[];
+      const allTactics = Array.from(new Set(eventsWithMitre.flatMap(e => e.mitre_tactics || []))).filter(Boolean) as string[];
+      const allTechniques = Array.from(new Set(eventsWithMitre.flatMap(e => e.mitre_techniques || []))).filter(Boolean) as string[];
 
       // Create incident
       const incident = await siemService.createIncident({
