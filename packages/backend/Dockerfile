@@ -22,7 +22,8 @@ RUN pnpm --filter '@logward/backend' build
 FROM node:20-alpine
 
 # Install postgresql-client for pg_isready (needed for entrypoint health check)
-RUN apk add --no-cache postgresql-client
+# In Alpine 3.23+, postgresql-client is versioned - use postgresql16-client
+RUN apk add --no-cache postgresql16-client
 
 # Install pnpm
 RUN npm install -g pnpm
