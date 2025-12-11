@@ -8,14 +8,16 @@ echo "================================"
 echo "⏳ Waiting for PostgreSQL to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
+DB_HOST="${DATABASE_HOST:-postgres}"
+DB_PORT="${DATABASE_PORT:-5432}"
 
-while ! pg_isready -h "${DATABASE_HOST:-postgres}" -U "${DB_USER:-logward}" > /dev/null 2>&1; do
+while ! nc -z "$DB_HOST" "$DB_PORT" > /dev/null 2>&1; do
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-    echo "❌ PostgreSQL is not available after $MAX_RETRIES attempts"
+    echo "❌ PostgreSQL is not available at $DB_HOST:$DB_PORT after $MAX_RETRIES attempts"
     exit 1
   fi
-  echo "   Waiting for PostgreSQL... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+  echo "   Waiting for PostgreSQL at $DB_HOST:$DB_PORT... (attempt $RETRY_COUNT/$MAX_RETRIES)"
   sleep 2
 done
 
