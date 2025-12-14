@@ -42,7 +42,7 @@
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Quick Start (2 Minutes)</h3>
+            <h3 id="quick-start" class="text-lg font-semibold mb-3 scroll-mt-20">Quick Start (2 Minutes)</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Create project directory
@@ -62,7 +62,7 @@ docker compose up -d`}
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Required Environment Variables</h3>
+            <h3 id="environment-variables" class="text-lg font-semibold mb-3 scroll-mt-20">Required Environment Variables</h3>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm border border-border rounded-lg">
                     <thead class="bg-muted">
@@ -97,7 +97,7 @@ docker compose up -d`}
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Available Docker Images</h3>
+            <h3 id="docker-images" class="text-lg font-semibold mb-3 scroll-mt-20">Available Docker Images</h3>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm border border-border rounded-lg">
                     <thead class="bg-muted">
@@ -205,7 +205,7 @@ LOGWARD_FRONTEND_IMAGE=logward/frontend:0.3.0`}
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Configure for Remote Access</h3>
+            <h3 id="remote-access" class="text-lg font-semibold mb-3 scroll-mt-20">Configure for Remote Access</h3>
             <p class="text-sm text-muted-foreground mb-3">
                 In your <code>.env</code> file, set the public URL where the backend API is accessible:
             </p>
@@ -222,7 +222,7 @@ PUBLIC_API_URL=https://api.yourdomain.com`}
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Example: VPS Deployment</h3>
+            <h3 id="vps-deployment" class="text-lg font-semibold mb-3 scroll-mt-20">Example: VPS Deployment</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Server IP: 192.168.1.100
@@ -240,7 +240,7 @@ PUBLIC_API_URL=http://192.168.1.100:8080
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">With Reverse Proxy (nginx/Traefik)</h3>
+            <h3 id="reverse-proxy" class="text-lg font-semibold mb-3 scroll-mt-20">With Reverse Proxy (nginx/Traefik)</h3>
             <p class="text-sm text-muted-foreground mb-3">
                 If you're using a reverse proxy in front of LogWard, configure accordingly:
             </p>
@@ -324,7 +324,7 @@ PUBLIC_API_URL=https://api.example.com`}
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Enable Horizontal Scaling</h3>
+            <h3 id="enable-scaling" class="text-lg font-semibold mb-3 scroll-mt-20">Enable Horizontal Scaling</h3>
             <p class="text-sm text-muted-foreground mb-3">
                 The default <code>docker-compose.yml</code> runs a single instance of each service.
                 For horizontal scaling, download and use the Traefik overlay:
@@ -369,7 +369,7 @@ docker compose ps`}
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Architecture</h3>
+            <h3 id="architecture" class="text-lg font-semibold mb-3 scroll-mt-20">Architecture</h3>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm border border-border rounded-lg">
                     <thead class="bg-muted">
@@ -466,7 +466,7 @@ docker compose ps`}
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Quick Install</h3>
+            <h3 id="helm-quick-install" class="text-lg font-semibold mb-3 scroll-mt-20">Quick Install</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Add the LogWard Helm repository
@@ -483,7 +483,7 @@ helm install logward logward/logward \\
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">What's Included</h3>
+            <h3 id="helm-whats-included" class="text-lg font-semibold mb-3 scroll-mt-20">What's Included</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>
                     <CardContent class="pt-4">
@@ -533,7 +533,7 @@ helm install logward logward/logward \\
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Enable Ingress</h3>
+            <h3 id="helm-ingress" class="text-lg font-semibold mb-3 scroll-mt-20">Enable Ingress</h3>
             <CodeBlock
                 lang="bash"
                 code={`helm install logward logward/logward \\
@@ -551,7 +551,7 @@ helm install logward logward/logward \\
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Use External Database</h3>
+            <h3 id="external-database" class="text-lg font-semibold mb-3 scroll-mt-20">Use External Database</h3>
             <p class="text-sm text-muted-foreground mb-3">
                 For production, you can use an external managed database (AWS RDS, Cloud SQL, etc.):
             </p>
@@ -571,7 +571,7 @@ helm install logward logward/logward \\
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Cloud-Specific Examples</h3>
+            <h3 id="cloud-examples" class="text-lg font-semibold mb-3 scroll-mt-20">Cloud-Specific Examples</h3>
             <div class="space-y-4">
                 <div>
                     <p class="text-sm font-medium mb-2">AWS EKS</p>
@@ -657,7 +657,7 @@ ingress:
         </Card>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Clone and Build</h3>
+            <h3 id="clone-build" class="text-lg font-semibold mb-3 scroll-mt-20">Clone and Build</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Clone the repository
@@ -704,7 +704,7 @@ docker compose up -d --build`}
 
     <div class="mb-8 space-y-6">
         <div>
-            <h3 class="text-lg font-semibold mb-3">Health Checks</h3>
+            <h3 id="health-checks" class="text-lg font-semibold mb-3 scroll-mt-20">Health Checks</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Check all services status
@@ -722,7 +722,7 @@ docker compose exec postgres psql -U logward -d logward -c "SELECT COUNT(*) FROM
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Common Commands</h3>
+            <h3 id="common-commands" class="text-lg font-semibold mb-3 scroll-mt-20">Common Commands</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Restart a service
@@ -741,7 +741,7 @@ docker compose up -d`}
         </div>
 
         <div>
-            <h3 class="text-lg font-semibold mb-3">Database Backup</h3>
+            <h3 id="database-backup" class="text-lg font-semibold mb-3 scroll-mt-20">Database Backup</h3>
             <CodeBlock
                 lang="bash"
                 code={`# Create backup
