@@ -8,6 +8,7 @@
         ChevronRight,
         ChevronDown,
         Github,
+        ArrowRightLeft,
     } from "lucide-svelte";
 
     interface NavItem {
@@ -67,6 +68,19 @@
             items: [
                 { title: "Syslog", href: "/docs/syslog" },
                 { title: "OpenTelemetry", href: "/docs/opentelemetry" },
+            ],
+        },
+        {
+            title: "Migration",
+            icon: ArrowRightLeft,
+            collapsed: false,
+            items: [
+                { title: "Overview", href: "/docs/migration" },
+                { title: "From Datadog", href: "/docs/migration/datadog" },
+                { title: "From Splunk", href: "/docs/migration/splunk" },
+                { title: "From ELK Stack", href: "/docs/migration/elk" },
+                { title: "From SigNoz", href: "/docs/migration/signoz" },
+                { title: "From Grafana Loki", href: "/docs/migration/loki" },
             ],
         },
         {
