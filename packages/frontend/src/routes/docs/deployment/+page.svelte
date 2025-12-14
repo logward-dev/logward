@@ -7,7 +7,7 @@
         CardHeader,
         CardTitle,
     } from "$lib/components/ui/card";
-    import { AlertCircle, CheckCircle2, Package, Server, Scale, Layers } from "lucide-svelte";
+    import { AlertCircle, CheckCircle2, Package, Server, Scale, Layers, Cloud } from "lucide-svelte";
 </script>
 
 <div class="docs-content">
@@ -437,6 +437,197 @@ docker compose ps`}
                     <li><strong>Sessions:</strong> Stored in Redis (no sticky sessions required)</li>
                     <li><strong>Job queues:</strong> BullMQ distributes work across all workers automatically</li>
                     <li><strong>Health checks:</strong> Traefik removes unhealthy instances from rotation</li>
+                </ul>
+            </CardContent>
+        </Card>
+    </div>
+
+    <h2
+        id="kubernetes"
+        class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
+    >
+        Kubernetes (Helm)
+    </h2>
+
+    <div class="mb-12 space-y-6">
+        <Card>
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <Cloud class="w-5 h-5 text-primary mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Production-Ready Kubernetes Deployment</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                Deploy LogWard on any Kubernetes cluster using our official Helm chart.
+                Includes auto-scaling, health probes, Ingress support, and Prometheus monitoring.
+            </CardContent>
+        </Card>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Quick Install</h3>
+            <CodeBlock
+                lang="bash"
+                code={`# Add the LogWard Helm repository
+helm repo add logward https://logward-dev.github.io/logward-helm-chart
+helm repo update
+
+# Install LogWard
+helm install logward logward/logward \\
+  --namespace logward \\
+  --create-namespace \\
+  --set timescaledb.auth.password=<your-db-password> \\
+  --set redis.auth.password=<your-redis-password>`}
+            />
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">What's Included</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                    <CardContent class="pt-4">
+                        <ul class="text-sm space-y-2">
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Backend API (2+ replicas)</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Frontend (2+ replicas)</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Worker (BullMQ jobs)</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>TimescaleDB StatefulSet</span>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent class="pt-4">
+                        <ul class="text-sm space-y-2">
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Redis StatefulSet</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Horizontal Pod Autoscaler</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>Ingress (nginx, ALB, etc.)</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <CheckCircle2 class="w-4 h-4 text-green-500" />
+                                <span>ServiceMonitor (Prometheus)</span>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Enable Ingress</h3>
+            <CodeBlock
+                lang="bash"
+                code={`helm install logward logward/logward \\
+  --namespace logward \\
+  --create-namespace \\
+  --set timescaledb.auth.password=<password> \\
+  --set redis.auth.password=<password> \\
+  --set ingress.enabled=true \\
+  --set ingress.className=nginx \\
+  --set ingress.hosts[0].host=logward.example.com \\
+  --set ingress.hosts[0].paths[0].path=/ \\
+  --set ingress.hosts[0].paths[0].pathType=Prefix \\
+  --set ingress.hosts[0].paths[0].service=frontend`}
+            />
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Use External Database</h3>
+            <p class="text-sm text-muted-foreground mb-3">
+                For production, you can use an external managed database (AWS RDS, Cloud SQL, etc.):
+            </p>
+            <CodeBlock
+                lang="bash"
+                code={`helm install logward logward/logward \\
+  --namespace logward \\
+  --create-namespace \\
+  --set timescaledb.enabled=false \\
+  --set externalDatabase.host=your-db.region.rds.amazonaws.com \\
+  --set externalDatabase.port=5432 \\
+  --set externalDatabase.database=logward \\
+  --set externalDatabase.username=logward \\
+  --set externalDatabase.password=<password> \\
+  --set redis.auth.password=<password>`}
+            />
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold mb-3">Cloud-Specific Examples</h3>
+            <div class="space-y-4">
+                <div>
+                    <p class="text-sm font-medium mb-2">AWS EKS</p>
+                    <CodeBlock
+                        lang="yaml"
+                        code={`# values-eks.yaml
+global:
+  storageClass: gp3
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip`}
+                    />
+                </div>
+                <div>
+                    <p class="text-sm font-medium mb-2">GCP GKE</p>
+                    <CodeBlock
+                        lang="yaml"
+                        code={`# values-gke.yaml
+global:
+  storageClass: standard-rwo
+
+ingress:
+  enabled: true
+  className: gce`}
+                    />
+                </div>
+            </div>
+        </div>
+
+        <Card class="border-blue-500/30 bg-blue-500/5">
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <Package class="w-5 h-5 text-blue-500 mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">Helm Chart Resources</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                <ul class="space-y-2">
+                    <li>
+                        <a href="https://artifacthub.io/packages/helm/logward/logward" class="text-primary hover:underline" target="_blank">
+                            Artifact Hub →
+                        </a>
+                        <span class="text-muted-foreground ml-1">Browse chart versions and values</span>
+                    </li>
+                    <li>
+                        <a href="https://github.com/logward-dev/logward-helm-chart" class="text-primary hover:underline" target="_blank">
+                            GitHub Repository →
+                        </a>
+                        <span class="text-muted-foreground ml-1">Source code and issues</span>
+                    </li>
                 </ul>
             </CardContent>
         </Card>

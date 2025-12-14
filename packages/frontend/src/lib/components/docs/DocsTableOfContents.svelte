@@ -11,6 +11,7 @@
     let headings: TocItem[] = [];
     let activeId = "";
     let observer: IntersectionObserver | null = null;
+    let visibleHeadings: Set<string> = new Set();
 
     // Re-extract headings when page changes (browser only)
     $: if (typeof window !== "undefined" && $page.url.pathname) {
@@ -26,6 +27,7 @@
         if (observer) {
             observer.disconnect();
         }
+        visibleHeadings = new Set();
 
         // Extract h2 and h3 headings from the content
         const contentArea = document.querySelector(".docs-content");
@@ -46,11 +48,22 @@
             (entries) => {
                 entries.forEach((entry) => {
                     if (entry.isIntersecting) {
-                        activeId = entry.target.id;
+                        visibleHeadings.add(entry.target.id);
+                    } else {
+                        visibleHeadings.delete(entry.target.id);
                     }
                 });
+
+                // Find the first visible heading in document order
+                const headingIds = headings.map(h => h.id);
+                for (const id of headingIds) {
+                    if (visibleHeadings.has(id)) {
+                        activeId = id;
+                        break;
+                    }
+                }
             },
-            { rootMargin: "-100px 0px -66%" },
+            { rootMargin: "-80px 0px -70%" },
         );
 
         headingElements.forEach((el) => observer!.observe(el));
