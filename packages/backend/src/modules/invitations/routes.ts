@@ -171,6 +171,11 @@ export async function invitationsRoutes(fastify: FastifyInstance) {
               error: error.message,
             });
           }
+          if (error.message.includes('Email server is not configured')) {
+            return reply.status(503).send({
+              error: error.message,
+            });
+          }
         }
 
         throw error;
@@ -271,6 +276,11 @@ export async function invitationsRoutes(fastify: FastifyInstance) {
           }
           if (error.message.includes('not found or already accepted')) {
             return reply.status(404).send({
+              error: error.message,
+            });
+          }
+          if (error.message.includes('Email server is not configured')) {
+            return reply.status(503).send({
               error: error.message,
             });
           }
