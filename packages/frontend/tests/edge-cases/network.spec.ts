@@ -169,10 +169,9 @@ test.describe('Network Edge Cases', () => {
     // Reload page
     await page.reload();
     await page.waitForLoadState('load');
-    await page.waitForTimeout(2000);
 
     // Page should work again
-    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('h1')).toBeVisible({ timeout: 30000 });
   });
 });
 
@@ -214,9 +213,9 @@ test.describe('Session Edge Cases', () => {
     await page1.waitForLoadState('load');
     await page2.waitForLoadState('load');
 
-    // Both should work - use .first() to avoid strict mode violation
-    await expect(page1.locator('h1, h2').first()).toBeVisible();
-    await expect(page2.locator('h1, h2').first()).toBeVisible();
+    // Both should work - use .first() to avoid strict mode violation, with timeout for CI
+    await expect(page1.locator('h1, h2').first()).toBeVisible({ timeout: 30000 });
+    await expect(page2.locator('h1, h2').first()).toBeVisible({ timeout: 30000 });
 
     // Cleanup
     await context1.close();

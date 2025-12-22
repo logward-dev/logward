@@ -36,7 +36,7 @@ test.describe('Invitations Journey', () => {
     await page.waitForTimeout(2000);
 
     // Verify settings page loaded
-    await expect(page.locator('h1:has-text("Settings"), h1:has-text("Organization")').first()).toBeVisible();
+    await expect(page.locator('h1:has-text("Settings"), h1:has-text("Organization")').first()).toBeVisible({ timeout: 30000 });
   });
 
   test('2. Owner can see members tab in settings', async ({ page }) => {

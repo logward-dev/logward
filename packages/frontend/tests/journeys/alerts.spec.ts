@@ -48,10 +48,9 @@ test.describe('Alert Journey', () => {
   test('1. User can view the alerts page', async ({ page }) => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects/${projectId}/alerts`);
     await page.waitForLoadState('load');
-    await page.waitForTimeout(2000); // Wait for page to fully load
 
-    // Verify alerts page elements - look for "Alert Rules" heading specifically
-    await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible();
+    // Verify alerts page elements with longer timeout for CI
+    await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
 
     // Verify empty state or create button
     const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
@@ -61,14 +60,13 @@ test.describe('Alert Journey', () => {
   test('2. User can open the create alert dialog', async ({ page }) => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects/${projectId}/alerts`);
     await page.waitForLoadState('load');
-    await page.waitForTimeout(2000); // Wait for page to fully load
+
+    // Wait for page to be ready with longer timeout for CI
+    await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
 
     // Click create alert button
     const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
     await createButton.first().click({ timeout: 10000 });
-
-    // Wait for dialog to open
-    await page.waitForTimeout(1000);
 
     // Verify dialog is open
     const dialog = page.locator('[role="dialog"], [class*="dialog"], [class*="Dialog"]');
@@ -82,10 +80,12 @@ test.describe('Alert Journey', () => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects/${projectId}/alerts`);
     await page.waitForLoadState('load');
 
+    // Wait for page to be ready
+    await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
+
     // Click create alert button
     const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
     await createButton.first().click();
-    await page.waitForTimeout(500);
 
     // Fill the form
     const alertName = `E2E Test Alert ${Date.now()}`;
@@ -220,10 +220,9 @@ test.describe('Alert Journey', () => {
   test('7. User can view alert history', async ({ page }) => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/alerts`);
     await page.waitForLoadState('load');
-    await page.waitForTimeout(2000); // Wait for page to fully load with org context
 
-    // Verify alert history page elements - look for the main heading "Alerts"
-    await expect(page.locator('h1:has-text("Alerts")')).toBeVisible();
+    // Verify alert history page elements with longer timeout for CI
+    await expect(page.locator('h1:has-text("Alerts")')).toBeVisible({ timeout: 30000 });
 
     // Page shows tabs - click on "Alert History" tab if not already active
     const historyTab = page.locator('button:has-text("Alert History"), [role="tab"]:has-text("History")');
@@ -243,10 +242,12 @@ test.describe('Alert Journey', () => {
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects/${projectId}/alerts`);
     await page.waitForLoadState('load');
 
+    // Wait for page to be ready
+    await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
+
     // Click create alert button
     const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
     await createButton.first().click();
-    await page.waitForTimeout(500);
 
     // Switch to Sigma tab
     const sigmaTab = page.locator('button:has-text("Import Sigma Rule"), [role="tab"]:has-text("Sigma")');
