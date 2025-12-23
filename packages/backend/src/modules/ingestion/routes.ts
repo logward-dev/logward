@@ -129,6 +129,23 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
         return metadata;
       };
 
+      // Extract timestamp from journald fields (microseconds epoch, already UTC)
+      const extractJournaldTimestamp = (data: any): string | null => {
+        // Priority: __REALTIME_TIMESTAMP > _SOURCE_REALTIME_TIMESTAMP
+        // These are in microseconds since epoch (UTC)
+        const realtimeTs = data.__REALTIME_TIMESTAMP || data._SOURCE_REALTIME_TIMESTAMP;
+        if (realtimeTs) {
+          try {
+            const microseconds = typeof realtimeTs === 'string' ? parseInt(realtimeTs, 10) : realtimeTs;
+            const milliseconds = Math.floor(microseconds / 1000);
+            return new Date(milliseconds).toISOString();
+          } catch {
+            // Invalid timestamp, fall through
+          }
+        }
+        return null;
+      };
+
       // Convert numeric log levels (Pino/Bunyan format) and syslog levels to string
       const normalizeLevel = (level: any): string => {
         // Handle numeric levels (Pino/Bunyan format)
@@ -202,8 +219,15 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
           ? priorityToLevel(logData.PRIORITY)
           : normalizeLevel(logData.level);
 
+        // Get timestamp: prefer journald's __REALTIME_TIMESTAMP (already UTC),
+        // then fall back to syslog timestamp from Fluent Bit
+        const journaldTime = extractJournaldTimestamp(logData);
+        const time = journaldTime
+          || logData.time
+          || (logData.date ? new Date(logData.date * 1000).toISOString() : new Date().toISOString());
+
         log = {
-          time: logData.time || (logData.date ? new Date(logData.date * 1000).toISOString() : new Date().toISOString()),
+          time,
           service: logData.service || extractJournaldService(logData),
           level,
           message: extractJournaldMessage(logData),
