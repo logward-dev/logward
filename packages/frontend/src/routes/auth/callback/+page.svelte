@@ -5,7 +5,8 @@
   import { authStore } from '$lib/stores/auth';
   import { organizationStore } from '$lib/stores/organization';
   import { toastStore } from '$lib/stores/toast';
-  import { authAPI, OrganizationsAPI } from '$lib/api';
+  import { authAPI } from '$lib/api/auth';
+  import { OrganizationsAPI } from '$lib/api/organizations';
   import Spinner from '$lib/components/Spinner.svelte';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Alert, AlertDescription } from '$lib/components/ui/alert';

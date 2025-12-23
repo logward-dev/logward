@@ -5,13 +5,14 @@
   import { KeyRound, Building2, Server } from 'lucide-svelte';
 
   interface Props {
-    onSelectLocal: () => void;
+    onSelectLocal?: () => void;
     onSelectOidc: (provider: AuthProvider) => void;
     onSelectLdap: (provider: AuthProvider) => void;
     onProvidersLoaded?: (hasLocalProvider: boolean) => void;
+    actionLabel?: string; // "Sign in" or "Sign up"
   }
 
-  let { onSelectLocal, onSelectOidc, onSelectLdap, onProvidersLoaded }: Props = $props();
+  let { onSelectLocal, onSelectOidc, onSelectLdap, onProvidersLoaded, actionLabel = 'Sign in' }: Props = $props();
 
   let providers = $state<AuthProvider[]>([]);
   let loading = $state(true);
@@ -43,7 +44,7 @@
 
   function handleProviderClick(provider: AuthProvider) {
     if (provider.type === 'local') {
-      onSelectLocal();
+      onSelectLocal?.();
     } else if (provider.type === 'oidc') {
       onSelectOidc(provider);
     } else if (provider.type === 'ldap') {
@@ -84,7 +85,7 @@
         onclick={() => handleProviderClick(provider)}
       >
         <svelte:component this={getProviderIcon(provider)} class="h-4 w-4" />
-        Sign in with {provider.name}
+        {actionLabel} with {provider.name}
       </Button>
     {/each}
 

@@ -59,17 +59,35 @@ export class OidcProvider implements AuthProvider {
    */
   private async discoverIssuer(): Promise<any> {
     const { issuerUrl } = this.getOidcConfig();
+    const oidc = await getOidcClient();
+
+    // Allow HTTP for development (localhost)
+    const isLocalhost = issuerUrl.includes('localhost') || issuerUrl.includes('127.0.0.1');
 
     // Check cache
     const cached = issuerCache.get(issuerUrl);
     if (cached && cached.expiresAt > Date.now()) {
+      // Ensure allowInsecureRequests is set for localhost even on cached configs
+      if (isLocalhost) {
+        oidc.allowInsecureRequests(cached.issuer);
+      }
       return cached.issuer;
     }
 
-    const { discovery } = await getOidcClient();
+    // For localhost, we need to allow HTTP (insecure) requests
+    // allowInsecureRequests is a function that modifies the config, but also used as options key
+    const options = isLocalhost ? { execute: [oidc.allowInsecureRequests] } : undefined;
+    console.log('[OIDC] Discovering issuer:', issuerUrl, 'allowInsecure:', isLocalhost);
 
     // Discover issuer metadata
-    const config = await discovery(new URL(issuerUrl), this.oidcConfig.clientId, this.oidcConfig.clientSecret);
+    // Use ClientSecretPost for better compatibility with providers like Authentik
+    const config = await oidc.discovery(
+      new URL(issuerUrl),
+      this.oidcConfig.clientId,
+      this.oidcConfig.clientSecret,
+      oidc.ClientSecretPost(),
+      options
+    );
 
     // Cache for 1 hour
     issuerCache.set(issuerUrl, {

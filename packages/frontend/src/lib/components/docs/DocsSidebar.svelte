@@ -9,6 +9,7 @@
         ChevronDown,
         Github,
         ArrowRightLeft,
+        KeyRound,
     } from "lucide-svelte";
 
     interface NavItem {
@@ -68,6 +69,18 @@
             items: [
                 { title: "Syslog", href: "/docs/syslog" },
                 { title: "OpenTelemetry", href: "/docs/opentelemetry" },
+            ],
+        },
+        {
+            title: "Authentication",
+            icon: KeyRound,
+            collapsed: false,
+            items: [
+                { title: "Overview", href: "/docs/authentication" },
+                { title: "OpenID Connect", href: "/docs/authentication#oidc" },
+                { title: "LDAP", href: "/docs/authentication#ldap" },
+                { title: "Troubleshooting", href: "/docs/authentication#troubleshooting" },
+                { title: "Dev Testing", href: "/docs/authentication#dev-testing" },
             ],
         },
         {

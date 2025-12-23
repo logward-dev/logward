@@ -34,6 +34,7 @@ export interface OidcProviderConfig {
   issuerUrl: string;
   clientId: string;
   clientSecret: string;
+  redirectUri?: string; // Manual redirect URI (if not set, auto-generated from request)
   scopes?: string[]; // Default: ['openid', 'email', 'profile']
   allowAutoRegister?: boolean; // Allow new users to be created on first login
   emailClaim?: string; // Claim to use for email (default: 'email')

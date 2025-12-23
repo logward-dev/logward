@@ -10,7 +10,7 @@
   import { Alert, AlertDescription } from '$lib/components/ui/alert';
   import Spinner from '$lib/components/Spinner.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
-  import { Plus, Settings, Trash2, TestTube, Building2, Server, Mail, Check, X, GripVertical } from 'lucide-svelte';
+  import { Plus, Settings, Trash2, Pencil, Building2, Server, Mail, Check, X } from 'lucide-svelte';
 
   let token = $state<string | null>(null);
   let adminAuthAPI = $derived(new AdminAuthAPI(() => token));
@@ -42,6 +42,7 @@
   let oidcIssuerUrl = $state('');
   let oidcClientId = $state('');
   let oidcClientSecret = $state('');
+  let oidcRedirectUri = $state('');
 
   // LDAP config fields
   let ldapUrl = $state('');
@@ -91,6 +92,7 @@
     oidcIssuerUrl = '';
     oidcClientId = '';
     oidcClientSecret = '';
+    oidcRedirectUri = '';
     ldapUrl = '';
     ldapBindDn = '';
     ldapBindPassword = '';
@@ -116,6 +118,7 @@
           issuerUrl: oidcIssuerUrl,
           clientId: oidcClientId,
           clientSecret: oidcClientSecret,
+          redirectUri: oidcRedirectUri || undefined,
           allowAutoRegister: true,
         };
       } else if (createForm.type === 'ldap') {
@@ -171,16 +174,77 @@
     }
   }
 
-  async function handleTestConnection(provider: AuthProviderConfig) {
+  function openEditDialog(provider: AuthProviderConfig) {
+    editingProvider = provider;
+    createForm = {
+      type: provider.type as 'oidc' | 'ldap',
+      name: provider.name,
+      slug: provider.slug,
+      enabled: provider.enabled,
+      config: provider.config,
+    };
+
+    // Populate type-specific fields
+    if (provider.type === 'oidc') {
+      const config = provider.config as { issuerUrl?: string; clientId?: string; clientSecret?: string; redirectUri?: string };
+      oidcIssuerUrl = config.issuerUrl || '';
+      oidcClientId = config.clientId || '';
+      oidcClientSecret = config.clientSecret || '';
+      oidcRedirectUri = config.redirectUri || '';
+    } else if (provider.type === 'ldap') {
+      const config = provider.config as { url?: string; bindDn?: string; bindPassword?: string; searchBase?: string; searchFilter?: string };
+      ldapUrl = config.url || '';
+      ldapBindDn = config.bindDn || '';
+      ldapBindPassword = config.bindPassword || '';
+      ldapSearchBase = config.searchBase || '';
+      ldapSearchFilter = config.searchFilter || '(uid={{username}})';
+    }
+
+    showEditDialog = true;
+  }
+
+  async function handleUpdate() {
+    if (!editingProvider) return;
+
     try {
-      const result = await adminAuthAPI.testConnection(provider.id);
-      if (result.success) {
-        toastStore.success(result.message);
-      } else {
-        toastStore.error(result.message);
+      dialogLoading = true;
+
+      // Build config based on type
+      let config: Record<string, unknown> = {};
+      if (createForm.type === 'oidc') {
+        config = {
+          issuerUrl: oidcIssuerUrl,
+          clientId: oidcClientId,
+          clientSecret: oidcClientSecret,
+          redirectUri: oidcRedirectUri || undefined,
+          allowAutoRegister: true,
+        };
+      } else if (createForm.type === 'ldap') {
+        config = {
+          url: ldapUrl,
+          bindDn: ldapBindDn,
+          bindPassword: ldapBindPassword,
+          searchBase: ldapSearchBase,
+          searchFilter: ldapSearchFilter,
+          allowAutoRegister: true,
+        };
       }
+
+      await adminAuthAPI.updateProvider(editingProvider.id, {
+        name: createForm.name,
+        enabled: createForm.enabled,
+        config,
+      });
+
+      toastStore.success('Provider updated successfully');
+      showEditDialog = false;
+      editingProvider = null;
+      resetCreateForm();
+      await loadProviders();
     } catch (e) {
-      toastStore.error(e instanceof Error ? e.message : 'Connection test failed');
+      toastStore.error(e instanceof Error ? e.message : 'Failed to update provider');
+    } finally {
+      dialogLoading = false;
     }
   }
 </script>
@@ -240,10 +304,10 @@
                   <Button
                     variant="ghost"
                     size="sm"
-                    onclick={() => handleTestConnection(provider)}
-                    title="Test connection"
+                    onclick={() => openEditDialog(provider)}
+                    title="Edit"
                   >
-                    <TestTube class="h-4 w-4" />
+                    <Pencil class="h-4 w-4" />
                   </Button>
 
                   <Button
@@ -351,6 +415,16 @@
               bind:value={oidcClientSecret}
             />
           </div>
+
+          <div class="space-y-2">
+            <Label for="redirectUri">Redirect URI (optional)</Label>
+            <Input
+              id="redirectUri"
+              placeholder={`http://localhost:8080/api/v1/auth/providers/${createForm.slug || 'your-slug'}/callback`}
+              bind:value={oidcRedirectUri}
+            />
+            <p class="text-xs text-muted-foreground">Leave empty to auto-generate. Must match the URI configured in your IdP.</p>
+          </div>
         </div>
       {:else if createForm.type === 'ldap'}
         <div class="space-y-4 pt-4 border-t">
@@ -415,6 +489,142 @@
           <Spinner size="sm" class="mr-2" />
         {/if}
         Create Provider
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- Edit Provider Dialog -->
+<Dialog.Root bind:open={showEditDialog}>
+  <Dialog.Content class="max-w-lg">
+    <Dialog.Header>
+      <Dialog.Title>Edit Provider: {editingProvider?.name}</Dialog.Title>
+      <Dialog.Description>
+        Update the configuration for this authentication provider
+      </Dialog.Description>
+    </Dialog.Header>
+
+    <div class="space-y-4 py-4">
+      <div class="space-y-2">
+        <Label for="edit-name">Display Name</Label>
+        <Input
+          id="edit-name"
+          placeholder="e.g., Authentik SSO"
+          bind:value={createForm.name}
+        />
+      </div>
+
+      <div class="space-y-2">
+        <Label>Slug</Label>
+        <p class="text-sm text-muted-foreground bg-muted px-3 py-2 rounded">{editingProvider?.slug}</p>
+        <p class="text-xs text-muted-foreground">Slug cannot be changed after creation</p>
+      </div>
+
+      {#if editingProvider?.type === 'oidc'}
+        <div class="space-y-4 pt-4 border-t">
+          <h4 class="font-medium">OIDC Configuration</h4>
+
+          <div class="space-y-2">
+            <Label for="edit-issuerUrl">Issuer URL</Label>
+            <Input
+              id="edit-issuerUrl"
+              placeholder="https://auth.example.com"
+              bind:value={oidcIssuerUrl}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-clientId">Client ID</Label>
+            <Input
+              id="edit-clientId"
+              placeholder="your-client-id"
+              bind:value={oidcClientId}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-clientSecret">Client Secret</Label>
+            <Input
+              id="edit-clientSecret"
+              type="password"
+              placeholder="your-client-secret"
+              bind:value={oidcClientSecret}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-redirectUri">Redirect URI (optional)</Label>
+            <Input
+              id="edit-redirectUri"
+              placeholder={`http://localhost:8080/api/v1/auth/providers/${editingProvider?.slug || 'your-slug'}/callback`}
+              bind:value={oidcRedirectUri}
+            />
+            <p class="text-xs text-muted-foreground">Leave empty to auto-generate. Must match the URI configured in your IdP.</p>
+          </div>
+        </div>
+      {:else if editingProvider?.type === 'ldap'}
+        <div class="space-y-4 pt-4 border-t">
+          <h4 class="font-medium">LDAP Configuration</h4>
+
+          <div class="space-y-2">
+            <Label for="edit-ldapUrl">LDAP URL</Label>
+            <Input
+              id="edit-ldapUrl"
+              placeholder="ldap://dc.example.com:389"
+              bind:value={ldapUrl}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-ldapBindDn">Bind DN (Service Account)</Label>
+            <Input
+              id="edit-ldapBindDn"
+              placeholder="CN=Service,OU=Users,DC=example,DC=com"
+              bind:value={ldapBindDn}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-ldapBindPassword">Bind Password</Label>
+            <Input
+              id="edit-ldapBindPassword"
+              type="password"
+              placeholder="service-account-password"
+              bind:value={ldapBindPassword}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-ldapSearchBase">Search Base DN</Label>
+            <Input
+              id="edit-ldapSearchBase"
+              placeholder="OU=Users,DC=example,DC=com"
+              bind:value={ldapSearchBase}
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="edit-ldapSearchFilter">Search Filter</Label>
+            <Input
+              id="edit-ldapSearchFilter"
+              placeholder="(uid={{username}})"
+              bind:value={ldapSearchFilter}
+            />
+            <p class="text-xs text-muted-foreground">Use {'{{username}}'} as placeholder for user input</p>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => { showEditDialog = false; editingProvider = null; }}>
+        Cancel
+      </Button>
+      <Button onclick={handleUpdate} disabled={dialogLoading}>
+        {#if dialogLoading}
+          <Spinner size="sm" class="mr-2" />
+        {/if}
+        Save Changes
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

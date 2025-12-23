@@ -75,12 +75,23 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         // redirect_uri is available for future use (e.g., post-auth redirect)
         const { redirect_uri: _redirectUri } = request.query;
 
-        // Build callback URL
-        const baseUrl = config.NODE_ENV === 'production'
-          ? `https://${request.hostname}`
-          : `http://${request.hostname}:${config.PORT}`;
+        // Get provider to check for configured redirectUri
+        const provider = await providerRegistry.getProvider(slug);
+        const providerConfig = provider?.config.config as { redirectUri?: string } | undefined;
 
-        const callbackUrl = `${baseUrl}/api/v1/auth/providers/${slug}/callback`;
+        // Use configured redirectUri or auto-generate callback URL
+        let callbackUrl: string;
+        if (providerConfig?.redirectUri) {
+          callbackUrl = providerConfig.redirectUri;
+        } else {
+          // Build callback URL from request
+          // request.hostname may include port, so we extract just the hostname
+          const hostname = request.hostname.split(':')[0];
+          const baseUrl = config.NODE_ENV === 'production'
+            ? `https://${hostname}`
+            : `http://${hostname}:${config.PORT}`;
+          callbackUrl = `${baseUrl}/api/v1/auth/providers/${slug}/callback`;
+        }
 
         const { url, state } = await authenticationService.getOidcAuthorizationUrl(
           slug,
@@ -107,30 +118,32 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     Params: { slug: string };
     Querystring: { code?: string; state?: string; error?: string; error_description?: string };
   }>('/providers/:slug/callback', async (request, reply) => {
+    // Frontend URL for redirects (defaults to localhost:3000 in development)
+    const frontendUrl = config.FRONTEND_URL || (config.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
+
     try {
       const { code, state, error, error_description } = request.query;
 
-      // Check for OIDC error response
       if (error) {
         const errorMessage = error_description || error;
         // Redirect to frontend with error
-        return reply.redirect(`/login?error=${encodeURIComponent(errorMessage)}`);
+        return reply.redirect(`${frontendUrl}/login?error=${encodeURIComponent(errorMessage)}`);
       }
 
       if (!code || !state) {
-        return reply.redirect('/login?error=Invalid%20callback%20parameters');
+        return reply.redirect(`${frontendUrl}/login?error=Invalid%20callback%20parameters`);
       }
 
       const result = await authenticationService.handleOidcCallback(code, state);
 
       // Redirect to frontend with session token
       // The frontend will store the token and redirect to dashboard
-      const redirectUrl = `/auth/callback?token=${result.session.token}&expires=${result.session.expiresAt.toISOString()}&new_user=${result.isNewUser}`;
+      const redirectUrl = `${frontendUrl}/auth/callback?token=${result.session.token}&expires=${result.session.expiresAt.toISOString()}&new_user=${result.isNewUser}`;
       return reply.redirect(redirectUrl);
     } catch (error) {
       console.error('OIDC callback error:', error);
       const message = error instanceof Error ? error.message : 'Authentication failed';
-      return reply.redirect(`/login?error=${encodeURIComponent(message)}`);
+      return reply.redirect(`${frontendUrl}/login?error=${encodeURIComponent(message)}`);
     }
   });
 
