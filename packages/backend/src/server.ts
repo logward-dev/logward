@@ -167,6 +167,9 @@ async function start() {
   // Initialize enrichment services (GeoLite2 database, etc.)
   await enrichmentService.initialize();
 
+  // Run initial bootstrap (creates initial admin from env vars if no users exist)
+  await bootstrapService.runInitialBootstrap();
+
   // Check auth mode and bootstrap if auth-free mode is enabled
   const authMode = await settingsService.getAuthMode();
   if (authMode === 'none') {

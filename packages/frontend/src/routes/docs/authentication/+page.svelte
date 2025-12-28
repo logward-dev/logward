@@ -580,6 +580,87 @@
     </div>
 
     <h2
+        id="initial-admin"
+        class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
+    >
+        Initial Admin Setup
+    </h2>
+
+    <div class="mb-12 space-y-6">
+        <p class="text-muted-foreground">
+            For automated deployments (Docker, Kubernetes, etc.), you can create an initial admin user
+            using environment variables. This allows you to deploy LogWard without needing to manually
+            create the first account.
+        </p>
+
+        <div>
+            <h3 id="initial-admin-env" class="text-lg font-semibold mb-3 scroll-mt-20">Environment Variables</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm border border-border rounded-lg">
+                    <thead class="bg-muted">
+                        <tr>
+                            <th class="text-left p-3 border-b border-border">Variable</th>
+                            <th class="text-left p-3 border-b border-border">Description</th>
+                            <th class="text-left p-3 border-b border-border">Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">INITIAL_ADMIN_EMAIL</td>
+                            <td class="p-3 border-b border-border">Email address for the admin account</td>
+                            <td class="p-3 border-b border-border">Yes</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 border-b border-border font-mono text-xs">INITIAL_ADMIN_PASSWORD</td>
+                            <td class="p-3 border-b border-border">Password (minimum 8 characters)</td>
+                            <td class="p-3 border-b border-border">Yes</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 font-mono text-xs">INITIAL_ADMIN_NAME</td>
+                            <td class="p-3">Display name (defaults to "Admin")</td>
+                            <td class="p-3">No</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div>
+            <h3 id="initial-admin-example" class="text-lg font-semibold mb-3 scroll-mt-20">Docker Compose Example</h3>
+            <CodeBlock
+                lang="yaml"
+                code={`services:
+  backend:
+    image: logward/backend:latest
+    environment:
+      # Initial admin (only creates user if no users exist)
+      INITIAL_ADMIN_EMAIL: admin@example.com
+      INITIAL_ADMIN_PASSWORD: your-secure-password
+      INITIAL_ADMIN_NAME: Administrator
+      # ... other environment variables`}
+            />
+        </div>
+
+        <Card class="border-blue-500/30 bg-blue-500/5">
+            <CardHeader>
+                <div class="flex items-start gap-3">
+                    <CheckCircle2 class="w-5 h-5 text-blue-500 mt-0.5" />
+                    <div>
+                        <CardTitle class="text-base">One-Time Creation</CardTitle>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent class="text-sm text-muted-foreground">
+                <p>
+                    The initial admin is only created if <strong>no users with login credentials exist</strong>.
+                    After the first user is created, these environment variables are ignored. This is safe to
+                    leave in your deployment configuration.
+                </p>
+            </CardContent>
+        </Card>
+    </div>
+
+    <h2
         id="admin-settings"
         class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
     >
