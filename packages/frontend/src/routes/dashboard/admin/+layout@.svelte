@@ -6,6 +6,7 @@
         Building2,
         FolderKanban,
         Settings,
+        KeyRound,
     } from "lucide-svelte";
     import { cn } from "$lib/utils";
     import Footer from "$lib/components/Footer.svelte";
@@ -33,6 +34,11 @@
             name: "Projects",
             href: "/dashboard/admin/projects",
             icon: FolderKanban,
+        },
+        {
+            name: "Auth Providers",
+            href: "/dashboard/admin/auth-providers",
+            icon: KeyRound,
         },
     ];
 

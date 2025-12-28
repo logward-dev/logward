@@ -23,6 +23,8 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   // Trust proxy headers (X-Forwarded-For, etc.) - enable when behind reverse proxy
   TRUST_PROXY: z.string().default('false').transform((val) => val === 'true'),
+  // Frontend URL for OIDC redirects (defaults to localhost:5173 in development)
+  FRONTEND_URL: z.string().url().optional(),
 
   // Database
   DATABASE_URL: z.string().url(),
