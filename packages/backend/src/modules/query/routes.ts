@@ -382,6 +382,85 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // GET /api/v1/logs/services - Get all distinct services
+  fastify.get('/api/v1/logs/services', {
+    schema: {
+      description: 'Get all distinct services for filter dropdowns',
+      tags: ['query'],
+      querystring: {
+        type: 'object',
+        properties: {
+          projectId: {
+            anyOf: [
+              { type: 'string' },
+              { type: 'array', items: { type: 'string' } }
+            ]
+          },
+          from: { type: 'string', format: 'date-time' },
+          to: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+    handler: async (request: any, reply) => {
+      const { from, to, projectId: queryProjectId } = request.query as {
+        projectId?: string | string[];
+        from?: string;
+        to?: string;
+      };
+
+      // Get projectId from query params (for session auth) or from auth plugin (for API key auth)
+      const projectId = queryProjectId || request.projectId;
+
+      if (!projectId) {
+        return reply.code(400).send({
+          error: 'Project context missing - provide projectId query parameter',
+        });
+      }
+
+      if (request.user?.id) {
+        const projectIds = Array.isArray(projectId) ? projectId : [projectId];
+        for (const pid of projectIds) {
+          const hasAccess = await verifyProjectAccess(pid, request.user.id);
+          if (!hasAccess) {
+            return reply.code(403).send({
+              error: `Access denied - you do not have access to project ${pid}`,
+            });
+          }
+        }
+      }
+
+      // Validate date parameters
+      let fromDate: Date | undefined;
+      let toDate: Date | undefined;
+
+      if (from) {
+        fromDate = new Date(from);
+        if (isNaN(fromDate.getTime())) {
+          return reply.code(400).send({
+            error: 'Invalid date format for "from" parameter',
+          });
+        }
+      }
+
+      if (to) {
+        toDate = new Date(to);
+        if (isNaN(toDate.getTime())) {
+          return reply.code(400).send({
+            error: 'Invalid date format for "to" parameter',
+          });
+        }
+      }
+
+      const services = await queryService.getDistinctServices(
+        projectId,
+        fromDate,
+        toDate
+      );
+
+      return { services };
+    },
+  });
+
   // GET /api/v1/logs/stream - Live tail logs with Server-Sent Events
   fastify.get('/api/v1/logs/stream', {
     schema: {

@@ -5,6 +5,20 @@ All notable changes to LogWard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Services Dropdown in Log Search**: Fixed services combo box only showing services from current page (#66)
+  - New `GET /api/v1/logs/services` endpoint returns all distinct services within the time range
+  - Services dropdown now loads from API instead of deriving from current page logs
+  - Services remain visible when applying filters (no more disappearing options)
+  - Services list sorted alphabetically for easier navigation
+  - Auto-refresh when changing time range or project selection
+  - Loading indicator while fetching services
+
+---
+
 ## [0.3.3] - 2025-12-30
 
 ### Added

@@ -415,6 +415,62 @@ export class QueryService {
   }
 
   /**
+   * Get all distinct services for given projects
+   * Cached for performance - used for filter dropdowns
+   */
+  async getDistinctServices(
+    projectId: string | string[],
+    from?: Date,
+    to?: Date
+  ): Promise<string[]> {
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(
+      Array.isArray(projectId) ? projectId.join(',') : projectId,
+      'distinct-services',
+      {
+        from: from?.toISOString() || null,
+        to: to?.toISOString() || null,
+      }
+    );
+    const cached = await CacheManager.get<string[]>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    let query = db
+      .selectFrom('logs')
+      .select('service')
+      .distinct()
+      .where('service', 'is not', null)
+      .where('service', '!=', '')
+      .orderBy('service', 'asc');
+
+    // Project filter - support single or multiple projects
+    if (Array.isArray(projectId)) {
+      query = query.where('project_id', 'in', projectId);
+    } else {
+      query = query.where('project_id', '=', projectId);
+    }
+
+    if (from) {
+      query = query.where('time', '>=', from);
+    }
+
+    if (to) {
+      query = query.where('time', '<=', to);
+    }
+
+    const results = await query.execute();
+    const services = results.map((r) => r.service);
+
+    // Cache for 5 minutes
+    await CacheManager.set(cacheKey, services, CACHE_TTL.STATS);
+
+    return services;
+  }
+
+  /**
    * Get top error messages
    * Cached for performance - aggregation queries are expensive
    */

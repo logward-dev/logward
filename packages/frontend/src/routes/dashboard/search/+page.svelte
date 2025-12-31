@@ -108,11 +108,22 @@
     if (!$currentOrganization) {
       projects = [];
       logs = [];
+      selectedProjects = [];
+      selectedServices = [];
+      availableServices = [];
       lastLoadedOrg = null;
       return;
     }
 
     if ($currentOrganization.id === lastLoadedOrg) return;
+
+    // Reset selections when org changes
+    selectedProjects = [];
+    selectedServices = [];
+    availableServices = [];
+    logs = [];
+    totalLogs = 0;
+    currentPage = 1;
 
     loadProjects();
     lastLoadedOrg = $currentOrganization.id;
@@ -172,7 +183,7 @@
 
     if (shouldLoadLogs && selectedProjects.length > 0) {
       urlParamsProcessed = true;
-      loadLogs();
+      loadServices().then(() => loadLogs());
     }
   });
 
@@ -223,6 +234,7 @@
 
       if (projects.length > 0 && selectedProjects.length === 0) {
         selectedProjects = projects.map((p) => p.id);
+        await loadServices();
         loadLogs();
       }
     } catch (e) {
@@ -313,9 +325,39 @@
     stopLiveTail();
   });
 
-  let availableServices = $derived([
-    ...new Set(logs.map((log) => log.service).filter(Boolean)),
-  ] as string[]);
+  let availableServices = $state<string[]>([]);
+  let isLoadingServices = $state(false);
+
+  async function loadServices() {
+    if (selectedProjects.length === 0) {
+      availableServices = [];
+      return;
+    }
+
+    isLoadingServices = true;
+    try {
+      const timeRange = getTimeRange(timeRangeType, customFromTime, customToTime);
+      const services = await logsAPI.getServices({
+        projectId: selectedProjects,
+        from: timeRange.from.toISOString(),
+        to: timeRange.to.toISOString(),
+      });
+      availableServices = services;
+
+      // Clean up selectedServices: remove any that no longer exist
+      if (selectedServices.length > 0) {
+        const validServices = selectedServices.filter((s) => services.includes(s));
+        if (validServices.length !== selectedServices.length) {
+          selectedServices = validServices;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load services:", e);
+      availableServices = [];
+    } finally {
+      isLoadingServices = false;
+    }
+  }
 
   function getTimeRange(
     type: TimeRangeType,
@@ -492,12 +534,18 @@
     loadLogs();
   }
 
-  function setQuickTimeRange(type: TimeRangeType) {
+  async function setQuickTimeRange(type: TimeRangeType) {
     timeRangeType = type;
     if (type !== "custom") {
       customFromTime = "";
       customToTime = "";
     }
+    await loadServices();
+    applyFilters();
+  }
+
+  async function onCustomTimeChange() {
+    await loadServices();
     applyFilters();
   }
 
@@ -632,8 +680,9 @@
                         variant="outline"
                         size="sm"
                         class="flex-1"
-                        onclick={() => {
+                        onclick={async () => {
                           selectedProjects = projects.map((p) => p.id);
+                          await loadServices();
                           applyFilters();
                         }}
                       >
@@ -645,6 +694,7 @@
                         class="flex-1"
                         onclick={() => {
                           selectedProjects = [];
+                          availableServices = [];
                           applyFilters();
                         }}
                       >
@@ -662,7 +712,7 @@
                             type="checkbox"
                             value={project.id}
                             checked={selectedProjects.includes(project.id)}
-                            onchange={(e) => {
+                            onchange={async (e) => {
                               if (e.currentTarget.checked) {
                                 selectedProjects = [
                                   ...selectedProjects,
@@ -673,6 +723,7 @@
                                   (id) => id !== project.id,
                                 );
                               }
+                              await loadServices();
                               applyFilters();
                             }}
                             class="h-4 w-4 rounded border-gray-300"
@@ -740,7 +791,13 @@
                     </div>
                   </div>
                   <div class="max-h-[300px] overflow-y-auto p-2">
-                    {#if availableServices.length === 0}
+                    {#if isLoadingServices}
+                      <div
+                        class="text-center py-4 text-sm text-muted-foreground"
+                      >
+                        Loading services...
+                      </div>
+                    {:else if availableServices.length === 0}
                       <div
                         class="text-center py-4 text-sm text-muted-foreground"
                       >
@@ -931,7 +988,7 @@
                     id="from-time"
                     type="datetime-local"
                     bind:value={customFromTime}
-                    onchange={applyFilters}
+                    onchange={onCustomTimeChange}
                   />
                 </div>
                 <div class="space-y-2">
@@ -940,7 +997,7 @@
                     id="to-time"
                     type="datetime-local"
                     bind:value={customToTime}
-                    onchange={applyFilters}
+                    onchange={onCustomTimeChange}
                   />
                 </div>
               </div>
