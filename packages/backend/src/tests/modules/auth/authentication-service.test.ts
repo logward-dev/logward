@@ -719,4 +719,460 @@ describe('AuthenticationService', () => {
             getProviderSpy.mockRestore();
         });
     });
+
+    // ==========================================================================
+    // Account Linking by Email (findOrCreateUser)
+    // ==========================================================================
+    describe('findOrCreateUser - Account Linking by Email', () => {
+        it('should link external identity to existing user by email', async () => {
+            // Create existing user
+            const existingUser = await createTestUser({ email: 'link-by-email@example.com' });
+            const linkProviderId = crypto.randomUUID();
+
+            // Create OIDC provider
+            await db.insertInto('auth_providers').values({
+                id: linkProviderId,
+                type: 'oidc',
+                name: 'OIDC Provider',
+                slug: 'oidc-link-by-email',
+                enabled: true,
+                config: { allowAutoRegister: true },
+            }).execute();
+
+            // Mock provider
+            const mockProvider = {
+                config: {
+                    id: linkProviderId,
+                    type: 'oidc',
+                    name: 'OIDC Provider',
+                    slug: 'oidc-link-by-email',
+                    enabled: true,
+                    config: { allowAutoRegister: true }
+                },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'oidc-external-user-id',
+                    email: 'link-by-email@example.com', // Same email as existing user
+                    name: 'Linked User',
+                    metadata: {},
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            const result = await authService.authenticateWithProvider('oidc-link-by-email', {});
+
+            // Should link to existing user, not create new
+            expect(result.user.id).toBe(existingUser.id);
+            expect(result.user.email).toBe('link-by-email@example.com');
+            expect(result.isNewUser).toBe(false);
+
+            // Verify identity was created
+            const identities = await db
+                .selectFrom('user_identities')
+                .selectAll()
+                .where('user_id', '=', existingUser.id)
+                .where('provider_id', '=', linkProviderId)
+                .execute();
+
+            expect(identities).toHaveLength(1);
+            expect(identities[0].provider_user_id).toBe('oidc-external-user-id');
+
+            getProviderSpy.mockRestore();
+        });
+
+        it('should update last login when linking identity by email', async () => {
+            const existingUser = await createTestUser({ email: 'last-login-update@example.com' });
+            const linkProviderId = crypto.randomUUID();
+
+            await db.insertInto('auth_providers').values({
+                id: linkProviderId,
+                type: 'oidc',
+                name: 'OIDC Provider',
+                slug: 'oidc-last-login',
+                enabled: true,
+                config: {},
+            }).execute();
+
+            const mockProvider = {
+                config: {
+                    id: linkProviderId,
+                    type: 'oidc',
+                    slug: 'oidc-last-login',
+                    enabled: true,
+                    config: {}
+                },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'oidc-user-123',
+                    email: 'last-login-update@example.com',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            await authService.authenticateWithProvider('oidc-last-login', {});
+
+            // Verify last_login was updated
+            const updatedUser = await db
+                .selectFrom('users')
+                .select('last_login')
+                .where('id', '=', existingUser.id)
+                .executeTakeFirst();
+
+            expect(updatedUser?.last_login).toBeDefined();
+
+            getProviderSpy.mockRestore();
+        });
+    });
+
+    // ==========================================================================
+    // Auto-register and Signup Validation
+    // ==========================================================================
+    describe('findOrCreateUser - Auto-register Validation', () => {
+        it('should reject registration when provider.allowAutoRegister is false', async () => {
+            const providerId = crypto.randomUUID();
+
+            // Create provider with allowAutoRegister disabled
+            await db.insertInto('auth_providers').values({
+                id: providerId,
+                type: 'oidc',
+                name: 'OIDC No Auto Register',
+                slug: 'oidc-no-auto',
+                enabled: true,
+                config: { allowAutoRegister: false },
+            }).execute();
+
+            const mockProvider = {
+                config: {
+                    id: providerId,
+                    type: 'oidc',
+                    slug: 'oidc-no-auto',
+                    enabled: true,
+                    config: { allowAutoRegister: false }
+                },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'new-user-blocked',
+                    email: 'new-user-blocked@example.com',
+                    name: 'New User',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            await expect(
+                authService.authenticateWithProvider('oidc-no-auto', {})
+            ).rejects.toThrow('Automatic account creation is disabled for this authentication provider');
+
+            getProviderSpy.mockRestore();
+        });
+
+        it('should reject registration when global signup is disabled', async () => {
+            const providerId = crypto.randomUUID();
+
+            // Disable global signup
+            await settingsService.set('auth.signup_enabled', false);
+            await CacheManager.invalidateSettings();
+
+            // Create provider (allowAutoRegister is true by default since config doesn't have it set to false)
+            await db.insertInto('auth_providers').values({
+                id: providerId,
+                type: 'oidc',
+                name: 'OIDC',
+                slug: 'oidc-signup-disabled',
+                enabled: true,
+                config: {},
+            }).execute();
+
+            const mockProvider = {
+                config: {
+                    id: providerId,
+                    type: 'oidc',
+                    slug: 'oidc-signup-disabled',
+                    enabled: true,
+                    config: {}
+                },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'new-user-signup-disabled',
+                    email: 'new-user-signup-disabled@example.com',
+                    name: 'New User',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            await expect(
+                authService.authenticateWithProvider('oidc-signup-disabled', {})
+            ).rejects.toThrow('User registration is currently disabled');
+
+            getProviderSpy.mockRestore();
+
+            // Re-enable signup
+            await settingsService.set('auth.signup_enabled', true);
+            await CacheManager.invalidateSettings();
+        });
+
+        it('should allow registration when both provider and global signup are enabled', async () => {
+            const providerId = crypto.randomUUID();
+
+            // Enable global signup
+            await settingsService.set('auth.signup_enabled', true);
+            await CacheManager.invalidateSettings();
+
+            // Create provider with allowAutoRegister enabled
+            await db.insertInto('auth_providers').values({
+                id: providerId,
+                type: 'oidc',
+                name: 'OIDC',
+                slug: 'oidc-signup-allowed',
+                enabled: true,
+                config: { allowAutoRegister: true },
+            }).execute();
+
+            const mockProvider = {
+                config: {
+                    id: providerId,
+                    type: 'oidc',
+                    slug: 'oidc-signup-allowed',
+                    enabled: true,
+                    config: { allowAutoRegister: true }
+                },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'new-user-allowed',
+                    email: 'new-user-allowed@example.com',
+                    name: 'New User Allowed',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            const result = await authService.authenticateWithProvider('oidc-signup-allowed', {});
+
+            expect(result.isNewUser).toBe(true);
+            expect(result.user.email).toBe('new-user-allowed@example.com');
+
+            getProviderSpy.mockRestore();
+        });
+    });
+
+    // ==========================================================================
+    // Local Identity Unlinking (Password Hash Clearing)
+    // ==========================================================================
+    describe('unlinkIdentity - Local Provider Password Clearing', () => {
+        it('should clear password hash when unlinking local identity', async () => {
+            // Create user with password
+            const user = await createTestUser({ email: 'unlink-local@example.com', password: 'mypassword' });
+
+            // Create local and OIDC providers
+            const localProviderId = crypto.randomUUID();
+            const oidcProviderId = crypto.randomUUID();
+
+            await db.insertInto('auth_providers').values([
+                { id: localProviderId, type: 'local', name: 'Local', slug: 'local-unlink', enabled: true, config: {} },
+                { id: oidcProviderId, type: 'oidc', name: 'OIDC', slug: 'oidc-unlink', enabled: true, config: {} },
+            ]).execute();
+
+            // Create identities for both providers
+            const localIdentity = await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: localProviderId,
+                provider_user_id: user.id,
+                metadata: {},
+            }).returningAll().executeTakeFirstOrThrow();
+
+            await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: oidcProviderId,
+                provider_user_id: 'oidc-user-id',
+                metadata: {},
+            }).execute();
+
+            // Verify user has password hash before unlinking
+            const userBefore = await db
+                .selectFrom('users')
+                .select('password_hash')
+                .where('id', '=', user.id)
+                .executeTakeFirst();
+            expect(userBefore?.password_hash).not.toBeNull();
+
+            // Unlink local identity
+            await authService.unlinkIdentity(user.id, localIdentity.id);
+
+            // Verify password hash was cleared
+            const userAfter = await db
+                .selectFrom('users')
+                .select('password_hash')
+                .where('id', '=', user.id)
+                .executeTakeFirst();
+            expect(userAfter?.password_hash).toBeNull();
+        });
+
+        it('should not fail if password hash is already null when unlinking local', async () => {
+            // Create user without password
+            const user = await db.insertInto('users').values({
+                email: 'no-password@example.com',
+                name: 'No Password User',
+                password_hash: null,
+            }).returningAll().executeTakeFirstOrThrow();
+
+            // Create local and OIDC providers
+            const localProviderId = crypto.randomUUID();
+            const oidcProviderId = crypto.randomUUID();
+
+            await db.insertInto('auth_providers').values([
+                { id: localProviderId, type: 'local', name: 'Local', slug: 'local-no-pw', enabled: true, config: {} },
+                { id: oidcProviderId, type: 'oidc', name: 'OIDC', slug: 'oidc-no-pw', enabled: true, config: {} },
+            ]).execute();
+
+            // Create identities
+            const localIdentity = await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: localProviderId,
+                provider_user_id: user.id,
+                metadata: {},
+            }).returningAll().executeTakeFirstOrThrow();
+
+            await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: oidcProviderId,
+                provider_user_id: 'oidc-user-xyz',
+                metadata: {},
+            }).execute();
+
+            // Should not throw
+            await expect(
+                authService.unlinkIdentity(user.id, localIdentity.id)
+            ).resolves.not.toThrow();
+        });
+
+        it('should not clear password hash when unlinking non-local identity', async () => {
+            // Create user with password
+            const user = await createTestUser({ email: 'keep-password@example.com', password: 'keepthis' });
+
+            // Create local and OIDC providers
+            const localProviderId = crypto.randomUUID();
+            const oidcProviderId = crypto.randomUUID();
+
+            await db.insertInto('auth_providers').values([
+                { id: localProviderId, type: 'local', name: 'Local', slug: 'local-keep', enabled: true, config: {} },
+                { id: oidcProviderId, type: 'oidc', name: 'OIDC', slug: 'oidc-keep', enabled: true, config: {} },
+            ]).execute();
+
+            // Create identities
+            await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: localProviderId,
+                provider_user_id: user.id,
+                metadata: {},
+            }).execute();
+
+            const oidcIdentity = await db.insertInto('user_identities').values({
+                user_id: user.id,
+                provider_id: oidcProviderId,
+                provider_user_id: 'oidc-user-keep',
+                metadata: {},
+            }).returningAll().executeTakeFirstOrThrow();
+
+            // Unlink OIDC identity (not local)
+            await authService.unlinkIdentity(user.id, oidcIdentity.id);
+
+            // Verify password hash is still intact
+            const userAfter = await db
+                .selectFrom('users')
+                .select('password_hash')
+                .where('id', '=', user.id)
+                .executeTakeFirst();
+            expect(userAfter?.password_hash).not.toBeNull();
+        });
+    });
+
+    // ==========================================================================
+    // Email Normalization
+    // ==========================================================================
+    describe('findOrCreateUser - Email Normalization', () => {
+        it('should normalize email to lowercase', async () => {
+            const providerId = crypto.randomUUID();
+
+            await settingsService.set('auth.signup_enabled', true);
+            await CacheManager.invalidateSettings();
+
+            await db.insertInto('auth_providers').values({
+                id: providerId,
+                type: 'oidc',
+                name: 'OIDC',
+                slug: 'oidc-email-norm',
+                enabled: true,
+                config: {},
+            }).execute();
+
+            const mockProvider = {
+                config: { id: providerId, config: {} },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'normalized-user',
+                    email: 'TEST.User@EXAMPLE.COM', // Mixed case
+                    name: 'Test User',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            const result = await authService.authenticateWithProvider('oidc-email-norm', {});
+
+            expect(result.user.email).toBe('test.user@example.com'); // Lowercased
+
+            getProviderSpy.mockRestore();
+        });
+
+        it('should trim whitespace from email', async () => {
+            const providerId = crypto.randomUUID();
+
+            await settingsService.set('auth.signup_enabled', true);
+            await CacheManager.invalidateSettings();
+
+            await db.insertInto('auth_providers').values({
+                id: providerId,
+                type: 'oidc',
+                name: 'OIDC',
+                slug: 'oidc-email-trim',
+                enabled: true,
+                config: {},
+            }).execute();
+
+            const mockProvider = {
+                config: { id: providerId, config: {} },
+                authenticate: vi.fn().mockResolvedValue({
+                    success: true,
+                    providerUserId: 'trimmed-user',
+                    email: '  trimmed@example.com  ', // Whitespace
+                    name: 'Trimmed User',
+                }),
+                supportsRedirect: () => true,
+            };
+
+            const getProviderSpy = vi.spyOn(providerRegistryModule.providerRegistry, 'getProvider')
+                .mockResolvedValue(mockProvider as any);
+
+            const result = await authService.authenticateWithProvider('oidc-email-trim', {});
+
+            expect(result.user.email).toBe('trimmed@example.com'); // Trimmed
+
+            getProviderSpy.mockRestore();
+        });
+    });
 });

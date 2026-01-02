@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { gzipSync } from 'zlib';
 import {
   transformOtlpToSpans,
@@ -1302,6 +1302,584 @@ describe('OTLP Trace Transformer', () => {
       const attrs = [{ key: 'service.name', value: { stringValue: 'my-service_v2.0' } }];
 
       expect(extractServiceName(attrs)).toBe('my-service_v2.0');
+    });
+  });
+
+  // ==========================================================================
+  // Real Protobuf Encoding Tests (using @opentelemetry/otlp-transformer)
+  // ==========================================================================
+  describe('parseOtlpTracesProtobuf - Real Protobuf Encoding', () => {
+    let ExportTraceServiceRequest: any;
+    let $root: any;
+
+    beforeAll(async () => {
+      try {
+        const { createRequire } = await import('module');
+        const require = createRequire(import.meta.url);
+        $root = require('@opentelemetry/otlp-transformer/build/esm/generated/root.js');
+        ExportTraceServiceRequest = $root.opentelemetry?.proto?.collector?.trace?.v1?.ExportTraceServiceRequest;
+      } catch (error) {
+        console.warn('Protobuf definitions not available, skipping real protobuf tests');
+      }
+    });
+
+    it('should decode real protobuf binary message with spans', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const traceIdBytes = Buffer.from('0123456789abcdef0123456789abcdef', 'hex');
+      const spanIdBytes = Buffer.from('fedcba9876543210', 'hex');
+
+      const message = {
+        resourceSpans: [{
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'protobuf-trace-service' } },
+            ],
+          },
+          scopeSpans: [{
+            scope: { name: 'test-scope', version: '1.0.0' },
+            spans: [{
+              traceId: traceIdBytes,
+              spanId: spanIdBytes,
+              name: 'test-operation',
+              kind: OTLP_SPAN_KIND.SERVER,
+              startTimeUnixNano: '1704067200000000000',
+              endTimeUnixNano: '1704067201000000000',
+              status: { code: OTLP_STATUS_CODE.OK },
+              attributes: [
+                { key: 'http.method', value: { stringValue: 'GET' } },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toHaveLength(1);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span).toBeDefined();
+      expect(span?.name).toBe('test-operation');
+    });
+
+    it('should decode protobuf with multiple spans in a trace', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const traceIdBytes = Buffer.from('abcdef0123456789abcdef0123456789', 'hex');
+
+      const message = {
+        resourceSpans: [{
+          resource: {
+            attributes: [{ key: 'service.name', value: { stringValue: 'multi-span-service' } }],
+          },
+          scopeSpans: [{
+            spans: [
+              { traceId: traceIdBytes, spanId: Buffer.from('1111111111111111', 'hex'), name: 'root-span', kind: OTLP_SPAN_KIND.SERVER },
+              { traceId: traceIdBytes, spanId: Buffer.from('2222222222222222', 'hex'), parentSpanId: Buffer.from('1111111111111111', 'hex'), name: 'child-span-1', kind: OTLP_SPAN_KIND.INTERNAL },
+              { traceId: traceIdBytes, spanId: Buffer.from('3333333333333333', 'hex'), parentSpanId: Buffer.from('1111111111111111', 'hex'), name: 'child-span-2', kind: OTLP_SPAN_KIND.CLIENT },
+            ],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const spans = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans;
+      expect(spans).toHaveLength(3);
+    });
+
+    it('should decode gzip-compressed protobuf traces', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const message = {
+        resourceSpans: [{
+          resource: {
+            attributes: [{ key: 'service.name', value: { stringValue: 'gzip-trace-service' } }],
+          },
+          scopeSpans: [{
+            spans: [{
+              traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'),
+              spanId: Buffer.from('fedcba9876543210', 'hex'),
+              name: 'compressed-operation',
+              status: { code: OTLP_STATUS_CODE.OK },
+            }],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const compressed = gzipSync(Buffer.from(encoded));
+
+      const result = await parseOtlpTracesProtobuf(compressed);
+
+      expect(result.resourceSpans).toHaveLength(1);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.name).toBe('compressed-operation');
+    });
+
+    it('should decode protobuf with span events', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const message = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [{
+              traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'),
+              spanId: Buffer.from('fedcba9876543210', 'hex'),
+              name: 'span-with-events',
+              events: [
+                { name: 'exception', timeUnixNano: '1704067200500000000', attributes: [{ key: 'exception.message', value: { stringValue: 'Test error' } }] },
+                { name: 'retry', timeUnixNano: '1704067200600000000' },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.events).toHaveLength(2);
+    });
+
+    it('should decode protobuf with span links', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const message = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [{
+              traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'),
+              spanId: Buffer.from('fedcba9876543210', 'hex'),
+              name: 'span-with-links',
+              links: [
+                { traceId: Buffer.from('abcdef0123456789abcdef0123456789', 'hex'), spanId: Buffer.from('9876543210fedcba', 'hex'), attributes: [{ key: 'link.type', value: { stringValue: 'cause' } }] },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.links).toBeDefined();
+      expect(span?.links).toHaveLength(1);
+    });
+
+    it('should decode protobuf with all span kinds', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const message = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('1111111111111111', 'hex'), name: 'internal', kind: OTLP_SPAN_KIND.INTERNAL },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('2222222222222222', 'hex'), name: 'server', kind: OTLP_SPAN_KIND.SERVER },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('3333333333333333', 'hex'), name: 'client', kind: OTLP_SPAN_KIND.CLIENT },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('4444444444444444', 'hex'), name: 'producer', kind: OTLP_SPAN_KIND.PRODUCER },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('5555555555555555', 'hex'), name: 'consumer', kind: OTLP_SPAN_KIND.CONSUMER },
+            ],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const spans = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans;
+      expect(spans).toHaveLength(5);
+    });
+
+    it('should decode protobuf with all status codes', async () => {
+      if (!ExportTraceServiceRequest) {
+        console.warn('Skipping: protobuf encoder not available');
+        return;
+      }
+
+      const message = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('1111111111111111', 'hex'), name: 'unset', status: { code: OTLP_STATUS_CODE.UNSET } },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('2222222222222222', 'hex'), name: 'ok', status: { code: OTLP_STATUS_CODE.OK } },
+              { traceId: Buffer.from('0123456789abcdef0123456789abcdef', 'hex'), spanId: Buffer.from('3333333333333333', 'hex'), name: 'error', status: { code: OTLP_STATUS_CODE.ERROR, message: 'Failed' } },
+            ],
+          }],
+        }],
+      };
+
+      const encoded = ExportTraceServiceRequest.encode(message).finish();
+      const buffer = Buffer.from(encoded);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const spans = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans;
+      expect(spans).toHaveLength(3);
+    });
+  });
+
+  // ==========================================================================
+  // Trace/Span ID Normalization for Traces
+  // ==========================================================================
+  describe('parseOtlpTracesProtobuf - ID Normalization', () => {
+    it('should convert base64 trace IDs to hex', async () => {
+      const traceIdHex = '0123456789abcdef0123456789abcdef';
+      const traceIdBase64 = Buffer.from(traceIdHex, 'hex').toString('base64');
+
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: traceIdBase64,
+              spanId: Buffer.from('fedcba9876543210', 'hex').toString('base64'),
+              name: 'base64-id-test',
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.traceId).toBeDefined();
+      expect(span?.spanId).toBeDefined();
+    });
+
+    it('should preserve hex string IDs', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 'abcdef0123456789abcdef0123456789',
+              spanId: '1234567890abcdef',
+              parentSpanId: 'fedcba0987654321',
+              name: 'hex-id-test',
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.traceId).toBe('abcdef0123456789abcdef0123456789');
+      expect(span?.spanId).toBe('1234567890abcdef');
+      expect(span?.parentSpanId).toBe('fedcba0987654321');
+    });
+
+    it('should handle missing parent span ID', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 'abcdef0123456789abcdef0123456789',
+              spanId: '1234567890abcdef',
+              name: 'root-span-test',
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.parentSpanId).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Link Normalization
+  // ==========================================================================
+  describe('parseOtlpTracesProtobuf - Link Normalization', () => {
+    it('should normalize links with base64 IDs', async () => {
+      const linkedTraceId = Buffer.from('abcdef0123456789abcdef0123456789', 'hex').toString('base64');
+      const linkedSpanId = Buffer.from('9876543210fedcba', 'hex').toString('base64');
+
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: '0123456789abcdef0123456789abcdef',
+              spanId: 'fedcba9876543210',
+              name: 'span-with-links',
+              links: [
+                { traceId: linkedTraceId, spanId: linkedSpanId, traceState: 'vendor=value' },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const links = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.links;
+      expect(links).toBeDefined();
+      expect(links).toHaveLength(1);
+    });
+
+    it('should handle links with attributes', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: '0123456789abcdef0123456789abcdef',
+              spanId: 'fedcba9876543210',
+              name: 'span-with-link-attrs',
+              links: [
+                {
+                  traceId: 'abcdef0123456789abcdef0123456789',
+                  spanId: '1234567890abcdef',
+                  attributes: [
+                    { key: 'link.reason', value: { stringValue: 'caused-by' } },
+                    { key: 'link.index', value: { intValue: 0 } },
+                  ],
+                },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const links = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.links;
+      expect(links?.[0]?.attributes).toHaveLength(2);
+    });
+
+    it('should handle empty links array', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: '0123456789abcdef0123456789abcdef',
+              spanId: 'fedcba9876543210',
+              name: 'span-no-links',
+              links: [],
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const links = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.links;
+      expect(links).toEqual([]);
+    });
+
+    it('should handle null links', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: '0123456789abcdef0123456789abcdef',
+              spanId: 'fedcba9876543210',
+              name: 'span-null-links',
+              links: null,
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.links).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // Edge Cases for Protobuf Trace Parsing
+  // ==========================================================================
+  describe('parseOtlpTracesProtobuf - Edge Cases', () => {
+    it('should handle empty resourceSpans', async () => {
+      const mockData = { resourceSpans: [] };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toEqual([]);
+    });
+
+    it('should handle missing scopeSpans', async () => {
+      const mockData = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: undefined,
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans?.[0]?.scopeSpans).toBeUndefined();
+    });
+
+    it('should handle missing spans', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            scope: { name: 'test' },
+            spans: undefined,
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans).toBeUndefined();
+    });
+
+    it('should handle invalid resourceSpans entries', async () => {
+      const mockData = {
+        resourceSpans: [
+          null,
+          { scopeSpans: [{ spans: [{ traceId: 'abc', spanId: '123', name: 'valid' }] }] },
+          'invalid',
+        ],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toHaveLength(3);
+    });
+
+    it('should handle invalid scopeSpans entries', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [
+            null,
+            { spans: [{ traceId: 'abc', spanId: '123', name: 'valid' }] },
+            123,
+          ],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans?.[0]?.scopeSpans).toHaveLength(3);
+    });
+
+    it('should handle invalid span entries', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [
+              null,
+              { traceId: 'abc', spanId: '123', name: 'valid' },
+              'invalid',
+            ],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans).toHaveLength(3);
+    });
+
+    it('should handle invalid link entries', async () => {
+      const mockData = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 'abc',
+              spanId: '123',
+              name: 'span-with-invalid-links',
+              links: [
+                null,
+                { traceId: 'linked', spanId: 'span2' },
+                'invalid',
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      const links = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.links;
+      expect(links).toHaveLength(3);
+    });
+
+    it('should preserve schemaUrl at all levels', async () => {
+      const mockData = {
+        resourceSpans: [{
+          resource: {},
+          schemaUrl: 'https://example.com/resource-schema',
+          scopeSpans: [{
+            scope: { name: 'test' },
+            schemaUrl: 'https://example.com/scope-schema',
+            spans: [{ traceId: 'abc', spanId: '123', name: 'test' }],
+          }],
+        }],
+      };
+
+      const buffer = Buffer.from(JSON.stringify(mockData));
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans?.[0]?.schemaUrl).toBe('https://example.com/resource-schema');
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.schemaUrl).toBe('https://example.com/scope-schema');
+    });
+
+    it('should throw error for invalid gzip data', async () => {
+      const invalidGzip = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0xff, 0xff]);
+
+      await expect(parseOtlpTracesProtobuf(invalidGzip)).rejects.toThrow('Failed to decompress gzip data');
+    });
+
+    it('should throw error for invalid protobuf data', async () => {
+      const buffer = Buffer.from([0x0a, 0x0b, 0x0c, 0x0d]);
+
+      await expect(parseOtlpTracesProtobuf(buffer)).rejects.toThrow('Failed to decode OTLP traces protobuf');
     });
   });
 });
