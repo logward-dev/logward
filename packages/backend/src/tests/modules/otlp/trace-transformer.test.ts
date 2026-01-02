@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { gzipSync } from 'zlib';
 import {
   transformOtlpToSpans,
   transformSpan,
@@ -10,6 +11,7 @@ import {
   transformEvents,
   transformLinks,
   parseOtlpTracesJson,
+  parseOtlpTracesProtobuf,
   OTLP_SPAN_KIND,
   OTLP_STATUS_CODE,
   type OtlpSpan,
@@ -699,6 +701,99 @@ describe('OTLP Trace Transformer', () => {
 
       const spans = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans;
       expect(spans).toHaveLength(2);
+    });
+  });
+
+  // ==========================================================================
+  // parseOtlpTracesProtobuf
+  // ==========================================================================
+  describe('parseOtlpTracesProtobuf', () => {
+    it('should parse JSON disguised as protobuf', async () => {
+      const jsonData = {
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'test-svc' } }] },
+          scopeSpans: [{
+            spans: [{
+              traceId: 'abc123',
+              spanId: 'span1',
+              name: 'test-op',
+              startTimeUnixNano: '1234567890000000000',
+              endTimeUnixNano: '1234567891000000000',
+            }],
+          }],
+        }],
+      };
+      const buffer = Buffer.from(JSON.stringify(jsonData));
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toHaveLength(1);
+    });
+
+    it('should auto-detect and decompress gzip compressed JSON', async () => {
+      const jsonData = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [{ traceId: 'trace1', spanId: 'span1', name: 'op1' }],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpTracesProtobuf(compressed);
+
+      expect(result.resourceSpans).toHaveLength(1);
+    });
+
+    it('should handle empty buffer', async () => {
+      const buffer = Buffer.from([]);
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toEqual([]);
+    });
+
+    it('should throw error for invalid gzip data', async () => {
+      const invalidGzip = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0xff, 0xff]);
+
+      await expect(parseOtlpTracesProtobuf(invalidGzip)).rejects.toThrow('Failed to decompress gzip data');
+    });
+
+    it('should throw error for invalid protobuf data', async () => {
+      const buffer = Buffer.from([0x0a, 0x0b, 0x0c, 0x0d]);
+
+      await expect(parseOtlpTracesProtobuf(buffer)).rejects.toThrow('Failed to decode OTLP traces protobuf');
+    });
+
+    it('should handle gzip compressed traces with multiple spans', async () => {
+      const jsonData = {
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'my-service' } }] },
+          scopeSpans: [{
+            scope: { name: 'test-scope' },
+            spans: [
+              { traceId: 'trace1', spanId: 'span1', name: 'op1', startTimeUnixNano: '1000', endTimeUnixNano: '2000' },
+              { traceId: 'trace1', spanId: 'span2', name: 'op2', startTimeUnixNano: '1100', endTimeUnixNano: '1900', parentSpanId: 'span1' },
+            ],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpTracesProtobuf(compressed);
+
+      expect(result.resourceSpans).toHaveLength(1);
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans).toHaveLength(2);
+    });
+
+    it('should handle array JSON format', async () => {
+      const jsonData = [{ test: 'data' }];
+      const buffer = Buffer.from(JSON.stringify(jsonData));
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toEqual([]);
     });
   });
 });

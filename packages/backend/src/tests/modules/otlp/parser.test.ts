@@ -1,12 +1,88 @@
 import { describe, it, expect } from 'vitest';
+import { gzipSync } from 'zlib';
 import {
   parseOtlpJson,
   parseOtlpProtobuf,
   detectContentType,
   parseOtlpRequest,
+  isGzipCompressed,
+  decompressGzip,
 } from '../../../modules/otlp/parser.js';
 
 describe('OTLP Parser', () => {
+  // ==========================================================================
+  // isGzipCompressed
+  // ==========================================================================
+  describe('isGzipCompressed', () => {
+    it('should return true for gzip compressed data', () => {
+      const gzipData = Buffer.from([0x1f, 0x8b, 0x08, 0x00]);
+      expect(isGzipCompressed(gzipData)).toBe(true);
+    });
+
+    it('should return false for non-gzip data', () => {
+      const jsonData = Buffer.from('{"resourceLogs":[]}');
+      expect(isGzipCompressed(jsonData)).toBe(false);
+    });
+
+    it('should return false for empty buffer', () => {
+      const emptyBuffer = Buffer.from([]);
+      expect(isGzipCompressed(emptyBuffer)).toBe(false);
+    });
+
+    it('should return false for buffer with only one byte', () => {
+      const singleByte = Buffer.from([0x1f]);
+      expect(isGzipCompressed(singleByte)).toBe(false);
+    });
+
+    it('should return false for buffer starting with only first gzip byte', () => {
+      const partialGzip = Buffer.from([0x1f, 0x00]);
+      expect(isGzipCompressed(partialGzip)).toBe(false);
+    });
+
+    it('should return true for actual gzip compressed data', () => {
+      const compressed = gzipSync(Buffer.from('test data'));
+      expect(isGzipCompressed(compressed)).toBe(true);
+    });
+  });
+
+  // ==========================================================================
+  // decompressGzip
+  // ==========================================================================
+  describe('decompressGzip', () => {
+    it('should decompress gzip data', async () => {
+      const originalData = 'Hello, World!';
+      const compressed = gzipSync(Buffer.from(originalData));
+
+      const decompressed = await decompressGzip(compressed);
+
+      expect(decompressed.toString()).toBe(originalData);
+    });
+
+    it('should decompress JSON data', async () => {
+      const jsonData = '{"resourceLogs":[]}';
+      const compressed = gzipSync(Buffer.from(jsonData));
+
+      const decompressed = await decompressGzip(compressed);
+
+      expect(decompressed.toString()).toBe(jsonData);
+    });
+
+    it('should handle large data', async () => {
+      const largeData = 'x'.repeat(100000);
+      const compressed = gzipSync(Buffer.from(largeData));
+
+      const decompressed = await decompressGzip(compressed);
+
+      expect(decompressed.toString()).toBe(largeData);
+    });
+
+    it('should throw error for invalid gzip data', async () => {
+      const invalidData = Buffer.from([0x1f, 0x8b, 0x00, 0x00]);
+
+      await expect(decompressGzip(invalidData)).rejects.toThrow();
+    });
+  });
+
   // ==========================================================================
   // parseOtlpJson
   // ==========================================================================
@@ -301,6 +377,50 @@ describe('OTLP Parser', () => {
       // This will parse but return empty resourceLogs
       const result = await parseOtlpProtobuf(buffer);
       expect(result.resourceLogs).toEqual([]);
+    });
+
+    it('should auto-detect and decompress gzip compressed JSON', async () => {
+      const jsonData = {
+        resourceLogs: [{
+          resource: {},
+          scopeLogs: [{
+            logRecords: [{ severityNumber: 9, body: { stringValue: 'test log' } }],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpProtobuf(compressed);
+
+      expect(result.resourceLogs).toHaveLength(1);
+    });
+
+    it('should handle gzip compressed data with nested structure', async () => {
+      const jsonData = {
+        resourceLogs: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'my-service' } }] },
+          scopeLogs: [{
+            scope: { name: 'test-scope' },
+            logRecords: [
+              { timeUnixNano: '1234567890', severityNumber: 9, body: { stringValue: 'log 1' } },
+              { timeUnixNano: '1234567891', severityNumber: 13, body: { stringValue: 'log 2' } },
+            ],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpProtobuf(compressed);
+
+      expect(result.resourceLogs).toHaveLength(1);
+      expect((result.resourceLogs[0] as any).scopeLogs[0].logRecords).toHaveLength(2);
+    });
+
+    it('should throw error for invalid gzip data', async () => {
+      // Invalid gzip (magic bytes but corrupt data)
+      const invalidGzip = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0xff, 0xff]);
+
+      await expect(parseOtlpProtobuf(invalidGzip)).rejects.toThrow('Failed to decompress gzip data');
     });
   });
 
