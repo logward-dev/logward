@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { gzipSync } from 'zlib';
 import {
   transformOtlpToSpans,
@@ -794,6 +794,514 @@ describe('OTLP Trace Transformer', () => {
       const result = await parseOtlpTracesProtobuf(buffer);
 
       expect(result.resourceSpans).toEqual([]);
+    });
+
+    it('should handle gzip with snake_case fields', async () => {
+      const jsonData = {
+        resource_spans: [{
+          resource: {},
+          scope_spans: [{
+            spans: [{
+              trace_id: 'abc123',
+              span_id: 'span1',
+              parent_span_id: 'parent1',
+              name: 'test-op',
+              start_time_unix_nano: '1000000000',
+              end_time_unix_nano: '2000000000',
+            }],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpTracesProtobuf(compressed);
+
+      expect(result.resourceSpans).toHaveLength(1);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+      expect(span?.traceId).toBe('abc123');
+      expect(span?.spanId).toBe('span1');
+      expect(span?.parentSpanId).toBe('parent1');
+    });
+
+    it('should handle multiple resource spans', async () => {
+      const jsonData = {
+        resourceSpans: [
+          {
+            resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc1' } }] },
+            scopeSpans: [{ spans: [{ traceId: 'trace1', spanId: 'span1', name: 'op1' }] }],
+          },
+          {
+            resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc2' } }] },
+            scopeSpans: [{ spans: [{ traceId: 'trace2', spanId: 'span2', name: 'op2' }] }],
+          },
+        ],
+      };
+      const buffer = Buffer.from(JSON.stringify(jsonData));
+
+      const result = await parseOtlpTracesProtobuf(buffer);
+
+      expect(result.resourceSpans).toHaveLength(2);
+    });
+  });
+
+  // ==========================================================================
+  // Additional Edge Cases for transformSpan
+  // ==========================================================================
+  describe('transformSpan - Additional Edge Cases', () => {
+    it('should handle span with all optional fields populated', () => {
+      const now = BigInt(Date.now() * 1000000);
+      const end = now + 100000000n;
+
+      const span: OtlpSpan = {
+        traceId: 'trace123',
+        spanId: 'span456',
+        traceState: 'vendor1=value1',
+        parentSpanId: 'parent789',
+        name: 'complex-operation',
+        kind: OTLP_SPAN_KIND.CLIENT,
+        startTimeUnixNano: now,
+        endTimeUnixNano: end,
+        status: { code: OTLP_STATUS_CODE.ERROR, message: 'Connection failed' },
+        attributes: [
+          { key: 'http.method', value: { stringValue: 'POST' } },
+          { key: 'http.status_code', value: { intValue: 500 } },
+        ],
+        events: [
+          { name: 'retry', timeUnixNano: now.toString(), attributes: [{ key: 'attempt', value: { intValue: 1 } }] },
+          { name: 'failed', timeUnixNano: end.toString() },
+        ],
+        links: [
+          { traceId: 'linked-trace', spanId: 'linked-span', attributes: [{ key: 'reason', value: { stringValue: 'cause' } }] },
+        ],
+      };
+
+      const result = transformSpan(span, 'test-service', { env: 'prod' });
+
+      expect(result).not.toBeNull();
+      expect(result?.trace_id).toBe('trace123');
+      expect(result?.span_id).toBe('span456');
+      expect(result?.parent_span_id).toBe('parent789');
+      expect(result?.kind).toBe('CLIENT');
+      expect(result?.status_code).toBe('ERROR');
+      expect(result?.status_message).toBe('Connection failed');
+      expect(result?.events).toHaveLength(2);
+      expect(result?.links).toHaveLength(1);
+      expect(result?.resource_attributes).toEqual({ env: 'prod' });
+    });
+
+    it('should handle span with bigint timestamps directly', () => {
+      const now = BigInt(Date.now() * 1000000);
+      const end = now + 50000000n;
+
+      const span: OtlpSpan = {
+        traceId: 'trace1',
+        spanId: 'span1',
+        name: 'bigint-test',
+        startTimeUnixNano: now,
+        endTimeUnixNano: end,
+      };
+
+      const result = transformSpan(span, 'svc', {});
+
+      expect(result).not.toBeNull();
+      expect(result?.duration_ms).toBe(50);
+    });
+
+    it('should handle span with PRODUCER kind', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', kind: OTLP_SPAN_KIND.PRODUCER },
+        'svc',
+        {}
+      );
+
+      expect(result?.kind).toBe('PRODUCER');
+    });
+
+    it('should handle span with CONSUMER kind', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', kind: OTLP_SPAN_KIND.CONSUMER },
+        'svc',
+        {}
+      );
+
+      expect(result?.kind).toBe('CONSUMER');
+    });
+
+    it('should handle span with INTERNAL kind', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', kind: OTLP_SPAN_KIND.INTERNAL },
+        'svc',
+        {}
+      );
+
+      expect(result?.kind).toBe('INTERNAL');
+    });
+
+    it('should handle span with empty events array', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', events: [] },
+        'svc',
+        {}
+      );
+
+      expect(result?.events).toBeUndefined();
+    });
+
+    it('should handle span with empty links array', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', links: [] },
+        'svc',
+        {}
+      );
+
+      expect(result?.links).toBeUndefined();
+    });
+
+    it('should handle span with empty attributes array', () => {
+      const result = transformSpan(
+        { traceId: 't1', spanId: 's1', attributes: [] },
+        'svc',
+        {}
+      );
+
+      expect(result?.attributes).toEqual({});
+    });
+  });
+
+  // ==========================================================================
+  // Trace Aggregation Edge Cases
+  // ==========================================================================
+  describe('transformOtlpToSpans - Trace Aggregation', () => {
+    it('should track multiple traces separately', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [{
+            spans: [
+              { traceId: 'trace1', spanId: 'span1', name: 'op1', startTimeUnixNano: now.toString(), endTimeUnixNano: (now + 100000000n).toString() },
+              { traceId: 'trace2', spanId: 'span2', name: 'op2', startTimeUnixNano: now.toString(), endTimeUnixNano: (now + 200000000n).toString() },
+            ],
+          }],
+        }],
+      });
+
+      expect(result.traces.size).toBe(2);
+      expect(result.traces.get('trace1')).toBeDefined();
+      expect(result.traces.get('trace2')).toBeDefined();
+    });
+
+    it('should update trace bounds when child span extends beyond root', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [{
+            spans: [
+              // Root span ends at +100ms
+              { traceId: 'trace1', spanId: 'root', name: 'root-op', startTimeUnixNano: now.toString(), endTimeUnixNano: (now + 100000000n).toString() },
+              // Child span ends at +200ms (extends beyond root)
+              { traceId: 'trace1', spanId: 'child', parentSpanId: 'root', name: 'child-op', startTimeUnixNano: (now + 10000000n).toString(), endTimeUnixNano: (now + 200000000n).toString() },
+            ],
+          }],
+        }],
+      });
+
+      const trace = result.traces.get('trace1');
+      expect(trace?.span_count).toBe(2);
+      expect(trace?.duration_ms).toBe(200); // Total duration should be 200ms
+    });
+
+    it('should update trace bounds when child span starts before root', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [{
+            spans: [
+              // Root span starts at +50ms
+              { traceId: 'trace1', spanId: 'root', name: 'root-op', startTimeUnixNano: (now + 50000000n).toString(), endTimeUnixNano: (now + 100000000n).toString() },
+              // Child span starts earlier at +10ms
+              { traceId: 'trace1', spanId: 'child', parentSpanId: 'root', name: 'child-op', startTimeUnixNano: (now + 10000000n).toString(), endTimeUnixNano: (now + 60000000n).toString() },
+            ],
+          }],
+        }],
+      });
+
+      const trace = result.traces.get('trace1');
+      expect(trace?.duration_ms).toBe(90); // From 10ms to 100ms = 90ms
+    });
+
+    it('should identify root span and track its info', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'gateway' } }] },
+          scopeSpans: [{
+            spans: [
+              // Child span comes first in array but has parentSpanId
+              { traceId: 'trace1', spanId: 'child', parentSpanId: 'root', name: 'child-op', startTimeUnixNano: now.toString(), endTimeUnixNano: (now + 50000000n).toString() },
+              // Root span (no parent)
+              { traceId: 'trace1', spanId: 'root', name: 'root-op', startTimeUnixNano: now.toString(), endTimeUnixNano: (now + 100000000n).toString() },
+            ],
+          }],
+        }],
+      });
+
+      const trace = result.traces.get('trace1');
+      expect(trace?.root_service_name).toBe('gateway');
+      expect(trace?.root_operation_name).toBe('root-op');
+    });
+
+    it('should mark trace as error if any span has ERROR status', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [{
+            spans: [
+              { traceId: 'trace1', spanId: 'span1', name: 'op1', status: { code: OTLP_STATUS_CODE.OK } },
+              { traceId: 'trace1', spanId: 'span2', name: 'op2', status: { code: OTLP_STATUS_CODE.ERROR } },
+              { traceId: 'trace1', spanId: 'span3', name: 'op3', status: { code: OTLP_STATUS_CODE.OK } },
+            ],
+          }],
+        }],
+      });
+
+      const trace = result.traces.get('trace1');
+      expect(trace?.error).toBe(true);
+    });
+
+    it('should not mark trace as error if all spans are OK', () => {
+      const now = BigInt(Date.now() * 1000000);
+
+      const result = transformOtlpToSpans({
+        resourceSpans: [{
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [{
+            spans: [
+              { traceId: 'trace1', spanId: 'span1', name: 'op1', status: { code: OTLP_STATUS_CODE.OK } },
+              { traceId: 'trace1', spanId: 'span2', name: 'op2', status: { code: OTLP_STATUS_CODE.UNSET } },
+            ],
+          }],
+        }],
+      });
+
+      const trace = result.traces.get('trace1');
+      expect(trace?.error).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // parseOtlpTracesJson - Additional Edge Cases
+  // ==========================================================================
+  describe('parseOtlpTracesJson - Additional Edge Cases', () => {
+    it('should handle spans with status but no code', () => {
+      const body = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{ traceId: 't1', spanId: 's1', status: { message: 'partial' } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+
+      expect(span?.status?.message).toBe('partial');
+    });
+
+    it('should handle spans with scope information', () => {
+      const body = {
+        resourceSpans: [{
+          scopeSpans: [{
+            scope: { name: 'my-tracer', version: '1.0.0', attributes: [{ key: 'lib', value: { stringValue: 'opentelemetry' } }] },
+            spans: [{ traceId: 't1', spanId: 's1', name: 'op' }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const scope = result.resourceSpans?.[0]?.scopeSpans?.[0]?.scope;
+
+      expect(scope?.name).toBe('my-tracer');
+      expect(scope?.version).toBe('1.0.0');
+    });
+
+    it('should handle mixed camelCase and snake_case in same request', () => {
+      const body = {
+        resourceSpans: [{
+          resource: {},
+          scopeSpans: [{
+            spans: [{
+              traceId: 'camel',
+              span_id: 'snake',
+              name: 'mixed',
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+
+      expect(span?.traceId).toBe('camel');
+      expect(span?.spanId).toBe('snake');
+    });
+
+    it('should handle deeply nested attributes in spans', () => {
+      const body = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 't1',
+              spanId: 's1',
+              attributes: [
+                { key: 'nested.key.value', value: { stringValue: 'deep' } },
+                { key: 'array_attr', value: { arrayValue: { values: [{ intValue: 1 }, { intValue: 2 }] } } },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const span = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+
+      expect(span?.attributes).toHaveLength(2);
+    });
+
+    it('should handle spans with events containing dropped attributes count', () => {
+      const body = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 't1',
+              spanId: 's1',
+              events: [{ name: 'event1', droppedAttributesCount: 5 }],
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const events = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.events;
+
+      expect(events?.[0]?.droppedAttributesCount).toBe(5);
+    });
+
+    it('should handle spans with links containing trace state', () => {
+      const body = {
+        resourceSpans: [{
+          scopeSpans: [{
+            spans: [{
+              traceId: 't1',
+              spanId: 's1',
+              links: [{ traceId: 'linked', spanId: 'span2', traceState: 'vendor=value' }],
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+      const links = result.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0]?.links;
+
+      expect(links?.[0]?.traceState).toBe('vendor=value');
+    });
+
+    it('should preserve schemaUrl at resource and scope level', () => {
+      const body = {
+        resourceSpans: [{
+          resource: {},
+          schemaUrl: 'https://example.com/resource-schema',
+          scopeSpans: [{
+            schemaUrl: 'https://example.com/scope-schema',
+            spans: [{ traceId: 't1', spanId: 's1' }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+
+      expect(result.resourceSpans?.[0]?.schemaUrl).toBe('https://example.com/resource-schema');
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.schemaUrl).toBe('https://example.com/scope-schema');
+    });
+
+    it('should handle snake_case schema_url', () => {
+      const body = {
+        resource_spans: [{
+          schema_url: 'https://example.com/schema',
+          scope_spans: [{
+            schema_url: 'https://example.com/scope',
+            spans: [{ trace_id: 't1', span_id: 's1' }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpTracesJson(body);
+
+      expect(result.resourceSpans?.[0]?.schemaUrl).toBe('https://example.com/schema');
+      expect(result.resourceSpans?.[0]?.scopeSpans?.[0]?.schemaUrl).toBe('https://example.com/scope');
+    });
+  });
+
+  // ==========================================================================
+  // calculateDurationMs - Edge Cases
+  // ==========================================================================
+  describe('calculateDurationMs - Edge Cases', () => {
+    it('should handle very large duration values', () => {
+      const start = '1000000000';
+      const end = '86401000000000'; // ~24 hours in nanoseconds
+      const result = calculateDurationMs(start, end);
+
+      expect(result).toBe(86400000); // 24 hours in ms
+    });
+
+    it('should handle negative duration (end before start)', () => {
+      const start = '2000000000';
+      const end = '1000000000';
+      const result = calculateDurationMs(start, end);
+
+      expect(result).toBe(-1000); // Negative duration
+    });
+
+    it('should handle zero duration', () => {
+      const time = '1000000000';
+      const result = calculateDurationMs(time, time);
+
+      expect(result).toBe(0);
+    });
+  });
+
+  // ==========================================================================
+  // extractServiceName - Edge Cases
+  // ==========================================================================
+  describe('extractServiceName - Edge Cases', () => {
+    it('should return first service.name if multiple exist', () => {
+      const attrs = [
+        { key: 'service.name', value: { stringValue: 'first-service' } },
+        { key: 'service.name', value: { stringValue: 'second-service' } },
+      ];
+
+      expect(extractServiceName(attrs)).toBe('first-service');
+    });
+
+    it('should handle service.name with empty string', () => {
+      const attrs = [{ key: 'service.name', value: { stringValue: '' } }];
+
+      // Empty string is falsy so extractServiceName returns 'unknown'
+      expect(extractServiceName(attrs)).toBe('unknown');
+    });
+
+    it('should handle service.name with special characters', () => {
+      const attrs = [{ key: 'service.name', value: { stringValue: 'my-service_v2.0' } }];
+
+      expect(extractServiceName(attrs)).toBe('my-service_v2.0');
     });
   });
 });

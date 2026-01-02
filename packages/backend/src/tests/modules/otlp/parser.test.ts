@@ -521,4 +521,416 @@ describe('OTLP Parser', () => {
       expect(result.resourceLogs).toHaveLength(1);
     });
   });
+
+  // ==========================================================================
+  // Extended Body Value Tests (for snake_case normalization coverage)
+  // ==========================================================================
+  describe('parseOtlpJson - Body Value Types', () => {
+    it('should handle body with boolValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ body: { boolValue: true } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.boolValue).toBe(true);
+    });
+
+    it('should handle body with intValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ body: { intValue: 42 } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.intValue).toBe(42);
+    });
+
+    it('should handle body with doubleValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ body: { doubleValue: 3.14 } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.doubleValue).toBe(3.14);
+    });
+
+    it('should handle body with arrayValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              body: {
+                arrayValue: {
+                  values: [
+                    { stringValue: 'item1' },
+                    { stringValue: 'item2' },
+                  ],
+                },
+              },
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.arrayValue.values).toHaveLength(2);
+    });
+
+    it('should handle body with kvlistValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              body: {
+                kvlistValue: {
+                  values: [
+                    { key: 'name', value: { stringValue: 'test' } },
+                  ],
+                },
+              },
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.kvlistValue.values[0].key).toBe('name');
+    });
+
+    it('should handle body with bytesValue', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              body: { bytesValue: 'SGVsbG8gV29ybGQ=' }, // base64 encoded "Hello World"
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body.bytesValue).toBe('SGVsbG8gV29ybGQ=');
+    });
+
+    it('should pass through snake_case body values (bool_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{ body: { bool_value: false } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.bool_value).toBe(false);
+    });
+
+    it('should pass through snake_case body values (int_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{ body: { int_value: 100 } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.int_value).toBe(100);
+    });
+
+    it('should pass through snake_case body values (double_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{ body: { double_value: 2.718 } }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.double_value).toBe(2.718);
+    });
+
+    it('should pass through snake_case body values (array_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{
+              body: { array_value: { values: [] } },
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.array_value).toBeDefined();
+    });
+
+    it('should pass through snake_case body values (kvlist_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{
+              body: { kvlist_value: { values: [] } },
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.kvlist_value).toBeDefined();
+    });
+
+    it('should pass through snake_case body values (bytes_value) unchanged', () => {
+      // Note: JSON parser doesn't normalize body values, only log record fields
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            log_records: [{
+              body: { bytes_value: 'dGVzdA==' }, // base64 "test"
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      // Body is passed through as-is (not normalized in JSON path)
+      expect(logRecord.body.bytes_value).toBe('dGVzdA==');
+    });
+
+    it('should handle undefined body gracefully', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ severityNumber: 9 }], // No body field
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.body).toBeUndefined();
+    });
+
+    it('should handle complex nested attributes', () => {
+      const body = {
+        resourceLogs: [{
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'my-service' } },
+              { key: 'host.name', value: { stringValue: 'localhost' } },
+              { key: 'process.pid', value: { intValue: 12345 } },
+            ],
+          },
+          scopeLogs: [{
+            scope: {
+              name: 'my-scope',
+              version: '1.0.0',
+              attributes: [
+                { key: 'scope.attr', value: { boolValue: true } },
+              ],
+            },
+            logRecords: [{
+              body: { stringValue: 'test message' },
+              attributes: [
+                { key: 'custom.attr', value: { doubleValue: 1.5 } },
+              ],
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+
+      expect(result.resourceLogs).toHaveLength(1);
+      expect((result.resourceLogs[0] as any).resource.attributes).toHaveLength(3);
+    });
+  });
+
+  // ==========================================================================
+  // Trace/Span ID Normalization Tests
+  // ==========================================================================
+  describe('parseOtlpJson - Trace/Span ID Handling', () => {
+    it('should preserve hex string trace IDs', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              traceId: 'abcd1234567890abcdef1234567890ab',
+              spanId: '1234567890abcdef',
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.traceId).toBe('abcd1234567890abcdef1234567890ab');
+      expect(logRecord.spanId).toBe('1234567890abcdef');
+    });
+
+    it('should handle empty trace/span IDs', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              traceId: '',
+              spanId: '',
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.traceId).toBe('');
+      expect(logRecord.spanId).toBe('');
+    });
+
+    it('should handle undefined trace/span IDs', () => {
+      const body = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{
+              severityNumber: 9,
+              // No traceId or spanId
+            }],
+          }],
+        }],
+      };
+
+      const result = parseOtlpJson(body);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+
+      expect(logRecord.traceId).toBeUndefined();
+      expect(logRecord.spanId).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Buffer Parsing Tests
+  // ==========================================================================
+  describe('parseOtlpProtobuf - Buffer Handling', () => {
+    it('should handle Buffer.from string', async () => {
+      const jsonData = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ severityNumber: 9, body: { stringValue: 'test' } }],
+          }],
+        }],
+      };
+      const buffer = Buffer.from(JSON.stringify(jsonData), 'utf-8');
+
+      const result = await parseOtlpProtobuf(buffer);
+
+      expect(result.resourceLogs).toHaveLength(1);
+    });
+
+    it('should handle Uint8Array input', async () => {
+      const jsonData = {
+        resourceLogs: [{
+          scopeLogs: [{
+            logRecords: [{ severityNumber: 9 }],
+          }],
+        }],
+      };
+      const jsonString = JSON.stringify(jsonData);
+      const encoder = new TextEncoder();
+      const uint8Array = encoder.encode(jsonString);
+      const buffer = Buffer.from(uint8Array);
+
+      const result = await parseOtlpProtobuf(buffer);
+
+      expect(result.resourceLogs).toHaveLength(1);
+    });
+
+    it('should handle gzip with snake_case fields', async () => {
+      const jsonData = {
+        resource_logs: [{
+          scope_logs: [{
+            log_records: [{
+              severity_number: 13,
+              body: { string_value: 'warning message' },
+              time_unix_nano: '1234567890000000000',
+            }],
+          }],
+        }],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpProtobuf(compressed);
+
+      expect(result.resourceLogs).toHaveLength(1);
+      const logRecord = (result.resourceLogs[0] as any).scopeLogs[0].logRecords[0];
+      expect(logRecord.severityNumber).toBe(13);
+    });
+
+    it('should handle multiple resource logs in gzip', async () => {
+      const jsonData = {
+        resourceLogs: [
+          {
+            resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc1' } }] },
+            scopeLogs: [{ logRecords: [{ body: { stringValue: 'log 1' } }] }],
+          },
+          {
+            resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc2' } }] },
+            scopeLogs: [{ logRecords: [{ body: { stringValue: 'log 2' } }] }],
+          },
+        ],
+      };
+      const compressed = gzipSync(Buffer.from(JSON.stringify(jsonData)));
+
+      const result = await parseOtlpProtobuf(compressed);
+
+      expect(result.resourceLogs).toHaveLength(2);
+    });
+  });
 });

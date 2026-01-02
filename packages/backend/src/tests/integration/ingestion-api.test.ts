@@ -339,6 +339,430 @@ describe('Ingestion API', () => {
                 .send(JSON.stringify(log))
                 .expect(200);
         });
+
+        // ======================================================================
+        // systemd-journald format tests
+        // ======================================================================
+        it('should detect and handle journald format with _SYSTEMD_UNIT', async () => {
+            const uniqueMsg = `journald-systemd-unit-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                _SYSTEMD_UNIT: 'nginx.service',
+                PRIORITY: '6', // info
+                __REALTIME_TIMESTAMP: String(Date.now() * 1000), // microseconds
+                _HOSTNAME: 'test-host',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog).toBeDefined();
+            expect(dbLog?.service).toBe('nginx'); // .service suffix removed
+            expect(dbLog?.level).toBe('info');
+            expect(dbLog?.metadata).toHaveProperty('source', 'journald');
+            expect(dbLog?.metadata).toHaveProperty('_HOSTNAME', 'test-host');
+        });
+
+        it('should extract service from SYSLOG_IDENTIFIER for journald', async () => {
+            const uniqueMsg = `journald-syslog-id-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'my-daemon',
+                PRIORITY: '4', // warning
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-daemon');
+            expect(dbLog?.level).toBe('warn');
+        });
+
+        it('should extract service from _COMM for journald', async () => {
+            const uniqueMsg = `journald-comm-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                _COMM: 'process-name',
+                PRIORITY: '3', // error
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('process-name');
+            expect(dbLog?.level).toBe('error');
+        });
+
+        it('should extract service basename from _EXE path for journald', async () => {
+            const uniqueMsg = `journald-exe-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                _EXE: '/usr/bin/my-executable',
+                PRIORITY: '7', // debug
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-executable');
+            expect(dbLog?.level).toBe('debug');
+        });
+
+        it('should map journald PRIORITY levels correctly', async () => {
+            const testCases = [
+                { priority: '0', expectedLevel: 'critical' }, // emerg
+                { priority: '1', expectedLevel: 'critical' }, // alert
+                { priority: '2', expectedLevel: 'critical' }, // crit
+                { priority: '3', expectedLevel: 'error' },    // err
+                { priority: '4', expectedLevel: 'warn' },     // warning
+                { priority: '5', expectedLevel: 'info' },     // notice
+                { priority: '6', expectedLevel: 'info' },     // info
+                { priority: '7', expectedLevel: 'debug' },    // debug
+            ];
+
+            for (const { priority, expectedLevel } of testCases) {
+                const uniqueMsg = `journald-priority-${priority}-${Date.now()}-${Math.random()}`;
+                const log = {
+                    MESSAGE: uniqueMsg,
+                    SYSLOG_IDENTIFIER: 'test-priority',
+                    PRIORITY: priority,
+                };
+
+                await request(app.server)
+                    .post('/api/v1/ingest/single')
+                    .set('x-api-key', apiKey)
+                    .send(log)
+                    .expect(200);
+
+                const dbLog = await db
+                    .selectFrom('logs')
+                    .selectAll()
+                    .where('message', '=', uniqueMsg)
+                    .executeTakeFirst();
+
+                expect(dbLog?.level, `Priority ${priority} should map to ${expectedLevel}`).toBe(expectedLevel);
+            }
+        });
+
+        it('should parse journald __REALTIME_TIMESTAMP correctly', async () => {
+            const uniqueMsg = `journald-timestamp-${Date.now()}`;
+            // Use a known timestamp (2024-01-01 12:00:00 UTC in microseconds)
+            const timestampMicros = '1704110400000000';
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'timestamp-test',
+                PRIORITY: '6',
+                __REALTIME_TIMESTAMP: timestampMicros,
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog).toBeDefined();
+            // Verify the timestamp was parsed from microseconds
+            const logTime = new Date(dbLog!.time);
+            expect(logTime.toISOString()).toBe('2024-01-01T12:00:00.000Z');
+        });
+
+        it('should extract journald metadata fields', async () => {
+            const uniqueMsg = `journald-metadata-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'metadata-test',
+                PRIORITY: '6',
+                _HOSTNAME: 'server1',
+                _PID: '12345',
+                _UID: '1000',
+                _GID: '1000',
+                _MACHINE_ID: 'abc123',
+                _BOOT_ID: 'xyz789',
+                _CMDLINE: '/usr/bin/test --flag',
+                _SYSTEMD_CGROUP: '/system.slice/test.service',
+                _SYSTEMD_SLICE: 'system.slice',
+                _TRANSPORT: 'journal',
+                SYSLOG_FACILITY: '3',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('_HOSTNAME', 'server1');
+            expect(dbLog?.metadata).toHaveProperty('_PID', '12345');
+            expect(dbLog?.metadata).toHaveProperty('_UID', '1000');
+            expect(dbLog?.metadata).toHaveProperty('_MACHINE_ID', 'abc123');
+            expect(dbLog?.metadata).toHaveProperty('_TRANSPORT', 'journal');
+            expect(dbLog?.metadata).toHaveProperty('source', 'journald');
+        });
+
+        it('should fall back to level field when PRIORITY is not set for journald', async () => {
+            const uniqueMsg = `journald-fallback-level-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                _SYSTEMD_UNIT: 'test.service',
+                level: 'error', // Fallback level
+                // No PRIORITY field
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.level).toBe('error');
+        });
+
+        it('should fall back to message field when MESSAGE is not set for journald', async () => {
+            const uniqueMsg = `journald-fallback-message-${Date.now()}`;
+            const log = {
+                _SYSTEMD_UNIT: 'test.service',
+                PRIORITY: '6',
+                message: uniqueMsg, // Fallback to lowercase message
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.message).toBe(uniqueMsg);
+        });
+
+        it('should use _SOURCE_REALTIME_TIMESTAMP when __REALTIME_TIMESTAMP is not available', async () => {
+            const uniqueMsg = `journald-source-timestamp-${Date.now()}`;
+            const timestampMicros = '1704110400000000'; // 2024-01-01 12:00:00 UTC
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'timestamp-test',
+                PRIORITY: '6',
+                _SOURCE_REALTIME_TIMESTAMP: timestampMicros,
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            const logTime = new Date(dbLog!.time);
+            expect(logTime.toISOString()).toBe('2024-01-01T12:00:00.000Z');
+        });
+
+        it('should fall back to time field when journald timestamps are not available', async () => {
+            const uniqueMsg = `journald-time-fallback-${Date.now()}`;
+            const expectedTime = '2024-06-15T10:30:00.000Z';
+            const log = {
+                MESSAGE: uniqueMsg,
+                _SYSTEMD_UNIT: 'test.service',
+                PRIORITY: '6',
+                time: expectedTime,
+                // No __REALTIME_TIMESTAMP or _SOURCE_REALTIME_TIMESTAMP
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(new Date(dbLog!.time).toISOString()).toBe(expectedTime);
+        });
+
+        it('should use service field if provided even for journald format', async () => {
+            const uniqueMsg = `journald-service-override-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                _SYSTEMD_UNIT: 'original.service',
+                service: 'override-service', // Should take precedence
+                PRIORITY: '6',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('override-service');
+        });
+
+        it('should handle numeric PRIORITY value for journald', async () => {
+            const uniqueMsg = `journald-numeric-priority-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'test',
+                PRIORITY: 4, // Numeric instead of string
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.level).toBe('warn');
+        });
+
+        it('should handle undefined/null level gracefully', async () => {
+            const uniqueMsg = `undefined-level-${Date.now()}`;
+            const log = {
+                time: new Date().toISOString(),
+                service: 'test-undefined-level',
+                level: undefined,
+                message: uniqueMsg,
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.level).toBe('info'); // Default fallback
+        });
+
+        it('should fall back to log field for journald message', async () => {
+            const uniqueMsg = `journald-log-fallback-${Date.now()}`;
+            const log = {
+                _SYSTEMD_UNIT: 'test.service',
+                PRIORITY: '6',
+                log: uniqueMsg, // Fallback to log field
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.message).toBe(uniqueMsg);
+        });
+
+        it('should return unknown service when no journald service identifiers are present', async () => {
+            const uniqueMsg = `journald-unknown-service-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                PRIORITY: '6',
+                // No SYSLOG_IDENTIFIER, _SYSTEMD_UNIT, _COMM, or _EXE
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('unknown');
+        });
     });
 
     describe('GET /api/v1/stats - Statistics', () => {

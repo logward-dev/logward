@@ -549,5 +549,222 @@ describe('Query API Integration Tests', () => {
 
             expect(response.body.errors.length).toBeLessThanOrEqual(2);
         });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/top-errors')
+                .expect(401);
+        });
+    });
+
+    describe('GET /api/v1/logs/:logId - Get Single Log', () => {
+        let testLogId: string;
+
+        beforeEach(async () => {
+            // Insert a test log and capture its ID
+            const result = await db
+                .insertInto('logs')
+                .values({
+                    project_id: projectId,
+                    time: new Date(),
+                    service: 'test-service',
+                    level: 'info',
+                    message: 'Test log for single retrieval',
+                    metadata: { testKey: 'testValue' },
+                })
+                .returning(['id'])
+                .executeTakeFirstOrThrow();
+
+            testLogId = result.id;
+        });
+
+        it('should return a single log by ID', async () => {
+            const response = await request(app.server)
+                .get(`/api/v1/logs/${testLogId}`)
+                .query({ projectId })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('log');
+            expect(response.body.log.id).toBe(testLogId);
+            expect(response.body.log.message).toBe('Test log for single retrieval');
+        });
+
+        it('should return 404 for non-existent log', async () => {
+            const fakeId = '00000000-0000-0000-0000-000000000000';
+            const response = await request(app.server)
+                .get(`/api/v1/logs/${fakeId}`)
+                .query({ projectId })
+                .set('x-api-key', apiKey)
+                .expect(404);
+
+            expect(response.body.error).toBe('Log not found');
+        });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get(`/api/v1/logs/${testLogId}`)
+                .query({ projectId })
+                .expect(401);
+        });
+
+        it('should use projectId from API key association when not provided', async () => {
+            // The API key has projectId associated, so request succeeds without explicit projectId
+            const response = await request(app.server)
+                .get(`/api/v1/logs/${testLogId}`)
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('log');
+        });
+    });
+
+    describe('GET /api/v1/logs/services - Get Distinct Services', () => {
+        beforeEach(async () => {
+            // Insert logs with different services
+            await createTestLog({ projectId, service: 'api-gateway', level: 'info', message: 'Log 1' });
+            await createTestLog({ projectId, service: 'auth-service', level: 'info', message: 'Log 2' });
+            await createTestLog({ projectId, service: 'user-service', level: 'info', message: 'Log 3' });
+            await createTestLog({ projectId, service: 'api-gateway', level: 'error', message: 'Log 4' });
+        });
+
+        it('should return distinct services', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.services).toBeInstanceOf(Array);
+            expect(response.body.services.length).toBeGreaterThanOrEqual(3);
+            expect(response.body.services).toContain('api-gateway');
+            expect(response.body.services).toContain('auth-service');
+            expect(response.body.services).toContain('user-service');
+        });
+
+        it('should filter by time range', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({
+                    projectId,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.services).toBeInstanceOf(Array);
+        });
+
+        it('should reject invalid from date format', async () => {
+            // Fastify schema validation catches invalid date formats
+            await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId, from: 'invalid-date' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+        });
+
+        it('should reject invalid to date format', async () => {
+            // Fastify schema validation catches invalid date formats
+            await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId, to: 'not-a-date' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+        });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/services')
+                .expect(401);
+        });
+
+        it('should support multiple projectIds', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId: [projectId] })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.services).toBeInstanceOf(Array);
+        });
+    });
+
+    describe('Authentication Tests', () => {
+        it('should work with API key that has projectId association', async () => {
+            // The API key created by createTestContext has a projectId association
+            // So requests without explicit projectId still work
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('logs');
+        });
+
+        it('should require authentication for logs endpoint', async () => {
+            await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId })
+                .expect(401);
+        });
+
+        it('should require authentication for trace endpoint', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/trace/some-trace-id')
+                .query({ projectId })
+                .expect(401);
+        });
+
+        it('should require authentication for context endpoint', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/context')
+                .query({ projectId, time: new Date().toISOString() })
+                .expect(401);
+        });
+
+        it('should require from/to for aggregated endpoint', async () => {
+            // Without from/to, the request should fail with 400 (Fastify schema validation)
+            const response = await request(app.server)
+                .get('/api/v1/logs/aggregated')
+                .query({ projectId })
+                .set('x-api-key', apiKey)
+                .expect(400);
+
+            expect(response.body).toHaveProperty('message');
+        });
+
+        it('should require authentication for top-services endpoint', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/top-services')
+                .query({ projectId })
+                .expect(401);
+        });
+    });
+
+    describe('Multiple Levels and Services Filter', () => {
+        beforeEach(async () => {
+            await createTestLog({ projectId, service: 'service-a', level: 'info', message: 'A Info' });
+            await createTestLog({ projectId, service: 'service-b', level: 'warn', message: 'B Warn' });
+            await createTestLog({ projectId, service: 'service-a', level: 'error', message: 'A Error' });
+            await createTestLog({ projectId, service: 'service-c', level: 'debug', message: 'C Debug' });
+        });
+
+        it('should filter by multiple services', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, service: ['service-a', 'service-b'] })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.logs).toBeInstanceOf(Array);
+            response.body.logs.forEach((log: any) => {
+                expect(['service-a', 'service-b']).toContain(log.service);
+            });
+        });
     });
 });
