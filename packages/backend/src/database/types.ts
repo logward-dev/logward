@@ -370,6 +370,39 @@ export interface ErrorGroupsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface UserIdentitiesTable {
+  id: Generated<string>;
+  user_id: string;
+  provider_id: string;
+  provider_user_id: string;
+  metadata: ColumnType<Record<string, unknown> | null, Record<string, unknown> | null, Record<string, unknown> | null>;
+  last_login_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OidcStatesTable {
+  id: Generated<string>;
+  state: string;
+  nonce: string;
+  code_verifier: string; // PKCE code verifier for token exchange
+  provider_id: string;
+  redirect_uri: string; // Required for OIDC token exchange
+  created_at: Generated<Timestamp>;
+}
+
+// ============================================================================
+// SYSTEM SETTINGS TABLE
+// ============================================================================
+
+export interface SystemSettingsTable {
+  key: string;
+  value: ColumnType<unknown, unknown, unknown>; // JSONB - can be any JSON value
+  description: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 // ============================================================================
 // EXTERNAL AUTHENTICATION TABLES (LDAP/OIDC)
 // ============================================================================

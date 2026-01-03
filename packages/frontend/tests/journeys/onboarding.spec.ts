@@ -33,8 +33,8 @@ test.describe('Onboarding Tutorial Journey', () => {
     // Should redirect to onboarding
     await expect(page).toHaveURL(/onboarding/, { timeout: 15000 });
 
-    // Should see welcome step with user's name
-    await expect(page.locator('text=/Welcome.*LogWard/i')).toBeVisible({ timeout: 10000 });
+    // Should see welcome step with user's name (use h1 heading to avoid matching multiple elements)
+    await expect(page.getByRole('heading', { name: /Welcome.*LogWard/i })).toBeVisible({ timeout: 10000 });
 
     // Should see "Start the Tutorial" button
     await expect(page.locator('button:has-text("Start the Tutorial")')).toBeVisible();
@@ -348,8 +348,8 @@ test.describe('Tutorial Skip and Resume', () => {
       // Should redirect to onboarding
       await expect(page).toHaveURL(/onboarding/, { timeout: 10000 });
 
-      // Should see welcome step again
-      await expect(page.locator('text=/Welcome.*LogWard/i')).toBeVisible({ timeout: 5000 });
+      // Should see welcome step again (use h1 heading to avoid matching multiple elements)
+      await expect(page.getByRole('heading', { name: /Welcome.*LogWard/i })).toBeVisible({ timeout: 5000 });
     }
   });
 });
@@ -383,8 +383,8 @@ test.describe('Onboarding Mobile Responsive', () => {
     // Should redirect to onboarding
     await expect(page).toHaveURL(/onboarding/, { timeout: 15000 });
 
-    // Welcome step should be visible and not overflow
-    await expect(page.locator('text=/Welcome.*LogWard/i')).toBeVisible({ timeout: 10000 });
+    // Welcome step should be visible and not overflow (use h1 heading to avoid matching multiple elements)
+    await expect(page.getByRole('heading', { name: /Welcome.*LogWard/i })).toBeVisible({ timeout: 10000 });
 
     // Buttons should be visible and clickable (scroll into view for mobile)
     const startButton = page.locator('button:has-text("Start the Tutorial")');
@@ -555,8 +555,8 @@ test.describe('Onboarding Accessibility', () => {
     // Should redirect to onboarding
     await expect(page).toHaveURL(/onboarding/, { timeout: 15000 });
 
-    // Wait for welcome step
-    await expect(page.locator('text=/Welcome.*LogWard/i')).toBeVisible({ timeout: 10000 });
+    // Wait for welcome step (use h1 heading to avoid matching multiple elements)
+    await expect(page.getByRole('heading', { name: /Welcome.*LogWard/i })).toBeVisible({ timeout: 10000 });
 
     // Tab to "Start the Tutorial" button
     await page.keyboard.press('Tab');
