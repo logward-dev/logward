@@ -45,6 +45,7 @@ export interface OrganizationsTable {
   slug: string;
   description: string | null;
   owner_id: string;
+  retention_days: Generated<number>; // 1-365 days, default 90
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

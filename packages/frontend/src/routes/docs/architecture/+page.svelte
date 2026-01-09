@@ -212,6 +212,79 @@ User → Organizations (1:N) → Projects (1:N) → API Keys → Logs
     </div>
 
     <h2
+        id="log-retention"
+        class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
+    >
+        Log Retention
+    </h2>
+
+    <div class="mb-8">
+        <p class="mb-4">
+            LogWard supports customizable log retention policies per organization,
+            allowing administrators to control how long logs are stored before
+            automatic deletion.
+        </p>
+
+        <Card class="mb-6">
+            <CardHeader>
+                <CardTitle class="text-base">Retention Configuration</CardTitle>
+            </CardHeader>
+            <CardContent class="text-sm space-y-3">
+                <p><strong>Range:</strong> 1 to 365 days</p>
+                <p><strong>Default:</strong> 90 days</p>
+                <p><strong>Scope:</strong> Organization-level (applies to all projects within the organization)</p>
+                <p><strong>Cleanup:</strong> Daily at 2:00 AM (server time)</p>
+            </CardContent>
+        </Card>
+
+        <h3 id="retention-admin" class="text-lg font-semibold mb-3 scroll-mt-20">Admin Configuration</h3>
+        <p class="text-muted-foreground mb-4">
+            Only system administrators can modify retention settings. This is done through the
+            Admin Panel under Organization Details:
+        </p>
+        <ol class="ml-6 space-y-2 text-muted-foreground mb-6">
+            <li>1. Navigate to <code>Admin Panel → Organizations</code></li>
+            <li>2. Click on the organization you want to configure</li>
+            <li>3. Find the "Log Retention Policy" card</li>
+            <li>4. Enter the desired retention period (1-365 days)</li>
+            <li>5. Click "Save" to apply the changes</li>
+        </ol>
+
+        <h3 id="retention-visibility" class="text-lg font-semibold mb-3 scroll-mt-20">User Visibility</h3>
+        <p class="text-muted-foreground mb-4">
+            Regular users can view their organization's retention policy in read-only mode:
+        </p>
+        <ol class="ml-6 space-y-2 text-muted-foreground mb-6">
+            <li>1. Navigate to <code>Organization Settings</code></li>
+            <li>2. View the "Log Retention Policy" card showing the current retention period</li>
+            <li>3. Contact your administrator if you need to change the retention policy</li>
+        </ol>
+
+        <h3 id="retention-cleanup" class="text-lg font-semibold mb-3 scroll-mt-20">Cleanup Process</h3>
+        <p class="text-muted-foreground mb-4">
+            The retention cleanup runs as a background worker job:
+        </p>
+        <ul class="ml-6 space-y-2 text-muted-foreground mb-6">
+            <li>• <strong>Schedule:</strong> Daily at 2:00 AM server time</li>
+            <li>• <strong>Startup:</strong> Also runs 2 minutes after worker starts</li>
+            <li>• <strong>Process:</strong> Deletes logs older than the retention period for each organization</li>
+            <li>• <strong>Logging:</strong> All cleanup operations are logged internally for audit purposes</li>
+        </ul>
+
+        <Card class="border-yellow-500/50 bg-yellow-500/5">
+            <CardContent class="pt-4 text-sm">
+                <p class="font-semibold text-yellow-600 dark:text-yellow-400 mb-2">Important Notes</p>
+                <ul class="space-y-1 text-muted-foreground">
+                    <li>• Log deletion is permanent and cannot be undone</li>
+                    <li>• Only the <code>logs</code> table is affected by retention policies</li>
+                    <li>• Other data (spans, alert history, etc.) follows separate retention rules</li>
+                    <li>• TimescaleDB's global 90-day policy may still apply as a safety net</li>
+                </ul>
+            </CardContent>
+        </Card>
+    </div>
+
+    <h2
         id="design-decisions"
         class="text-2xl font-semibold mb-4 scroll-mt-20 border-b border-border pb-2"
     >

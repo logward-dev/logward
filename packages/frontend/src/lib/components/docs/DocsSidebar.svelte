@@ -112,6 +112,7 @@
             collapsed: false,
             items: [
                 { title: "Architecture", href: "/docs/architecture" },
+                { title: "Log Retention", href: "/docs/architecture#log-retention" },
                 { title: "Deployment", href: "/docs/deployment" },
                 { title: "Contributing", href: "/docs/contributing" },
             ],

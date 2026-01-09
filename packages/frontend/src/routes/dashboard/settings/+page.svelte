@@ -402,6 +402,34 @@
 
   <Card>
     <CardHeader>
+      <div class="flex items-center gap-2">
+        <Clock class="w-5 h-5 text-primary" />
+        <div>
+          <CardTitle>Log Retention Policy</CardTitle>
+          <CardDescription>How long logs are retained for this organization</CardDescription>
+        </div>
+      </div>
+    </CardHeader>
+    <CardContent>
+      <div class="space-y-4">
+        <div class="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+          <div class="flex-1">
+            <div class="text-2xl font-bold">{currentOrg?.retentionDays || 90} days</div>
+            <p class="text-sm text-muted-foreground">
+              Logs older than this will be automatically deleted
+            </p>
+          </div>
+        </div>
+        <p class="text-sm text-muted-foreground">
+          The log retention policy is configured by your system administrator.
+          Contact your admin if you need to change this setting.
+        </p>
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardHeader>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <Users class="w-5 h-5 text-primary" />

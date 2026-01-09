@@ -8,6 +8,7 @@ import { processExceptionParsing } from './queue/jobs/exception-parsing.js';
 import { processErrorNotification } from './queue/jobs/error-notification.js';
 import { alertsService } from './modules/alerts/index.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
+import { retentionService } from './modules/retention/index.js';
 import { initializeInternalLogging, shutdownInternalLogging, getInternalLogger } from './utils/internal-logger.js';
 
 // Initialize internal logging
@@ -370,6 +371,98 @@ setInterval(updateEnrichmentDatabases, 24 * 60 * 60 * 1000);
 
 // Check for updates on start (after 30 seconds delay)
 setTimeout(updateEnrichmentDatabases, 30000);
+
+// ============================================================================
+// Log Retention Cleanup (Daily at 2 AM)
+// ============================================================================
+
+let isRunningRetentionCleanup = false;
+
+async function runRetentionCleanup() {
+  // Skip if already running
+  if (isRunningRetentionCleanup) {
+    console.warn('⚠️  Retention cleanup already in progress, skipping...');
+    return;
+  }
+
+  isRunningRetentionCleanup = true;
+  const logger = getInternalLogger();
+  const startTime = Date.now();
+
+  try {
+    console.log('🗑️  Starting retention cleanup...');
+    const summary = await retentionService.executeRetentionForAllOrganizations();
+    const duration = Date.now() - startTime;
+
+    console.log(`✅ Retention cleanup completed: ${summary.totalLogsDeleted} logs deleted from ${summary.successfulOrganizations}/${summary.totalOrganizations} orgs in ${duration}ms`);
+
+    if (logger) {
+      logger.info('worker-retention-completed', 'Retention cleanup completed', {
+        totalOrganizations: summary.totalOrganizations,
+        successfulOrganizations: summary.successfulOrganizations,
+        failedOrganizations: summary.failedOrganizations,
+        totalLogsDeleted: summary.totalLogsDeleted,
+        duration_ms: duration,
+      });
+    }
+
+    // Log any failures
+    for (const result of summary.results.filter(r => r.error)) {
+      console.error(`❌ Retention failed for org ${result.organizationName}: ${result.error}`);
+      if (logger) {
+        logger.error('worker-retention-org-failed', `Retention failed for org ${result.organizationName}`, {
+          organizationId: result.organizationId,
+          organizationName: result.organizationName,
+          error: result.error,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ Retention cleanup failed:', error);
+
+    if (logger) {
+      logger.error('worker-retention-failed', `Retention cleanup failed: ${(error as Error).message}`, {
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
+  } finally {
+    isRunningRetentionCleanup = false;
+  }
+}
+
+// Calculate milliseconds until next 2 AM
+function getMillisecondsUntil2AM(): number {
+  const now = new Date();
+  const next2AM = new Date(now);
+  next2AM.setHours(2, 0, 0, 0);
+
+  // If it's already past 2 AM today, schedule for tomorrow
+  if (now.getTime() > next2AM.getTime()) {
+    next2AM.setDate(next2AM.getDate() + 1);
+  }
+
+  return next2AM.getTime() - now.getTime();
+}
+
+// Schedule daily run at 2 AM
+function scheduleNextRetentionCleanup() {
+  const msUntilNext = getMillisecondsUntil2AM();
+  const nextRunTime = new Date(Date.now() + msUntilNext);
+
+  console.log(`📅 Next retention cleanup scheduled for ${nextRunTime.toLocaleString()}`);
+
+  setTimeout(() => {
+    runRetentionCleanup();
+    // Schedule next run (24 hours later)
+    scheduleNextRetentionCleanup();
+  }, msUntilNext);
+}
+
+// Start scheduling
+scheduleNextRetentionCleanup();
+
+// Also run on startup (after 2 minutes delay to let system stabilize)
+setTimeout(runRetentionCleanup, 2 * 60 * 1000);
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {

@@ -25,6 +25,7 @@ import { tracesRoutes } from './modules/traces/index.js';
 import { onboardingRoutes } from './modules/onboarding/index.js';
 import { exceptionsRoutes } from './modules/exceptions/index.js';
 import { settingsRoutes, publicSettingsRoutes, settingsService } from './modules/settings/index.js';
+import { retentionRoutes } from './modules/retention/index.js';
 import { bootstrapService } from './modules/bootstrap/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
 import { initializeInternalLogging, shutdownInternalLogging } from './utils/internal-logger.js';
@@ -141,6 +142,9 @@ export async function build(opts = {}) {
 
   // Admin settings routes (session-based auth + admin middleware)
   await fastify.register(settingsRoutes, { prefix: '/api/v1/admin/settings' });
+
+  // Retention routes (session-based auth + admin middleware)
+  await fastify.register(retentionRoutes, { prefix: '/api/v1/admin' });
 
   // Register API key auth plugin (applies to log ingestion/query routes below)
   await fastify.register(authPlugin);
