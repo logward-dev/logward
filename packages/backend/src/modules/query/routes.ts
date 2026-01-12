@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { queryService, type SearchMode } from './service.js';
-import type { LogLevel } from '@logward/shared';
+import type { LogLevel } from '@logtide/shared';
 import { db } from '../../database/index.js';
 
 

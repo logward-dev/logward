@@ -230,7 +230,7 @@
       icon: Shield,
       badge: { id: 'security-feature', type: 'new', showUntil: '2025-06-01' }
     },
-    { label: "Docs", href: "https://logward.dev/docs", icon: Book, external: true },
+    { label: "Docs", href: "https://logtide.dev/docs", icon: Book, external: true },
     { label: "Settings", href: "/dashboard/settings", icon: Settings },
   ];
 
@@ -260,7 +260,7 @@
         class="flex items-center gap-3 hover:opacity-80 transition-opacity"
       >
         <div class="flex flex-col items-start mx-auto">
-            <img src={$logoPath} alt="LogWard" class="h-14 w-auto" />
+            <img src={$logoPath} alt="LogTide" class="h-14 w-auto" />
         </div>
       </a>
     </div>
@@ -316,7 +316,7 @@
 
       <Separator class="my-2" />
       <a
-        href="https://github.com/logward-dev/logward"
+        href="https://github.com/logtide-dev/logtide"
         target="_blank"
         rel="noopener noreferrer"
         class="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
@@ -352,7 +352,7 @@
     <div class="p-6 flex items-center justify-between">
       <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity" onclick={() => mobileMenuOpen = false}>
         <div class="flex flex-col items-start">
-          <img src={$logoPath} alt="LogWard" class="h-14 w-auto" />
+          <img src={$logoPath} alt="LogTide" class="h-14 w-auto" />
         </div>
       </a>
       <Button variant="ghost" size="icon" onclick={() => mobileMenuOpen = false}>
@@ -411,7 +411,7 @@
 
       <Separator class="my-2" />
       <a
-        href="https://github.com/logward-dev/logward"
+        href="https://github.com/logtide-dev/logtide"
         target="_blank"
         rel="noopener noreferrer"
         class="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"

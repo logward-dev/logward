@@ -1,5 +1,5 @@
 -- ============================================================================
--- LogWard - Exception & Stack Trace Tracking Tables
+-- LogTide - Exception & Stack Trace Tracking Tables
 -- ============================================================================
 -- Migration: 010_add_exception_tracking.sql
 -- Created: 2025-12-22

@@ -1,5 +1,5 @@
 import { db } from '../../database/index.js';
-import type { LogInput } from '@logward/shared';
+import type { LogInput } from '@logtide/shared';
 import { createQueue, publisher } from '../../queue/connection.js';
 import type { LogEntry } from '../sigma/detection-engine.js';
 import { CacheManager } from '../../utils/cache.js';

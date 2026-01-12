@@ -177,7 +177,7 @@
 </script>
 
 <svelte:head>
-	<title>{group?.exceptionType || 'Error Group'} - LogWard</title>
+	<title>{group?.exceptionType || 'Error Group'} - LogTide</title>
 </svelte:head>
 
 <div class="container mx-auto px-6 py-8 max-w-7xl">

@@ -24,7 +24,7 @@
 </script>
 
 <svelte:head>
-  <title>LogWard</title>
+  <title>LogTide</title>
 </svelte:head>
 
 {#if checkingAuth}

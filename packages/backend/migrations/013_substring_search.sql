@@ -1,11 +1,11 @@
 -- ============================================================================
--- LogWard - Substring Search Support (pg_trgm)
+-- LogTide - Substring Search Support (pg_trgm)
 -- ============================================================================
 -- Migration: 013_substring_search.sql
 -- Created: 2026-01-03
 -- Description: Enable pg_trgm extension for trigram-based substring search
 --              and add system settings for search configuration.
--- Issue: https://github.com/logward-dev/logward/issues/68
+-- Issue: https://github.com/logtide-dev/logtide/issues/68
 -- ============================================================================
 
 -- Enable pg_trgm extension for trigram similarity search

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to LogWard will be documented in this file.
+All notable changes to LogTide will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Website Separation**: Homepage and documentation moved to dedicated website
-  - Landing page and all documentation pages moved to [logward.dev](https://logward.dev)
+  - Landing page and all documentation pages moved to [logtide.dev](https://logtide.dev)
   - App homepage now redirects to `/dashboard` (authenticated) or `/login` (unauthenticated)
-  - All internal `/docs` links updated to external `https://logward.dev/docs`
+  - All internal `/docs` links updated to external `https://logtide.dev/docs`
   - Navbar, Footer, and empty state components updated with external documentation links
   - Cleaner separation between marketing website and application
 
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Getting Started, API Reference, SDK docs (Node.js, Python, Go, PHP, Kotlin, C#)
   - Migration guides (Datadog, Splunk, ELK, Loki, SigNoz)
   - Authentication, Deployment, Architecture, Contributing guides
-  - All documentation now available at [logward.dev/docs](https://logward.dev/docs)
+  - All documentation now available at [logtide.dev/docs](https://logtide.dev/docs)
 
 - **Documentation Components**: Removed docs-specific UI components
   - DocsSidebar, DocsTableOfContents, CodeBlock, Breadcrumbs components removed
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Warning displayed in UI when enabled
 
 - **ARM64 / Raspberry Pi Support**: Full support for ARM-based deployments (#58)
-  - LogWard images built for both `linux/amd64` and `linux/arm64`
+  - LogTide images built for both `linux/amd64` and `linux/arm64`
   - Native support for Raspberry Pi 3/4/5 (64-bit OS)
   - Configurable Fluent Bit image via `FLUENT_BIT_IMAGE` environment variable
   - Documentation for ARM64-specific Fluent Bit registry (`cr.fluentbit.io`)
@@ -108,11 +108,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-detects journald format (`_SYSTEMD_UNIT`, `SYSLOG_IDENTIFIER`, `MESSAGE`, `PRIORITY`, etc.)
   - Extracts service name from `SYSLOG_IDENTIFIER` → `_SYSTEMD_UNIT` → `_COMM` → `_EXE`
   - Extracts actual message from `MESSAGE` field instead of showing raw JSON
-  - Maps `PRIORITY` (0-7) to LogWard levels (critical/error/warn/info/debug)
+  - Maps `PRIORITY` (0-7) to LogTide levels (critical/error/warn/info/debug)
   - Uses journald timestamp (`__REALTIME_TIMESTAMP`) when present (already UTC)
 
 - **Syslog Level Mapping**: Improved handling of syslog severity levels (#60)
-  - Automatic mapping of syslog levels (notice, alert, emerg) to LogWard levels
+  - Automatic mapping of syslog levels (notice, alert, emerg) to LogTide levels
   - Case-insensitive level normalization
   - Fixes logs appearing as "unknown" level
 
@@ -197,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Invitation acceptance flow with automatic org membership
   - Invitation expiration handling
 
-- **Horizontal Scaling Documentation**: Guide for scaling LogWard across multiple instances
+- **Horizontal Scaling Documentation**: Guide for scaling LogTide across multiple instances
   - Traefik reverse proxy configuration with load balancing
   - Docker Compose overlay for scaled deployments
   - Sticky sessions for SSE connections
@@ -273,8 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GitHub Actions workflow (`publish-images.yml`) for building and pushing images
   - Multi-platform builds (linux/amd64, linux/arm64)
   - Automatic semantic versioning tags (e.g., 0.2.3, 0.2, 0, latest)
-  - **Docker Hub**: `logward/backend`, `logward/frontend`
-  - **GitHub Container Registry**: `ghcr.io/logward-dev/logward-backend`, `ghcr.io/logward-dev/logward-frontend`
+  - **Docker Hub**: `logtide/backend`, `logtide/frontend`
+  - **GitHub Container Registry**: `ghcr.io/logtide-dev/logtide-backend`, `ghcr.io/logtide-dev/logtide-frontend`
   - Triggered on git tags (`v*.*.*`) or manual workflow dispatch
 
 - **Self-Hosting Documentation**: Comprehensive deployment guides
@@ -286,7 +286,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **docker-compose.yml**: Now uses pre-built images from Docker Hub by default
-  - Configurable via `LOGWARD_BACKEND_IMAGE` and `LOGWARD_FRONTEND_IMAGE` environment variables
+  - Configurable via `LOGTIDE_BACKEND_IMAGE` and `LOGTIDE_FRONTEND_IMAGE` environment variables
   - No local build required for self-hosting
 
 - **Documentation**: Updated all docs pages

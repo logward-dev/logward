@@ -8,7 +8,7 @@
   import { ProjectsAPI } from "$lib/api/projects";
   import { logsAPI, type SearchMode } from "$lib/api/logs";
   import { toastStore } from "$lib/stores/toast";
-  import type { Project } from "@logward/shared";
+  import type { Project } from "@logtide/shared";
   import Button from "$lib/components/ui/button/button.svelte";
   import Input from "$lib/components/ui/input/input.svelte";
   import Label from "$lib/components/ui/label/label.svelte";
@@ -136,7 +136,7 @@
 
   onMount(() => {
     // Restore search mode preference from session storage
-    const savedSearchMode = sessionStorage.getItem("logward_search_mode");
+    const savedSearchMode = sessionStorage.getItem("logtide_search_mode");
     if (savedSearchMode === "fulltext" || savedSearchMode === "substring") {
       searchMode = savedSearchMode;
     }
@@ -599,7 +599,7 @@
 </script>
 
 <svelte:head>
-  <title>Search Logs - LogWard</title>
+  <title>Search Logs - LogTide</title>
 </svelte:head>
 
 <div class="container mx-auto px-6 py-8 max-w-7xl">
@@ -638,7 +638,7 @@
                       const newValue = typeof v === 'string' ? v : v.value;
                       if (newValue === "fulltext" || newValue === "substring") {
                         searchMode = newValue;
-                        sessionStorage.setItem("logward_search_mode", searchMode);
+                        sessionStorage.setItem("logtide_search_mode", searchMode);
                         if (searchQuery) {
                           debouncedSearch();
                         }

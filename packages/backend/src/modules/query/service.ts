@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import { db } from '../../database/index.js';
 import { CacheManager, CACHE_TTL } from '../../utils/cache.js';
-import type { LogLevel } from '@logward/shared';
+import type { LogLevel } from '@logtide/shared';
 
 /** Supported search modes */
 export type SearchMode = 'fulltext' | 'substring';

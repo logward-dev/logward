@@ -13,8 +13,8 @@
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Separator } from '$lib/components/ui/separator';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '$lib/components/ui/select';
-  import type { OrganizationWithRole, OrganizationMemberWithUser, PendingInvitation, OrgRole } from '@logward/shared';
-  import { canManageMembers } from '@logward/shared';
+  import type { OrganizationWithRole, OrganizationMemberWithUser, PendingInvitation, OrgRole } from '@logtide/shared';
+  import { canManageMembers } from '@logtide/shared';
   import { Badge } from '$lib/components/ui/badge';
   import Building2 from '@lucide/svelte/icons/building-2';
   import Save from '@lucide/svelte/icons/save';
@@ -329,7 +329,7 @@
 </script>
 
 <svelte:head>
-  <title>Organization Settings - LogWard</title>
+  <title>Organization Settings - LogTide</title>
 </svelte:head>
 
 <div class="container mx-auto space-y-6 p-6">

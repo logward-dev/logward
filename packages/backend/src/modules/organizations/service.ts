@@ -1,6 +1,6 @@
 import { db } from '../../database/connection.js';
 import { notificationsService } from '../notifications/service.js';
-import type { Organization, OrganizationMember, OrganizationMemberWithUser, OrganizationWithRole, OrgRole } from '@logward/shared';
+import type { Organization, OrganizationMember, OrganizationMemberWithUser, OrganizationWithRole, OrgRole } from '@logtide/shared';
 
 export interface CreateOrganizationInput {
   userId: string;

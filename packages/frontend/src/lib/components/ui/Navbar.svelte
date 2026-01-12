@@ -25,7 +25,7 @@
     <div class="navbar-container">
         <!-- Logo/Brand -->
         <a href="/dashboard" class="navbar-brand" onclick={closeMobileMenu}>
-            <img src={$logoPath} alt="LogWard" class="h-10 w-auto" />
+            <img src={$logoPath} alt="LogTide" class="h-10 w-auto" />
         </a>
 
         <!-- Desktop Navigation -->
@@ -33,9 +33,9 @@
             <a href="/dashboard" class="nav-link {isDashboard ? 'active' : ''}">
                 Dashboard
             </a>
-            <a href="https://logward.dev/docs" target="_blank" rel="noopener noreferrer" class="nav-link"> Docs </a>
+            <a href="https://logtide.dev/docs" target="_blank" rel="noopener noreferrer" class="nav-link"> Docs </a>
             <a
-                href="https://github.com/logward-dev/logward"
+                href="https://github.com/logtide-dev/logtide"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="nav-link github-link"
@@ -71,7 +71,7 @@
                 Dashboard
             </a>
             <a
-                href="https://logward.dev/docs"
+                href="https://logtide.dev/docs"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="nav-link"
@@ -80,7 +80,7 @@
                 Docs
             </a>
             <a
-                href="https://github.com/logward-dev/logward"
+                href="https://github.com/logtide-dev/logtide"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="nav-link"

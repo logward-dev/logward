@@ -238,7 +238,7 @@
 
 	// Restore search mode from session storage on mount
 	onMount(() => {
-		const savedSearchMode = sessionStorage.getItem("logward_project_search_mode");
+		const savedSearchMode = sessionStorage.getItem("logtide_project_search_mode");
 		if (savedSearchMode === "fulltext" || savedSearchMode === "substring") {
 			searchMode = savedSearchMode;
 		}
@@ -478,7 +478,7 @@
 									const newValue = typeof v === 'string' ? v : v.value;
 									if (newValue === "fulltext" || newValue === "substring") {
 										searchMode = newValue;
-										sessionStorage.setItem("logward_project_search_mode", searchMode);
+										sessionStorage.setItem("logtide_project_search_mode", searchMode);
 										if (searchQuery) {
 											debouncedSearch();
 										}
