@@ -147,7 +147,7 @@ import { LoggerProvider, SimpleLogRecordProcessor } from '@opentelemetry/sdk-log
 import { Resource } from '@opentelemetry/resources';
 
 const logExporter = new OTLPLogExporter({
-  url: '${apiUrlValue}/api/v1/otlp/logs',
+  url: '${apiUrlValue}/v1/otlp/logs',
   headers: {
     'X-API-Key': '${apiKey || 'YOUR_API_KEY'}'
   }
@@ -168,7 +168,7 @@ from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 
 exporter = OTLPLogExporter(
-    endpoint="${apiUrlValue}/api/v1/otlp/logs",
+    endpoint="${apiUrlValue}/v1/otlp/logs",
     headers={"X-API-Key": "${apiKey || 'YOUR_API_KEY'}"}
 )
 

@@ -54,7 +54,7 @@ logger.info("Hello from LogTide!")`,
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 
 const exporter = new OTLPLogExporter({
-  url: '${apiUrlValue}/api/v1/otlp/logs',
+  url: '${apiUrlValue}/v1/otlp/logs',
   headers: { 'X-API-Key': 'YOUR_API_KEY' }
 });`
   });
