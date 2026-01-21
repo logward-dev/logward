@@ -457,6 +457,20 @@ export interface SystemSettingsTable {
   updated_by: string | null;
 }
 
+// ============================================================================
+// DETECTION PACKS TABLE
+// ============================================================================
+
+export interface DetectionPackActivationsTable {
+  id: Generated<string>;
+  organization_id: string;
+  pack_id: string;
+  enabled: Generated<boolean>;
+  custom_thresholds: ColumnType<Record<string, { threshold?: number; timeWindow?: number }> | null, Record<string, { threshold?: number; timeWindow?: number }> | null, Record<string, { threshold?: number; timeWindow?: number }> | null>;
+  activated_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Database {
   logs: LogsTable;
   users: UsersTable;
@@ -492,4 +506,6 @@ export interface Database {
   oidc_states: OidcStatesTable;
   // System settings
   system_settings: SystemSettingsTable;
+  // Detection packs
+  detection_pack_activations: DetectionPackActivationsTable;
 }
