@@ -63,10 +63,15 @@ export class DetectionPacksService {
     const ruleCountByPack = new Map<string, number>();
     for (const rule of sigmaRules) {
       // sigma_id format: pack-{packId}-{ruleId}
-      const parts = rule.sigma_id?.split('-');
-      if (parts && parts.length >= 2) {
-        const packId = parts[1];
-        ruleCountByPack.set(packId, (ruleCountByPack.get(packId) || 0) + 1);
+      // packId may contain hyphens, so we need to find which pack this rule belongs to
+      if (rule.sigma_id) {
+        for (const pack of DETECTION_PACKS) {
+          const prefix = `pack-${pack.id}-`;
+          if (rule.sigma_id.startsWith(prefix)) {
+            ruleCountByPack.set(pack.id, (ruleCountByPack.get(pack.id) || 0) + 1);
+            break;
+          }
+        }
       }
     }
 
