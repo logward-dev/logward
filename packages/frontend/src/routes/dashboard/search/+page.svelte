@@ -31,8 +31,11 @@
   import * as Popover from "$lib/components/ui/popover";
   import Switch from "$lib/components/ui/switch/switch.svelte";
   import LogContextDialog from "$lib/components/LogContextDialog.svelte";
+  import CorrelationTimelineDialog from "$lib/components/CorrelationTimelineDialog.svelte";
+  import IdentifierBadge from "$lib/components/IdentifierBadge.svelte";
   import { ExceptionDetailsDialog } from "$lib/components/exceptions";
   import ExportLogsDialog from "$lib/components/ExportLogsDialog.svelte";
+  import { correlationAPI, type IdentifierMatch, type CorrelatedLog } from "$lib/api/correlation";
   import EmptyLogs from "$lib/components/EmptyLogs.svelte";
   import TimeRangePicker, { type TimeRangeType } from "$lib/components/TimeRangePicker.svelte";
   import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
@@ -42,6 +45,7 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import SearchIcon from "@lucide/svelte/icons/search";
   import Radio from "@lucide/svelte/icons/radio";
+  import Settings2 from "@lucide/svelte/icons/settings-2";
 
   interface LogEntry {
     id?: string;
@@ -122,6 +126,14 @@
 
   // Export dialog state
   let exportDialogOpen = $state(false);
+
+  // Correlation dialog state
+  let correlationDialogOpen = $state(false);
+  let selectedIdentifierType = $state("");
+  let selectedIdentifierValue = $state("");
+  let selectedLogForCorrelation = $state<LogEntry | null>(null);
+  let logIdentifiers = $state<Map<string, IdentifierMatch[]>>(new Map());
+  let loadingIdentifiers = $state(false);
 
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -524,6 +536,68 @@
     exceptionDialogOpen = false;
     selectedLogForException = null;
   }
+
+  function openCorrelationDialog(log: LogEntry, identifierType: string, identifierValue: string) {
+    selectedLogForCorrelation = log;
+    selectedIdentifierType = identifierType;
+    selectedIdentifierValue = identifierValue;
+    correlationDialogOpen = true;
+  }
+
+  function closeCorrelationDialog() {
+    correlationDialogOpen = false;
+    selectedLogForCorrelation = null;
+    selectedIdentifierType = "";
+    selectedIdentifierValue = "";
+  }
+
+  // Track which log IDs are currently being loaded to prevent duplicate requests
+  let loadingLogIds = new Set<string>();
+
+  async function loadIdentifiersForLogs(logIds: string[]) {
+    if (logIds.length === 0) return;
+
+    // Filter out already loaded AND currently loading identifiers
+    const toLoad = logIds.filter((id) => !logIdentifiers.has(id) && !loadingLogIds.has(id));
+    if (toLoad.length === 0) return;
+
+    // Mark as loading
+    toLoad.forEach(id => loadingLogIds.add(id));
+
+    console.log("[Correlation] Loading identifiers for", toLoad.length, "logs");
+    loadingIdentifiers = true;
+    try {
+      const result = await correlationAPI.getLogIdentifiersBatch(toLoad);
+      console.log("[Correlation] Got result:", Object.keys(result).length, "logs with identifiers");
+      const newMap = new Map(logIdentifiers);
+      for (const [logId, identifiers] of Object.entries(result)) {
+        newMap.set(logId, identifiers);
+      }
+      // Also mark logs with no identifiers as loaded (empty array)
+      for (const id of toLoad) {
+        if (!newMap.has(id)) {
+          newMap.set(id, []);
+        }
+      }
+      logIdentifiers = newMap;
+    } catch (e) {
+      console.error("[Correlation] Failed to load identifiers:", e);
+    } finally {
+      // Remove from loading set
+      toLoad.forEach(id => loadingLogIds.delete(id));
+      loadingIdentifiers = false;
+    }
+  }
+
+  // Load identifiers when logs change - use untrack to prevent infinite loop
+  $effect(() => {
+    const currentLogs = logs; // Track only logs
+    if (currentLogs.length > 0) {
+      const logIds = currentLogs.map((log) => log.id).filter((id): id is string => !!id);
+      // Use setTimeout to break out of reactive context
+      setTimeout(() => loadIdentifiersForLogs(logIds), 0);
+    }
+  });
 
   function isErrorLevel(level: string): boolean {
     return level === 'error' || level === 'critical';
@@ -1134,6 +1208,27 @@
                                 </button>
                               </div>
                             {/if}
+                            {#if log.id && logIdentifiers.has(log.id) && (logIdentifiers.get(log.id)?.length ?? 0) > 0}
+                              <div>
+                                <span class="font-semibold">Identifiers:</span>
+                                <div class="flex flex-wrap items-center gap-2 mt-2">
+                                  {#each logIdentifiers.get(log.id) ?? [] as identifier}
+                                    <IdentifierBadge
+                                      type={identifier.type}
+                                      value={identifier.value}
+                                      onclick={() => openCorrelationDialog(log, identifier.type, identifier.value)}
+                                    />
+                                  {/each}
+                                  <a
+                                    href="/dashboard/settings/patterns"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-dashed border-muted-foreground/50 text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                                  >
+                                    <Settings2 class="w-3 h-3" />
+                                    <span>Configure</span>
+                                  </a>
+                                </div>
+                              </div>
+                            {/if}
                             {#if log.metadata}
                               <div>
                                 <span class="font-semibold">Metadata:</span>
@@ -1313,4 +1408,27 @@
   bind:open={exportDialogOpen}
   totalLogs={totalLogs}
   filters={exportFilters}
+/>
+
+<CorrelationTimelineDialog
+  open={correlationDialogOpen}
+  projectId={selectedLogForCorrelation?.projectId || selectedProjects[0] || ""}
+  identifierType={selectedIdentifierType}
+  identifierValue={selectedIdentifierValue}
+  referenceTime={selectedLogForCorrelation?.time}
+  onClose={closeCorrelationDialog}
+  onLogClick={(correlatedLog) => {
+    closeCorrelationDialog();
+    const logEntry = {
+      id: correlatedLog.id,
+      time: typeof correlatedLog.time === 'string' ? correlatedLog.time : correlatedLog.time.toISOString(),
+      service: correlatedLog.service,
+      level: correlatedLog.level as LogEntry["level"],
+      message: correlatedLog.message,
+      metadata: correlatedLog.metadata ?? undefined,
+      traceId: correlatedLog.traceId ?? undefined,
+      projectId: correlatedLog.projectId || "",
+    };
+    openContextDialog(logEntry);
+  }}
 />
