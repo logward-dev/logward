@@ -68,9 +68,33 @@ function loadConfig(): Config {
   const result = configSchema.safeParse(process.env);
 
   if (!result.success) {
-    console.error('❌ Invalid configuration:');
-    console.error(result.error.format());
-    throw new Error('Invalid configuration');
+    console.error('');
+    console.error('═══════════════════════════════════════════════════════════════');
+    console.error('❌ CONFIGURATION ERROR - Backend cannot start');
+    console.error('═══════════════════════════════════════════════════════════════');
+    console.error('');
+    console.error('Please check your .env file for the following issues:');
+    console.error('');
+
+    const errors = result.error.flatten().fieldErrors;
+    for (const [field, messages] of Object.entries(errors)) {
+      console.error(`  • ${field}: ${messages?.join(', ')}`);
+
+      // Provide helpful hints for common issues
+      if (field === 'API_KEY_SECRET') {
+        console.error(`    → Must be at least 32 characters. Generate with: openssl rand -base64 32`);
+      }
+      if (field === 'DATABASE_URL') {
+        console.error(`    → Check that DB_USER, DB_PASSWORD, and DB_NAME are set in .env`);
+      }
+    }
+
+    console.error('');
+    console.error('Full error details:');
+    console.error(JSON.stringify(result.error.format(), null, 2));
+    console.error('');
+    console.error('═══════════════════════════════════════════════════════════════');
+    throw new Error('Invalid configuration - see error details above');
   }
 
   return result.data;
