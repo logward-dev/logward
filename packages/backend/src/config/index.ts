@@ -64,36 +64,48 @@ const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
+// Exported for testing
+export { configSchema };
+
+/**
+ * Format configuration errors with helpful hints for common issues.
+ * Exported for testing.
+ */
+export function formatConfigError(error: z.ZodError): string {
+  const lines: string[] = [
+    '',
+    '═══════════════════════════════════════════════════════════════',
+    '❌ CONFIGURATION ERROR - Backend cannot start',
+    '═══════════════════════════════════════════════════════════════',
+    '',
+    'Please check your .env file for the following issues:',
+    '',
+  ];
+
+  const errors = error.flatten().fieldErrors;
+  for (const [field, messages] of Object.entries(errors)) {
+    lines.push(`  • ${field}: ${messages?.join(', ')}`);
+
+    // Provide helpful hints for common issues
+    if (field === 'API_KEY_SECRET') {
+      lines.push(`    → Must be at least 32 characters. Generate with: openssl rand -base64 32`);
+    }
+    if (field === 'DATABASE_URL') {
+      lines.push(`    → Check that DB_USER, DB_PASSWORD, and DB_NAME are set in .env`);
+    }
+  }
+
+  lines.push('');
+  lines.push('═══════════════════════════════════════════════════════════════');
+
+  return lines.join('\n');
+}
+
 function loadConfig(): Config {
   const result = configSchema.safeParse(process.env);
 
   if (!result.success) {
-    console.error('');
-    console.error('═══════════════════════════════════════════════════════════════');
-    console.error('❌ CONFIGURATION ERROR - Backend cannot start');
-    console.error('═══════════════════════════════════════════════════════════════');
-    console.error('');
-    console.error('Please check your .env file for the following issues:');
-    console.error('');
-
-    const errors = result.error.flatten().fieldErrors;
-    for (const [field, messages] of Object.entries(errors)) {
-      console.error(`  • ${field}: ${messages?.join(', ')}`);
-
-      // Provide helpful hints for common issues
-      if (field === 'API_KEY_SECRET') {
-        console.error(`    → Must be at least 32 characters. Generate with: openssl rand -base64 32`);
-      }
-      if (field === 'DATABASE_URL') {
-        console.error(`    → Check that DB_USER, DB_PASSWORD, and DB_NAME are set in .env`);
-      }
-    }
-
-    console.error('');
-    console.error('Full error details:');
-    console.error(JSON.stringify(result.error.format(), null, 2));
-    console.error('');
-    console.error('═══════════════════════════════════════════════════════════════');
+    console.error(formatConfigError(result.error));
     throw new Error('Invalid configuration - see error details above');
   }
 
