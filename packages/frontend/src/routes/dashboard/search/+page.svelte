@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { browser } from "$app/environment";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { currentOrganization } from "$lib/stores/organization";
   import { authStore } from "$lib/stores/auth";
@@ -525,6 +526,14 @@
   function closeContextDialog() {
     contextDialogOpen = false;
     selectedLogForContext = null;
+
+    // Remove URL params to prevent the effect from reopening the modal
+    if (browser && page.url.searchParams.has("logId")) {
+      const url = new URL(page.url);
+      url.searchParams.delete("logId");
+      url.searchParams.delete("projectId");
+      goto(url.pathname + url.search, { replaceState: true });
+    }
   }
 
   function openExceptionDialog(log: LogEntry) {
@@ -1401,6 +1410,7 @@
   open={exceptionDialogOpen}
   logId={selectedLogForException?.id || ""}
   organizationId={$currentOrganization?.id || ""}
+  metadata={selectedLogForException?.metadata}
   onClose={closeExceptionDialog}
 />
 

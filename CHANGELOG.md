@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Detection Packs**: Pre-configured Sigma rule bundles for common use cases (#88)
+  - Gallery dialog to browse and enable detection packs
+  - One-click deployment of curated security rules
+  - Customization options for pack rules
+  - Logsource product set to 'any' for broader applicability
+
+- **Event Correlation**: Link related logs by identifier (#89)
+  - Correlate events by `request_id`, `trace_id`, `user_id`, or custom fields
+  - Automatic identifier extraction from log metadata
+  - UI with loading states and configuration links
+  - Click any identifier to find all related logs
+
+- **Alert Preview "Would Have Fired"**: Test alerts before enabling (#91)
+  - Preview which logs would trigger an alert rule
+  - Analyze historical data to validate alert conditions
+  - Dark mode support for preview UI
+
 - **Optional Redis Dependency**: Redis is now optional for simpler deployments (#90)
   - PostgreSQL-based job queues using `graphile-worker` when Redis is unavailable
   - PostgreSQL `LISTEN/NOTIFY` for real-time log streaming (live tail)
@@ -36,7 +53,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No errors thrown, application continues without caching
   - SigmaHQ GitHub client works without Redis (skips caching)
 
+- **Authentication**: Token retrieval refactored to use localStorage
+
 ### Fixed
+
+- **Log Context Modal Reopening**: Fixed modal reopening after close when opened via URL params
+  - Closing the modal now clears `logId` and `projectId` from URL
+  - Prevents effect from re-triggering and reopening the dialog
+
+- **Exception Details from Metadata**: Error info in log metadata now displayed in Exception Details dialog
+  - Previously showed "No exception found" when error data was in metadata field
+  - Now extracts and displays `stack`, `reason`, `message`, `error` fields from metadata
+  - Shows context fields (`env`, `service`, `version`, `hostname`) in a grid
+  - Copy button for stack trace
+  - Fallback view when no parsed exception exists in database
 
 - **WebSocket Memory Leak**: Fixed potential memory leak in live tail WebSocket handler
   - Added proper socket cleanup in error handler
@@ -50,6 +80,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated deployment docs for Redis-optional configuration
 - Added `docker-compose.simple.yml` example for minimal deployments
+
+---
+
+## [0.4.2] - 2026-01-15
+
+### Added
+
+- **Clipboard Utility**: Centralized `copyToClipboard` function (#102)
+  - Unified copy behavior across all components
+  - Proper fallback for older browsers
+  - Updated copy functions in API key, log detail, and trace components
+
+- **Config Validation Tests**: Added test coverage for configuration validation
+
+### Fixed
+
+- **Documentation**: Fixed `api_key_secret` in `.env.example`
+- **Documentation**: Added `map_syslog_level.lua` download command to README (#96)
+- **Documentation**: Fixed OTLP endpoint URLs in docs (#87)
+- **Docker**: Added more configuration info in `docker-compose.yml`
+
+---
+
+## [0.4.1] - 2026-01-10
+
+### Added
+
+- **Exception Parsers**: Multi-language stack trace parsing (#84)
+  - PHP exception parser with frame extraction
+  - Go panic/stack trace parser
+  - Node.js Error parser with V8 stack format
+  - Python traceback parser
+  - Java exception parser with cause chain support
+  - Comprehensive test coverage for all parsers
+
+### Changed
+
+- **Dependencies**: Bump @sveltejs/kit (#86)
+
+### Fixed
+
+- **Dependencies**: Update devalue package to 5.6.2
+- **OTLP URLs**: Fixed endpoint URLs in ApiKeyStep, EmptyDashboard, and EmptyTraces components
 
 ---
 
