@@ -44,20 +44,60 @@ interface UpdatePatternBody {
 /**
  * Validate regex pattern for syntax and ReDoS safety
  * Returns a pre-compiled RegExp if valid, preventing regex injection
+ *
+ * Security measures:
+ * 1. Pattern length limit prevents memory exhaustion
+ * 2. Flag sanitization only allows safe flags (g, i, m, u)
+ * 3. Dangerous pattern detection blocks lookahead/lookbehind and large quantifiers
+ * 4. safe-regex2 library checks for ReDoS-vulnerable patterns
+ * 5. Compilation in try-catch catches malformed patterns
  */
 function validateAndCompileRegex(
   pattern: string,
   flags?: string
 ): { valid: true; regex: RegExp } | { valid: false; error: string } {
-  // Check for ReDoS vulnerabilities BEFORE compiling with user input
+  // 1. Limit pattern length to prevent memory exhaustion
+  if (pattern.length > 500) {
+    return { valid: false, error: 'Pattern too long (max 500 characters)' };
+  }
+
+  // 2. Sanitize flags - only allow safe flags (g, i, m, u)
+  // Exclude: d (indices), s (dotAll), y (sticky) which can have security implications
+  const safeFlags = (flags || '')
+    .split('')
+    .filter((f) => ['g', 'i', 'm', 'u'].includes(f))
+    .join('');
+
+  // 3. Check for dangerous regex features that can bypass safe-regex
+  // Block lookahead/lookbehind assertions - they can be exploited for ReDoS
+  if (/\(\?[=!<]/.test(pattern)) {
+    return { valid: false, error: 'Lookahead/lookbehind assertions are not allowed' };
+  }
+
+  // Block excessively large quantifiers
+  const quantifierMatch = pattern.match(/\{(\d+)(?:,(\d*))?\}/g);
+  if (quantifierMatch) {
+    for (const q of quantifierMatch) {
+      const nums = q.match(/\{(\d+)(?:,(\d*))?\}/);
+      if (nums) {
+        const min = parseInt(nums[1], 10);
+        const max = nums[2] !== undefined ? (nums[2] === '' ? Infinity : parseInt(nums[2], 10)) : min;
+        if (min > 100 || max > 100) {
+          return { valid: false, error: 'Quantifier range too large (max 100)' };
+        }
+      }
+    }
+  }
+
+  // 4. Check for ReDoS vulnerabilities using safe-regex2
   // This prevents catastrophic backtracking attacks
   if (!isSafeRegex(pattern)) {
     return { valid: false, error: 'Regex pattern is vulnerable to ReDoS attacks' };
   }
 
+  // 5. Compile with sanitized flags only
   try {
-    // Only compile after safety check passes
-    const regex = new RegExp(pattern, flags);
+    const regex = new RegExp(pattern, safeFlags);
     return { valid: true, regex };
   } catch {
     return { valid: false, error: 'Invalid regex syntax' };

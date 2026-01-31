@@ -447,4 +447,68 @@ describe('NotificationManager', () => {
       expect(connectHandler).toHaveBeenCalled();
     });
   });
+
+  describe('scheduleReconnect (max attempts)', () => {
+    it('should stop reconnecting after max attempts', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      // Set reconnect attempts to max
+      (manager as any).reconnectAttempts = 10;
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      (manager as any).scheduleReconnect();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[NotificationManager] Max reconnect attempts reached'
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should calculate exponential backoff delay', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+      (manager as any).isShuttingDown = false;
+
+      // First attempt
+      (manager as any).reconnectAttempts = 0;
+      (manager as any).scheduleReconnect();
+
+      // Clean up timer
+      if ((manager as any).reconnectTimer) {
+        clearTimeout((manager as any).reconnectTimer);
+        (manager as any).reconnectTimer = null;
+      }
+
+      // Verify attempts incremented
+      expect((manager as any).reconnectAttempts).toBe(1);
+    });
+  });
+
+  describe('handleDisconnect edge cases', () => {
+    it('should not schedule reconnect when shutting down', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+      (manager as any).isShuttingDown = true;
+
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      (manager as any).handleDisconnect();
+
+      // Should not log reconnect message
+      expect(consoleSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('scheduling reconnect')
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should clean up client on disconnect', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      (manager as any).handleDisconnect();
+
+      expect((manager as any).client).toBeNull();
+      expect(manager.getStatus().connected).toBe(false);
+    });
+  });
 });

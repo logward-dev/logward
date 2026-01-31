@@ -82,6 +82,38 @@ describe('Correlation Routes', () => {
         authToken = session.token;
     });
 
+    describe('Authentication', () => {
+        it('should return 401 when no auth token provided for correlation', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/v1/correlation/test-id?projectId=${testProject.id}`,
+            });
+
+            expect(response.statusCode).toBe(401);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Authentication required');
+        });
+
+        it('should return 401 when no auth token provided for log identifiers', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/v1/logs/some-log-id/identifiers',
+            });
+
+            expect(response.statusCode).toBe(401);
+        });
+
+        it('should return 401 when no auth token provided for batch identifiers', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/v1/logs/identifiers/batch',
+                payload: { logIds: ['log-1'] },
+            });
+
+            expect(response.statusCode).toBe(401);
+        });
+    });
+
     describe('GET /v1/correlation/:identifierValue', () => {
         it('should return correlated logs', async () => {
             const log1 = await createTestLog({ projectId: testProject.id });
@@ -427,6 +459,67 @@ describe('Correlation Routes', () => {
             expect(response.statusCode).toBe(200);
             const body = JSON.parse(response.payload);
             expect(body.data.identifiers[log.id]).toBeDefined();
+        });
+
+        it('should return 403 when user has no access to logs project', async () => {
+            // Create another user without org membership
+            const otherUser = await db
+                .insertInto('users')
+                .values({
+                    email: 'unauthorized@example.com',
+                    password_hash: 'hash',
+                    name: 'Unauthorized User',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const otherSession = await createTestSession(otherUser.id);
+
+            // Create log in test project
+            const log = await createTestLog({ projectId: testProject.id });
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/v1/logs/identifiers/batch',
+                headers: {
+                    Authorization: `Bearer ${otherSession.token}`,
+                },
+                payload: {
+                    logIds: [log.id],
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /v1/logs/:logId/identifiers access control', () => {
+        it('should return 403 when user has no access to log project', async () => {
+            // Create another user without org membership
+            const otherUser = await db
+                .insertInto('users')
+                .values({
+                    email: 'noaccess@example.com',
+                    password_hash: 'hash',
+                    name: 'No Access User',
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            const otherSession = await createTestSession(otherUser.id);
+
+            // Create log in test project
+            const log = await createTestLog({ projectId: testProject.id });
+
+            const response = await app.inject({
+                method: 'GET',
+                url: `/v1/logs/${log.id}/identifiers`,
+                headers: {
+                    Authorization: `Bearer ${otherSession.token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
         });
     });
 });

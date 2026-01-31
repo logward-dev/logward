@@ -695,4 +695,47 @@ describe('Detection Packs Routes', () => {
             expect(reliabilityPack.enabled).toBe(false);
         });
     });
+
+    describe('Edge cases', () => {
+        it('should handle null webhookUrl in enable', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/v1/detection-packs/startup-reliability/enable',
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    organizationId: testOrganization.id,
+                    webhookUrl: null,
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+        });
+
+        it('should allow notification settings in thresholds', async () => {
+            const service = new DetectionPacksService();
+            await service.enablePack(testOrganization.id, 'startup-reliability');
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/v1/detection-packs/startup-reliability/thresholds',
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    organizationId: testOrganization.id,
+                    customThresholds: {
+                        'high-error-rate': {
+                            level: 'medium',
+                            emailEnabled: true,
+                            webhookEnabled: false,
+                        },
+                    },
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+        });
+    });
 });

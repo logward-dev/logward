@@ -462,6 +462,140 @@ describe('Pattern Routes', () => {
         });
     });
 
+    describe('Regex Validation Edge Cases', () => {
+        it('should reject pattern that is too long', async () => {
+            const longPattern = 'a'.repeat(501);
+
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'long_pattern',
+                    displayName: 'Long Pattern',
+                    pattern: longPattern,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('too long');
+        });
+
+        it('should reject lookahead assertions in pattern', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'lookahead_pattern',
+                    displayName: 'Lookahead Pattern',
+                    pattern: '(?=test)\\w+', // Lookahead
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Lookahead');
+        });
+
+        it('should reject lookbehind assertions in pattern', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'lookbehind_pattern',
+                    displayName: 'Lookbehind Pattern',
+                    pattern: '(?<=test)\\w+', // Lookbehind
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Lookahead');
+        });
+
+        it('should reject large quantifiers', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'large_quantifier',
+                    displayName: 'Large Quantifier',
+                    pattern: 'a{101}', // Too large
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Quantifier');
+        });
+
+        it('should reject unbounded large quantifiers', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'unbounded_quantifier',
+                    displayName: 'Unbounded Quantifier',
+                    pattern: 'a{101,}', // Unbounded with large min
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Quantifier');
+        });
+
+        it('should accept pattern with valid quantifiers', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'valid_quantifier',
+                    displayName: 'Valid Quantifier',
+                    pattern: '\\bID-[0-9]{1,10}\\b',
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+        });
+
+        it('should sanitize regex flags', async () => {
+            // This test verifies that only safe flags are used
+            const response = await app.inject({
+                method: 'POST',
+                url: `/v1/patterns?organizationId=${testOrganization.id}`,
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    name: 'flag_test',
+                    displayName: 'Flag Test',
+                    pattern: '\\btest\\b',
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+        });
+    });
+
     describe('POST /v1/patterns/test', () => {
         it('should test pattern against text', async () => {
             const response = await app.inject({
@@ -540,7 +674,7 @@ describe('Pattern Routes', () => {
             expect(body.data.matches.length).toBe(100);
         });
 
-        it('should handle zero-width matches', async () => {
+        it('should reject lookahead patterns for security', async () => {
             const response = await app.inject({
                 method: 'POST',
                 url: '/v1/patterns/test',
@@ -548,8 +682,26 @@ describe('Pattern Routes', () => {
                     Authorization: `Bearer ${authToken}`,
                 },
                 payload: {
-                    pattern: '(?=test)', // Zero-width lookahead
+                    pattern: '(?=test)', // Zero-width lookahead - blocked for security
                     text: 'test test test',
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Lookahead/lookbehind assertions are not allowed');
+        });
+
+        it('should handle zero-width matches safely', async () => {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/v1/patterns/test',
+                headers: {
+                    Authorization: `Bearer ${authToken}`,
+                },
+                payload: {
+                    pattern: '\\b', // Word boundary - zero-width but safe
+                    text: 'test word here',
                 },
             });
 
