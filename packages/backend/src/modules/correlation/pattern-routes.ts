@@ -43,20 +43,36 @@ interface UpdatePatternBody {
 
 /**
  * Validate regex pattern for syntax and ReDoS safety
+ * Returns a pre-compiled RegExp if valid, preventing regex injection
  */
-function isValidRegex(pattern: string): { valid: boolean; error?: string } {
-  try {
-    new RegExp(pattern);
-  } catch {
-    return { valid: false, error: 'Invalid regex syntax' };
-  }
-
-  // Check for ReDoS vulnerabilities (catastrophic backtracking)
+function validateAndCompileRegex(
+  pattern: string,
+  flags?: string
+): { valid: true; regex: RegExp } | { valid: false; error: string } {
+  // Check for ReDoS vulnerabilities BEFORE compiling with user input
+  // This prevents catastrophic backtracking attacks
   if (!isSafeRegex(pattern)) {
     return { valid: false, error: 'Regex pattern is vulnerable to ReDoS attacks' };
   }
 
-  return { valid: true };
+  try {
+    // Only compile after safety check passes
+    const regex = new RegExp(pattern, flags);
+    return { valid: true, regex };
+  } catch {
+    return { valid: false, error: 'Invalid regex syntax' };
+  }
+}
+
+/**
+ * Validate regex pattern for syntax and ReDoS safety (legacy wrapper)
+ */
+function isValidRegex(pattern: string): { valid: boolean; error?: string } {
+  const result = validateAndCompileRegex(pattern);
+  if (result.valid) {
+    return { valid: true };
+  }
+  return { valid: false, error: result.error };
 }
 
 /**
@@ -513,8 +529,9 @@ export default async function patternRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { pattern, text } = request.body;
 
-      // Validate regex pattern
-      const regexValidation = isValidRegex(pattern);
+      // Validate and compile regex pattern safely
+      // This prevents regex injection by ensuring the pattern is safe before use
+      const regexValidation = validateAndCompileRegex(pattern, 'gi');
       if (!regexValidation.valid) {
         return reply.status(400).send({
           success: false,
@@ -523,7 +540,8 @@ export default async function patternRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const regex = new RegExp(pattern, 'gi');
+        // Use the pre-validated, pre-compiled regex
+        const regex = regexValidation.regex;
         const matches: string[] = [];
         let match;
 

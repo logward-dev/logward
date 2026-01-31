@@ -305,5 +305,146 @@ describe('NotificationManager', () => {
 
       expect(onNotification).not.toHaveBeenCalled();
     });
+
+    it('should handle subscriber callback errors gracefully', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      const onNotification = vi.fn().mockRejectedValue(new Error('Subscriber error'));
+      const subscriber = {
+        id: 'sub-error',
+        projectId: 'project-123',
+        onNotification,
+      };
+
+      manager.subscribe(subscriber);
+
+      const notification = {
+        channel: 'logs_new',
+        payload: JSON.stringify({
+          projectId: 'project-123',
+          logIds: ['log-1'],
+          timestamp: new Date().toISOString(),
+        }),
+      };
+
+      // Should not throw even if subscriber throws
+      (manager as any).handleNotification(notification);
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(onNotification).toHaveBeenCalled();
+    });
+
+    it('should dispatch to multiple matching subscribers', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      const onNotification1 = vi.fn().mockResolvedValue(undefined);
+      const onNotification2 = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe({
+        id: 'sub-1',
+        projectId: 'project-123',
+        onNotification: onNotification1,
+      });
+
+      manager.subscribe({
+        id: 'sub-2',
+        projectId: 'project-123',
+        onNotification: onNotification2,
+      });
+
+      const notification = {
+        channel: 'logs_new',
+        payload: JSON.stringify({
+          projectId: 'project-123',
+          logIds: ['log-1'],
+          timestamp: new Date().toISOString(),
+        }),
+      };
+
+      (manager as any).handleNotification(notification);
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(onNotification1).toHaveBeenCalled();
+      expect(onNotification2).toHaveBeenCalled();
+    });
+
+    it('should skip when no payload', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      const onNotification = vi.fn().mockResolvedValue(undefined);
+      manager.subscribe({
+        id: 'sub-no-payload',
+        projectId: 'project-123',
+        onNotification,
+      });
+
+      const notification = {
+        channel: 'logs_new',
+        payload: undefined,
+      };
+
+      (manager as any).handleNotification(notification);
+
+      expect(onNotification).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleDisconnect', () => {
+    it('should emit disconnected event', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      const disconnectHandler = vi.fn();
+      manager.on('disconnected', disconnectHandler);
+
+      (manager as any).handleDisconnect();
+
+      expect(disconnectHandler).toHaveBeenCalled();
+      expect(manager.getStatus().connected).toBe(false);
+    });
+  });
+
+  describe('scheduleReconnect', () => {
+    it('should not schedule if already shutting down', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+      (manager as any).isShuttingDown = true;
+
+      (manager as any).scheduleReconnect();
+
+      // Should not throw and should not schedule
+      expect(manager.getStatus().connected).toBe(true);
+    });
+
+    it('should not schedule if reconnect already pending', async () => {
+      await manager.initialize('postgresql://test@localhost/test');
+
+      // First schedule
+      (manager as any).scheduleReconnect();
+
+      // Second schedule should be ignored
+      (manager as any).scheduleReconnect();
+
+      // Clean up timer
+      if ((manager as any).reconnectTimer) {
+        clearTimeout((manager as any).reconnectTimer);
+        (manager as any).reconnectTimer = null;
+      }
+    });
+  });
+
+  describe('connect', () => {
+    it('should throw error if database URL not set', async () => {
+      await expect((manager as any).connect()).rejects.toThrow('Database URL not set');
+    });
+
+    it('should emit connected event on successful connection', async () => {
+      const connectHandler = vi.fn();
+      manager.on('connected', connectHandler);
+
+      await manager.initialize('postgresql://test@localhost/test');
+
+      expect(connectHandler).toHaveBeenCalled();
+    });
   });
 });

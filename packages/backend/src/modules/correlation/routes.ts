@@ -5,11 +5,30 @@
  * - GET /v1/correlation/:identifierValue - Get correlated logs by identifier
  * - GET /v1/logs/:logId/identifiers - Get identifiers for a specific log
  * - POST /v1/logs/identifiers/batch - Get identifiers for multiple logs
+ *
+ * Security: All routes require authentication via authPlugin (global).
+ * Rate limiting: Configured via @fastify/rate-limit plugin with per-route overrides.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { correlationService } from './service.js';
 import { db } from '../../database/index.js';
+
+/**
+ * Verify that the request is authenticated.
+ * Authentication is handled by the global authPlugin, but this explicit check
+ * ensures routes reject unauthenticated requests and satisfies static analysis.
+ */
+function requireAuth(request: FastifyRequest, reply: FastifyReply): boolean {
+  if (!request.authenticated && !request.user) {
+    reply.status(401).send({
+      success: false,
+      error: 'Authentication required',
+    });
+    return false;
+  }
+  return true;
+}
 
 // Request type declarations
 interface CorrelationParams {
@@ -96,6 +115,9 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      // Explicit auth check (authPlugin handles auth, this ensures static analysis sees it)
+      if (!requireAuth(request, reply)) return;
+
       const { identifierValue } = request.params;
       const { projectId, referenceTime, timeWindowMinutes, limit } = request.query;
 
@@ -161,6 +183,9 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      // Explicit auth check (authPlugin handles auth, this ensures static analysis sees it)
+      if (!requireAuth(request, reply)) return;
+
       const { logId } = request.params;
       const { projectId } = request.query;
 
@@ -238,6 +263,9 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      // Explicit auth check (authPlugin handles auth, this ensures static analysis sees it)
+      if (!requireAuth(request, reply)) return;
+
       const { logIds } = request.body;
       const { projectId } = request.query;
 
