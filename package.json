@@ -19,6 +19,8 @@
     "dev": "pnpm --parallel --filter \"./packages/**\" dev",
     "dev:backend": "pnpm --filter \"@logtide/backend\" dev",
     "dev:frontend": "pnpm --filter \"@logtide/frontend\" dev",
+    "dev:worker": "pnpm --filter \"@logtide/backend\" dev:worker",
+    "dev:all": "concurrently -n fe,be,wk -c blue,green,yellow \"pnpm dev:frontend\" \"pnpm dev:backend\" \"pnpm dev:worker\"",
     "build": "pnpm --recursive --filter \"./packages/**\" build",
     "build:shared": "pnpm --filter \"@logtide/shared\" build",
     "test": "pnpm --recursive --filter \"./packages/**\" test",
@@ -34,5 +36,8 @@
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }
