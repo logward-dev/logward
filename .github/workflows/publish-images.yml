@@ -20,17 +20,14 @@ permissions:
   packages: write
 
 jobs:
-  publish:
-    name: Build and Publish Images
+  # Extract version info first
+  prepare:
+    name: Prepare Release
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_stable: ${{ steps.version.outputs.is_stable }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Extract version from tag
         id: version
         run: |
@@ -39,41 +36,38 @@ jobs:
           else
             VERSION=${GITHUB_REF#refs/tags/}
           fi
-          # Remove 'v' prefix if present
           VERSION=${VERSION#v}
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Version: ${VERSION}"
 
-          # Check if this is a stable release (no -rc, -beta, -alpha, etc.)
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "is_stable=true" >> $GITHUB_OUTPUT
-            echo "This is a stable release - will update 'latest' tag"
           else
             echo "is_stable=false" >> $GITHUB_OUTPUT
-            echo "This is a pre-release - will NOT update 'latest' tag"
           fi
 
-      - name: Docker meta for backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            logtide/backend
-            ghcr.io/${{ github.repository_owner }}/logtide-backend
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.is_stable }}
+  # Build images on native runners for each architecture
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
 
-      - name: Docker meta for frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            logtide/frontend
-            ghcr.io/${{ github.repository_owner }}/logtide-frontend
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.is_stable }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -94,11 +88,12 @@ jobs:
           context: .
           file: packages/backend/Dockerfile
           push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          tags: |
+            logtide/backend:${{ needs.prepare.outputs.version }}-${{ matrix.suffix }}
+            ghcr.io/${{ github.repository_owner }}/logtide-backend:${{ needs.prepare.outputs.version }}-${{ matrix.suffix }}
+          cache-from: type=gha,scope=backend-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=backend-${{ matrix.suffix }}
+          platforms: ${{ matrix.platform }}
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -106,26 +101,107 @@ jobs:
           context: .
           file: packages/frontend/Dockerfile
           push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          tags: |
+            logtide/frontend:${{ needs.prepare.outputs.version }}-${{ matrix.suffix }}
+            ghcr.io/${{ github.repository_owner }}/logtide-frontend:${{ needs.prepare.outputs.version }}-${{ matrix.suffix }}
+          cache-from: type=gha,scope=frontend-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=frontend-${{ matrix.suffix }}
+          platforms: ${{ matrix.platform }}
           build-args: |
             PUBLIC_API_URL=http://localhost:8080
 
+  # Merge architecture-specific images into multi-arch manifests
+  merge:
+    name: Create Multi-Arch Manifests
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push backend manifests
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          IS_STABLE="${{ needs.prepare.outputs.is_stable }}"
+
+          # Docker Hub
+          docker manifest create logtide/backend:${VERSION} \
+            logtide/backend:${VERSION}-amd64 \
+            logtide/backend:${VERSION}-arm64
+          docker manifest push logtide/backend:${VERSION}
+
+          # GHCR
+          docker manifest create ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION} \
+            ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION}
+
+          # Latest tag for stable releases
+          if [ "$IS_STABLE" = "true" ]; then
+            docker manifest create logtide/backend:latest \
+              logtide/backend:${VERSION}-amd64 \
+              logtide/backend:${VERSION}-arm64
+            docker manifest push logtide/backend:latest
+
+            docker manifest create ghcr.io/${{ github.repository_owner }}/logtide-backend:latest \
+              ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION}-amd64 \
+              ghcr.io/${{ github.repository_owner }}/logtide-backend:${VERSION}-arm64
+            docker manifest push ghcr.io/${{ github.repository_owner }}/logtide-backend:latest
+          fi
+
+      - name: Create and push frontend manifests
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          IS_STABLE="${{ needs.prepare.outputs.is_stable }}"
+
+          # Docker Hub
+          docker manifest create logtide/frontend:${VERSION} \
+            logtide/frontend:${VERSION}-amd64 \
+            logtide/frontend:${VERSION}-arm64
+          docker manifest push logtide/frontend:${VERSION}
+
+          # GHCR
+          docker manifest create ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION} \
+            ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION}
+
+          # Latest tag for stable releases
+          if [ "$IS_STABLE" = "true" ]; then
+            docker manifest create logtide/frontend:latest \
+              logtide/frontend:${VERSION}-amd64 \
+              logtide/frontend:${VERSION}-arm64
+            docker manifest push logtide/frontend:latest
+
+            docker manifest create ghcr.io/${{ github.repository_owner }}/logtide-frontend:latest \
+              ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION}-amd64 \
+              ghcr.io/${{ github.repository_owner }}/logtide-frontend:${VERSION}-arm64
+            docker manifest push ghcr.io/${{ github.repository_owner }}/logtide-frontend:latest
+          fi
+
       - name: Create release summary
         run: |
-          echo "## 🐳 Docker Images Published" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Backend" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull logtide/backend:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ghcr.io/${{ github.repository_owner }}/logtide-backend:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull logtide/backend:${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository_owner }}/logtide-backend:${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Frontend" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull logtide/frontend:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ghcr.io/${{ github.repository_owner }}/logtide-frontend:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull logtide/frontend:${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository_owner }}/logtide-frontend:${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
