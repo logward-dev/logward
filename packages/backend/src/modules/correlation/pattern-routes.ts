@@ -49,6 +49,22 @@ function validateAndCompileRegex(
   pattern: string,
   flags?: string
 ): { valid: true; regex: RegExp } | { valid: false; error: string } {
+  // Normalize and validate flags to prevent unexpected behavior
+  // Allow only a conservative subset of flags
+  const allowedFlags = new Set(['g', 'i', 'm', 'u', 'y']);
+  let safeFlags = '';
+
+  if (flags) {
+    for (const ch of flags) {
+      if (!allowedFlags.has(ch)) {
+        return { valid: false, error: `Invalid regex flag: '${ch}'` };
+      }
+      if (!safeFlags.includes(ch)) {
+        safeFlags += ch;
+      }
+    }
+  }
+
   // Check for ReDoS vulnerabilities BEFORE compiling with user input
   // This prevents catastrophic backtracking attacks
   if (!isSafeRegex(pattern)) {
@@ -57,7 +73,7 @@ function validateAndCompileRegex(
 
   try {
     // Only compile after safety check passes
-    const regex = new RegExp(pattern, flags);
+    const regex = new RegExp(pattern, safeFlags);
     return { valid: true, regex };
   } catch {
     return { valid: false, error: 'Invalid regex syntax' };
