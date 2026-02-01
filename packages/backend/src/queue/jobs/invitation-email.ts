@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../../config/index.js';
+import { generateInvitationEmail } from '../../lib/email-templates.js';
 
 export interface InvitationEmailData {
   email: string;
@@ -58,78 +59,15 @@ async function sendInvitationEmail(data: InvitationEmailData) {
     throw new Error('Email transporter not configured');
   }
 
-  // Build the invitation URL
-  // In production, this should be configured. For now, use environment-based defaults.
-  const baseUrl = process.env.FRONTEND_URL || (config.NODE_ENV === 'production' ? 'https://logtide.dev' : 'http://localhost:5173');
-  const inviteUrl = `${baseUrl}/invite/${data.token}`;
+  const { html, text } = generateInvitationEmail({
+    email: data.email,
+    token: data.token,
+    organizationName: data.organizationName,
+    inviterName: data.inviterName,
+    role: data.role,
+  });
 
-  const subject = `You've been invited to join ${data.organizationName} on LogTide`;
-  const html = `
-    <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #2563eb; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
-          .content { background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
-          .footer { padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; font-size: 12px; color: #6b7280; text-align: center; }
-          .button { display: inline-block; background-color: #2563eb; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
-          .button:hover { background-color: #1d4ed8; }
-          .role-badge { display: inline-block; background-color: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 4px; font-size: 14px; font-weight: 500; }
-          .info { background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; border-radius: 4px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0;">You're Invited!</h1>
-          </div>
-          <div class="content">
-            <p>Hi there,</p>
-
-            <p><strong>${data.inviterName}</strong> has invited you to join <strong>${data.organizationName}</strong> on LogTide.</p>
-
-            <div class="info">
-              <p style="margin: 0;"><strong>Role:</strong> <span class="role-badge">${data.role}</span></p>
-            </div>
-
-            <div style="text-align: center;">
-              <a href="${inviteUrl}" class="button">Accept Invitation</a>
-            </div>
-
-            <p style="font-size: 14px; color: #6b7280;">
-              This invitation link will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
-            </p>
-
-            <p style="font-size: 12px; color: #9ca3af; word-break: break-all;">
-              Or copy and paste this link into your browser:<br>
-              <a href="${inviteUrl}" style="color: #2563eb;">${inviteUrl}</a>
-            </p>
-          </div>
-          <div class="footer">
-            <p>This is an automated message from LogTide.</p>
-            <p>&copy; ${new Date().getFullYear()} LogTide. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  const text = `
-You're Invited to ${data.organizationName}!
-
-${data.inviterName} has invited you to join ${data.organizationName} on LogTide as a ${data.role}.
-
-Click the link below to accept the invitation:
-${inviteUrl}
-
-This invitation link will expire in 7 days.
-
-If you didn't expect this invitation, you can safely ignore this email.
-
----
-This is an automated message from LogTide.
-  `.trim();
+  const subject = `Join ${data.organizationName} on LogTide`;
 
   await transporter.sendMail({
     from: `"LogTide" <${config.SMTP_FROM || config.SMTP_USER}>`,

@@ -347,17 +347,17 @@ export class TestApiClient {
   }
 
   async getPendingInvitations(organizationId: string) {
-    return this.request<{ invitations: any[] }>(`/invitations/${organizationId}/invitations`);
+    return this.request<{ invitations: any[] }>(`/invitations/${organizationId}`);
   }
 
   async revokeInvitation(organizationId: string, invitationId: string) {
-    return this.request<void>(`/invitations/${organizationId}/invitations/${invitationId}`, {
+    return this.request<void>(`/invitations/${organizationId}/${invitationId}`, {
       method: 'DELETE',
     });
   }
 
   async resendInvitation(organizationId: string, invitationId: string) {
-    return this.request<{ success: boolean; message: string }>(`/invitations/${organizationId}/invitations/${invitationId}/resend`, {
+    return this.request<{ success: boolean; message: string }>(`/invitations/${organizationId}/${invitationId}/resend`, {
       method: 'POST',
     });
   }

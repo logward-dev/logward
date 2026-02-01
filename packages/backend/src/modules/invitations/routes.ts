@@ -159,7 +159,7 @@ export async function invitationsRoutes(fastify: FastifyInstance) {
     });
 
     // Get pending invitations for organization
-    authRoutes.get('/:organizationId/invitations', async (request: any, reply) => {
+    authRoutes.get('/:organizationId', async (request: any, reply) => {
       try {
         const { organizationId } = organizationIdSchema.parse(request.params);
 
@@ -189,7 +189,7 @@ export async function invitationsRoutes(fastify: FastifyInstance) {
     });
 
     // Revoke a pending invitation
-    authRoutes.delete('/:organizationId/invitations/:invitationId', async (request: any, reply) => {
+    authRoutes.delete('/:organizationId/:invitationId', async (request: any, reply) => {
       try {
         const { organizationId, invitationId } = invitationIdSchema.parse(request.params);
 
@@ -221,7 +221,7 @@ export async function invitationsRoutes(fastify: FastifyInstance) {
     });
 
     // Resend a pending invitation
-    authRoutes.post('/:organizationId/invitations/:invitationId/resend', async (request: any, reply) => {
+    authRoutes.post('/:organizationId/:invitationId/resend', async (request: any, reply) => {
       try {
         const { organizationId, invitationId } = invitationIdSchema.parse(request.params);
 
