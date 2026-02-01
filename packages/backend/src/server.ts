@@ -30,6 +30,7 @@ import { settingsRoutes, publicSettingsRoutes, settingsService } from './modules
 import { retentionRoutes } from './modules/retention/index.js';
 import { correlationRoutes, patternRoutes } from './modules/correlation/index.js';
 import { bootstrapService } from './modules/bootstrap/index.js';
+import { notificationChannelsRoutes } from './modules/notification-channels/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
 import { initializeInternalLogging, shutdownInternalLogging } from './utils/internal-logger.js';
 import websocketPlugin from './plugins/websocket.js';
@@ -100,6 +101,7 @@ export async function build(opts = {}) {
   await fastify.register(invitationsRoutes, { prefix: '/api/v1/invitations' });
   await fastify.register(projectsRoutes, { prefix: '/api/v1/projects' });
   await fastify.register(notificationsRoutes, { prefix: '/api/v1/notifications' });
+  await fastify.register(notificationChannelsRoutes, { prefix: '/api/v1/notification-channels' });
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   await fastify.register(alertsRoutes, { prefix: '/api/v1/alerts' });
   await fastify.register(detectionPacksRoutes, { prefix: '/api/v1/detection-packs' });

@@ -129,8 +129,11 @@ export class DetectionPacksService {
     organizationId: string,
     packId: string,
     customThresholds?: ThresholdMap,
+    /** @deprecated Use channelIds instead */
     emailRecipients?: string[],
-    webhookUrl?: string | null
+    /** @deprecated Use channelIds instead */
+    webhookUrl?: string | null,
+    channelIds?: string[]
   ): Promise<void> {
     const pack = getPackById(packId);
     if (!pack) {
@@ -183,7 +186,7 @@ export class DetectionPacksService {
         const level = override?.level ?? rule.level;
         const mitre = this.extractMitreTags(rule.tags);
 
-        await trx
+        const insertedRule = await trx
           .insertInto('sigma_rules')
           .values({
             organization_id: organizationId,
@@ -207,7 +210,21 @@ export class DetectionPacksService {
             mitre_tactics: mitre.tactics.length > 0 ? mitre.tactics : null,
             mitre_techniques: mitre.techniques.length > 0 ? mitre.techniques : null,
           })
-          .execute();
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Link notification channels to the sigma rule
+        if (channelIds && channelIds.length > 0) {
+          for (const channelId of channelIds) {
+            await trx
+              .insertInto('sigma_rule_channels')
+              .values({
+                sigma_rule_id: insertedRule.id,
+                channel_id: channelId,
+              })
+              .execute();
+          }
+        }
       }
     });
   }

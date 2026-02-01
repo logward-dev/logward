@@ -32,6 +32,8 @@ vi.mock('../../../config/index.js', () => ({
     SMTP_PASS: 'password',
     SMTP_FROM: 'noreply@test.com',
     REDIS_URL: 'redis://localhost:6379',
+    FRONTEND_URL: 'https://app.logtide.dev',
+    NODE_ENV: 'test',
   },
   isSmtpConfigured: vi.fn(() => false), // Default to no SMTP
 }));
@@ -49,6 +51,14 @@ vi.mock('nodemailer', () => ({
 vi.mock('../../../modules/notifications/service.js', () => ({
   notificationsService: {
     createNotification: vi.fn().mockResolvedValue({ id: 'notification-id' }),
+  },
+}));
+
+// Mock the notification channels service
+vi.mock('../../../modules/notification-channels/index.js', () => ({
+  notificationChannelsService: {
+    getIncidentChannels: vi.fn().mockResolvedValue([]),
+    getOrganizationDefaults: vi.fn().mockResolvedValue([]),
   },
 }));
 

@@ -31,6 +31,7 @@
   import LogOut from '@lucide/svelte/icons/log-out';
   import Fingerprint from '@lucide/svelte/icons/fingerprint';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import BellRing from '@lucide/svelte/icons/bell-ring';
   import {
     Table,
     TableBody,
@@ -464,6 +465,27 @@
       <p class="text-sm text-muted-foreground">
         Define custom regex patterns to automatically extract identifiers like order IDs, customer IDs,
         or any application-specific values from your logs for correlation.
+      </p>
+    </CardContent>
+  </Card>
+
+  <Card class="hover:bg-accent/50 transition-colors cursor-pointer" onclick={() => goto('/dashboard/settings/channels')}>
+    <CardHeader>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <BellRing class="w-5 h-5 text-primary" />
+          <div>
+            <CardTitle>Notification Channels</CardTitle>
+            <CardDescription>Configure email and webhook notification channels</CardDescription>
+          </div>
+        </div>
+        <ChevronRight class="w-5 h-5 text-muted-foreground" />
+      </div>
+    </CardHeader>
+    <CardContent>
+      <p class="text-sm text-muted-foreground">
+        Create reusable notification channels for alerts, Sigma detections, incidents, and error tracking.
+        Set organization defaults for each event type.
       </p>
     </CardContent>
   </Card>

@@ -7,6 +7,7 @@ export interface ImportSigmaRuleParams {
     projectId?: string;
     emailRecipients?: string[];
     webhookUrl?: string;
+    channelIds?: string[];
 }
 
 export interface SigmaRule {
@@ -72,6 +73,7 @@ export interface SyncSigmaParams {
     autoCreateAlerts?: boolean;
     emailRecipients?: string[];
     webhookUrl?: string;
+    channelIds?: string[];
 }
 
 export interface SyncResult {
@@ -178,6 +180,20 @@ export class SigmaAPI {
 
         return this.request(`/api/v1/sigma/rules/${id}?${queryParams.toString()}`, {
             method: 'DELETE',
+        });
+    }
+
+    async updateRule(
+        id: string,
+        data: {
+            organizationId: string;
+            enabled?: boolean;
+            channelIds?: string[];
+        }
+    ): Promise<{ rule: SigmaRule }> {
+        return this.request(`/api/v1/sigma/rules/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
         });
     }
 

@@ -5,6 +5,7 @@ import { sigmaSyncService } from './sync-service.js';
 import { MITREMapper } from './mitre-mapper.js';
 import { authenticate } from '../auth/middleware.js';
 import { OrganizationsService } from '../organizations/service.js';
+import { notificationChannelsService } from '../notification-channels/index.js';
 
 const sigmaService = new SigmaService();
 const organizationsService = new OrganizationsService();
@@ -52,6 +53,10 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
               items: { type: 'string', format: 'email' },
             },
             webhookUrl: { type: 'string', format: 'uri' },
+            channelIds: {
+              type: 'array',
+              items: { type: 'string', format: 'uuid' },
+            },
             createAlertRule: { type: 'boolean', default: true },
           },
         },
@@ -65,10 +70,12 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
           projectId: z.string().uuid().optional(),
           emailRecipients: z.array(z.string().email()).optional(),
           webhookUrl: z.string().url().optional(),
+          channelIds: z.array(z.string().uuid()).optional(),
           createAlertRule: z.boolean().optional().default(true),
         });
 
         const body = schema.parse(request.body);
+        const { channelIds, ...importData } = body;
 
         // Verify user is member of organization
         const isMember = await checkOrganizationMembership(
@@ -82,7 +89,12 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const result = await sigmaService.importSigmaRule(body);
+        const result = await sigmaService.importSigmaRule(importData);
+
+        // Associate channels with the sigma rule if import was successful
+        if (result.sigmaRule && channelIds && channelIds.length > 0) {
+          await notificationChannelsService.setSigmaRuleChannels(result.sigmaRule.id, channelIds);
+        }
 
         if (result.errors.length > 0) {
           return reply.code(400).send(result);
@@ -218,7 +230,7 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
 
   /**
    * PATCH /api/v1/sigma/rules/:id
-   * Update a Sigma rule (enable/disable)
+   * Update a Sigma rule (enable/disable, channels)
    */
   fastify.patch(
     '/api/v1/sigma/rules/:id',
@@ -237,6 +249,7 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
           properties: {
             organizationId: { type: 'string', format: 'uuid' },
             enabled: { type: 'boolean' },
+            channelIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
           },
         },
       },
@@ -249,6 +262,7 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
       const bodySchema = z.object({
         organizationId: z.string().uuid(),
         enabled: z.boolean().optional(),
+        channelIds: z.array(z.string().uuid()).optional(),
       });
 
       const params = paramsSchema.parse(request.params);
@@ -266,8 +280,11 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
         });
       }
 
+      let rule = null;
+
+      // Update enabled status if provided
       if (body.enabled !== undefined) {
-        const rule = await sigmaService.toggleSigmaRule(
+        rule = await sigmaService.toggleSigmaRule(
           params.id,
           body.organizationId,
           body.enabled
@@ -276,11 +293,27 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
         if (!rule) {
           return reply.code(404).send({ error: 'Sigma rule not found' });
         }
-
-        return reply.send({ rule });
       }
 
-      return reply.code(400).send({ error: 'No update fields provided' });
+      // Update channels if provided
+      if (body.channelIds !== undefined) {
+        // Verify the rule exists if we haven't already fetched it
+        if (!rule) {
+          rule = await sigmaService.getSigmaRuleById(params.id, body.organizationId);
+          if (!rule) {
+            return reply.code(404).send({ error: 'Sigma rule not found' });
+          }
+        }
+        await notificationChannelsService.setSigmaRuleChannels(params.id, body.channelIds);
+      }
+
+      if (body.enabled === undefined && body.channelIds === undefined) {
+        return reply.code(400).send({ error: 'No update fields provided' });
+      }
+
+      // Fetch updated rule to return
+      const updatedRule = await sigmaService.getSigmaRuleById(params.id, body.organizationId);
+      return reply.send({ rule: updatedRule });
     }
   );
 

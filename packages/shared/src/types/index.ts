@@ -10,6 +10,9 @@ export * from './siem.js';
 // Re-export detection pack types
 export * from './detection-pack.js';
 
+// Re-export notification channel types
+export * from './notification-channel.js';
+
 // Re-export schema types
 export type { LogInput, IngestRequest, AlertRuleInput } from '../schemas/index.js';
 
