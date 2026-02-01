@@ -3,8 +3,11 @@ import type { IJob } from '../abstractions/types.js';
 import { config, isSmtpConfigured } from '../../config/index.js';
 import { db } from '../../database/connection.js';
 import { notificationsService } from '../../modules/notifications/service.js';
+import { notificationChannelsService } from '../../modules/notification-channels/index.js';
 import { createQueue } from '../connection.js';
+import { generateIncidentEmail, getFrontendUrl } from '../../lib/email-templates.js';
 import type { Severity } from '../../database/types.js';
+import type { EmailChannelConfig, WebhookChannelConfig } from '@logtide/shared';
 
 export interface IncidentNotificationJob {
   incidentId: string;
@@ -27,15 +30,6 @@ const severityLabels: Record<Severity, string> = {
   informational: 'Informational',
 };
 
-// Severity colors for email
-const severityColors: Record<Severity, string> = {
-  critical: '#dc2626',
-  high: '#ea580c',
-  medium: '#ca8a04',
-  low: '#2563eb',
-  informational: '#6b7280',
-};
-
 /**
  * Create the email transporter
  */
@@ -51,110 +45,39 @@ function createTransporter() {
   });
 }
 
+
 /**
- * Generate HTML email for incident notification
+ * Send webhook notification for incident
  */
-function generateIncidentEmailHtml(job: IncidentNotificationJob, orgName: string): string {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-  const incidentUrl = `${frontendUrl}/dashboard/security/incidents/${job.incidentId}`;
-  const severityColor = severityColors[job.severity];
-  const severityLabel = severityLabels[job.severity];
+async function sendIncidentWebhook(url: string, job: IncidentNotificationJob, orgName: string): Promise<void> {
+  const frontendUrl = getFrontendUrl();
 
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Security Incident Alert</title>
-    </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
-        <tr>
-          <td align="center">
-            <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <!-- Header -->
-              <tr>
-                <td style="padding: 32px 32px 24px; border-bottom: 1px solid #e4e4e7;">
-                  <table width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td>
-                        <span style="font-size: 24px; font-weight: 700; color: #18181b;">🚨 Security Incident</span>
-                      </td>
-                      <td align="right">
-                        <span style="display: inline-block; padding: 6px 12px; background-color: ${severityColor}; color: white; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">
-                          ${severityLabel}
-                        </span>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'LogTide/1.0',
+    },
+    body: JSON.stringify({
+      event_type: 'incident',
+      title: job.title,
+      message: job.description || `Security incident: ${job.title}`,
+      severity: job.severity,
+      organization: {
+        id: job.organizationId,
+        name: orgName,
+      },
+      incident_id: job.incidentId,
+      affected_services: job.affectedServices,
+      link: `${frontendUrl}/dashboard/security/incidents/${job.incidentId}`,
+      timestamp: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
 
-              <!-- Content -->
-              <tr>
-                <td style="padding: 32px;">
-                  <h2 style="margin: 0 0 16px; font-size: 20px; font-weight: 600; color: #18181b;">
-                    ${job.title}
-                  </h2>
-
-                  ${job.description ? `
-                    <p style="margin: 0 0 24px; font-size: 14px; color: #52525b; line-height: 1.6;">
-                      ${job.description}
-                    </p>
-                  ` : ''}
-
-                  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; border-radius: 6px; margin-bottom: 24px;">
-                    <tr>
-                      <td style="padding: 16px;">
-                        <table width="100%" cellpadding="0" cellspacing="0">
-                          <tr>
-                            <td style="padding-bottom: 8px;">
-                              <span style="font-size: 12px; color: #71717a;">Organization</span><br>
-                              <span style="font-size: 14px; font-weight: 500; color: #18181b;">${orgName}</span>
-                            </td>
-                          </tr>
-                          ${job.affectedServices && job.affectedServices.length > 0 ? `
-                            <tr>
-                              <td style="padding-top: 8px;">
-                                <span style="font-size: 12px; color: #71717a;">Affected Services</span><br>
-                                <span style="font-size: 14px; font-weight: 500; color: #18181b;">${job.affectedServices.join(', ')}</span>
-                              </td>
-                            </tr>
-                          ` : ''}
-                        </table>
-                      </td>
-                    </tr>
-                  </table>
-
-                  <table width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td align="center">
-                        <a href="${incidentUrl}" style="display: inline-block; padding: 12px 24px; background-color: #18181b; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
-                          View Incident Details
-                        </a>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-
-              <!-- Footer -->
-              <tr>
-                <td style="padding: 24px 32px; background-color: #f4f4f5; border-radius: 0 0 8px 8px;">
-                  <p style="margin: 0; font-size: 12px; color: #71717a; text-align: center;">
-                    This is an automated security alert from LogTide.<br>
-                    <a href="${frontendUrl}/dashboard/settings" style="color: #18181b;">Manage notification preferences</a>
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-    </html>
-  `;
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
 }
 
 /**
@@ -176,7 +99,31 @@ export async function processIncidentNotification(job: IJob<IncidentNotification
     return;
   }
 
-  // Get all members of the organization (owners and admins for critical/high, all for others)
+  // STEP 1: Get notification channels for this incident (or org defaults)
+  let incidentChannels = await notificationChannelsService.getIncidentChannels(data.incidentId);
+
+  // If no specific channels, use organization defaults for incidents
+  if (incidentChannels.length === 0) {
+    incidentChannels = await notificationChannelsService.getOrganizationDefaults(data.organizationId, 'incident');
+  }
+
+  // STEP 2: Collect email recipients and webhook URLs from channels
+  const channelEmailRecipients = new Set<string>();
+  const channelWebhookUrls = new Set<string>();
+
+  incidentChannels
+    .filter((ch) => ch.enabled)
+    .forEach((ch) => {
+      if (ch.type === 'email') {
+        const emailConfig = ch.config as EmailChannelConfig;
+        emailConfig.recipients.forEach((email) => channelEmailRecipients.add(email));
+      } else if (ch.type === 'webhook') {
+        const webhookConfig = ch.config as WebhookChannelConfig;
+        channelWebhookUrls.add(webhookConfig.url);
+      }
+    });
+
+  // STEP 3: Get organization members for in-app notifications (legacy behavior)
   const shouldNotifyAll = data.severity === 'critical' || data.severity === 'high';
 
   let membersQuery = db
@@ -199,7 +146,7 @@ export async function processIncidentNotification(job: IJob<IncidentNotification
 
   console.log(`[IncidentNotification] Notifying ${members.length} members`);
 
-  // Send in-app notifications to all relevant members
+  // STEP 4: Send in-app notifications to all relevant members
   const notificationPromises = members.map((member) =>
     notificationsService.createNotification({
       userId: member.id,
@@ -218,23 +165,49 @@ export async function processIncidentNotification(job: IJob<IncidentNotification
   await Promise.all(notificationPromises);
   console.log(`[IncidentNotification] In-app notifications sent`);
 
-  // Send email notifications if SMTP is configured
-  if (isSmtpConfigured()) {
-    const transporter = createTransporter();
-    const emailHtml = generateIncidentEmailHtml(data, org.name);
+  // STEP 5: Send email notifications
+  // Combine channel emails with member emails (if no channels configured, use members)
+  const emailRecipients =
+    channelEmailRecipients.size > 0
+      ? Array.from(channelEmailRecipients)
+      : members.map((m) => m.email);
 
-    const emailPromises = members.map((member) =>
+  if (isSmtpConfigured() && emailRecipients.length > 0) {
+    const transporter = createTransporter();
+    const { html, text } = generateIncidentEmail({
+      incidentId: data.incidentId,
+      title: data.title,
+      description: data.description,
+      severity: data.severity,
+      affectedServices: data.affectedServices,
+      organizationName: org.name,
+    });
+
+    const emailPromises = emailRecipients.map((email) =>
       transporter.sendMail({
         from: config.SMTP_FROM,
-        to: member.email,
+        to: email,
         subject: `[${severityLabels[data.severity]}] Security Incident: ${data.title}`,
-        html: emailHtml,
-      }).catch((err) => console.error(`[IncidentNotification] Failed to send email to ${member.email}:`, err))
+        html,
+        text,
+      }).catch((err) => console.error(`[IncidentNotification] Failed to send email to ${email}:`, err))
     );
 
     await Promise.all(emailPromises);
-    console.log(`[IncidentNotification] Emails sent to ${members.length} members`);
-  } else {
+    console.log(`[IncidentNotification] Emails sent to ${emailRecipients.length} recipients`);
+  } else if (!isSmtpConfigured()) {
     console.log(`[IncidentNotification] SMTP not configured, skipping email notifications`);
+  }
+
+  // STEP 6: Send webhook notifications (NEW - using channels)
+  if (channelWebhookUrls.size > 0) {
+    const webhookPromises = Array.from(channelWebhookUrls).map((url) =>
+      sendIncidentWebhook(url, data, org.name)
+        .then(() => console.log(`[IncidentNotification] Webhook sent to ${url}`))
+        .catch((err) => console.error(`[IncidentNotification] Webhook failed for ${url}:`, err))
+    );
+
+    await Promise.all(webhookPromises);
+    console.log(`[IncidentNotification] Webhooks sent to ${channelWebhookUrls.size} URLs`);
   }
 }

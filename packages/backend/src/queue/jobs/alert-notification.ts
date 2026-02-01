@@ -1,8 +1,11 @@
 import { alertsService } from '../../modules/alerts/index.js';
 import { notificationsService } from '../../modules/notifications/index.js';
+import { notificationChannelsService } from '../../modules/notification-channels/index.js';
 import { db } from '../../database/connection.js';
 import nodemailer from 'nodemailer';
 import { config } from '../../config/index.js';
+import { generateAlertEmail, getFrontendUrl } from '../../lib/email-templates.js';
+import type { EmailChannelConfig, WebhookChannelConfig } from '@logtide/shared';
 
 export interface AlertNotificationData {
   historyId: string;
@@ -13,6 +16,7 @@ export interface AlertNotificationData {
   log_count: number;
   threshold: number;
   time_window: number;
+  // Legacy fields (deprecated, use notification_channels instead)
   email_recipients: string[];
   webhook_url?: string;
 }
@@ -52,9 +56,27 @@ export async function processAlertNotification(job: any) {
   const errors: string[] = [];
 
   try {
-    // Create in-app notifications for organization members
+    // Get organization details
+    const org = await db
+      .selectFrom('organizations')
+      .select(['name'])
+      .where('id', '=', data.organization_id)
+      .executeTakeFirst();
+
+    // Get project name if applicable
+    let projectName: string | null = null;
+    if (data.project_id) {
+      const project = await db
+        .selectFrom('projects')
+        .select(['name'])
+        .where('id', '=', data.project_id)
+        .executeTakeFirst();
+      projectName = project?.name || null;
+    }
+
+    // STEP 1: Create in-app notifications for organization members
     try {
-      await createInAppNotifications(data);
+      await createInAppNotifications(data, projectName);
       console.log(`✅ In-app notifications created: ${data.rule_name}`);
     } catch (error) {
       const errMsg = `In-app notification failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -62,11 +84,35 @@ export async function processAlertNotification(job: any) {
       errors.push(errMsg);
     }
 
-    // Send email notifications
+    // STEP 2: Load notification channels for this alert rule
+    const channels = await notificationChannelsService.getAlertRuleChannels(data.rule_id);
+
+    // STEP 3: Collect all email recipients (from channels + legacy field)
+    const emailRecipients = new Set<string>();
+
+    // Add legacy email recipients
     if (data.email_recipients && data.email_recipients.length > 0) {
+      data.email_recipients.forEach((email: string) => emailRecipients.add(email));
+    }
+
+    // Add email recipients from channels
+    channels
+      .filter((ch) => ch.type === 'email' && ch.enabled)
+      .forEach((ch) => {
+        const emailConfig = ch.config as EmailChannelConfig;
+        emailConfig.recipients.forEach((email: string) => emailRecipients.add(email));
+      });
+
+    // STEP 4: Send emails if there are recipients
+    if (emailRecipients.size > 0) {
       try {
-        await sendEmailNotification(data);
-        console.log(`✅ Email notifications sent: ${data.rule_name} (${data.email_recipients.length} recipients)`);
+        await sendEmailNotification({
+          ...data,
+          email_recipients: Array.from(emailRecipients),
+          organizationName: org?.name,
+          projectName,
+        });
+        console.log(`✅ Email notifications sent: ${data.rule_name} (${emailRecipients.size} recipients)`);
       } catch (error) {
         const errMsg = `Email failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         console.error(`❌ ${errMsg}`);
@@ -76,17 +122,35 @@ export async function processAlertNotification(job: any) {
       console.log(`⚠️  No email recipients configured for: ${data.rule_name}`);
     }
 
-    // Send webhook notification
+    // STEP 5: Collect all webhook URLs (from channels + legacy field)
+    const webhookUrls = new Set<string>();
+
+    // Add legacy webhook URL
     if (data.webhook_url) {
+      webhookUrls.add(data.webhook_url);
+    }
+
+    // Add webhook URLs from channels
+    channels
+      .filter((ch) => ch.type === 'webhook' && ch.enabled)
+      .forEach((ch) => {
+        const webhookConfig = ch.config as WebhookChannelConfig;
+        webhookUrls.add(webhookConfig.url);
+      });
+
+    // STEP 6: Send webhooks
+    for (const url of webhookUrls) {
       try {
-        await sendWebhookNotification(data);
-        console.log(`✅ Webhook notification sent: ${data.rule_name}`);
+        await sendWebhookNotification({ ...data, webhook_url: url });
+        console.log(`✅ Webhook notification sent: ${data.rule_name} → ${url}`);
       } catch (error) {
-        const errMsg = `Webhook failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        const errMsg = `Webhook failed (${url}): ${error instanceof Error ? error.message : 'Unknown error'}`;
         console.error(`❌ ${errMsg}`);
         errors.push(errMsg);
       }
-    } else {
+    }
+
+    if (webhookUrls.size === 0) {
       console.log(`⚠️  No webhook configured for: ${data.rule_name}`);
     }
 
@@ -108,90 +172,27 @@ export async function processAlertNotification(job: any) {
   }
 }
 
-async function sendEmailNotification(data: AlertNotificationData) {
+async function sendEmailNotification(data: AlertNotificationData & { organizationName?: string; projectName?: string | null }) {
   const transporter = getEmailTransporter();
 
   if (!transporter) {
     throw new Error('Email transporter not configured');
   }
 
-  const subject = `🚨 Alert: ${data.rule_name}`;
-  const html = `
-    <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #dc2626; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; }
-          .metric { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
-          .metric:last-child { border-bottom: none; }
-          .label { font-weight: bold; }
-          .value { color: #dc2626; font-weight: bold; }
-          .footer { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0;">🚨 Alert Triggered</h1>
-            <p style="margin: 10px 0 0 0;">${data.rule_name}</p>
-          </div>
-          <div class="content">
-            <h2 style="margin-top: 0;">Alert Details</h2>
+  const { html, text } = generateAlertEmail({
+    ruleName: data.rule_name,
+    logCount: data.log_count,
+    threshold: data.threshold,
+    timeWindow: data.time_window,
+    organizationName: data.organizationName,
+    projectName: data.projectName,
+    historyId: data.historyId,
+  });
 
-            <div class="metric">
-              <span class="label">Log Count:</span>
-              <span class="value">${data.log_count}</span>
-            </div>
+  const subject = `[Alert] ${data.rule_name} - ${data.log_count} logs exceeded threshold`;
 
-            <div class="metric">
-              <span class="label">Threshold:</span>
-              <span>${data.threshold}</span>
-            </div>
-
-            <div class="metric">
-              <span class="label">Time Window:</span>
-              <span>${data.time_window} minutes</span>
-            </div>
-
-            <div class="metric">
-              <span class="label">Triggered At:</span>
-              <span>${new Date().toLocaleString()}</span>
-            </div>
-
-            <div style="margin-top: 20px; padding: 15px; background-color: #fee2e2; border-left: 4px solid #dc2626; border-radius: 4px;">
-              <strong>Action Required:</strong> Your application has generated <strong>${data.log_count}</strong> logs
-              in the last <strong>${data.time_window}</strong> minutes, exceeding the threshold of <strong>${data.threshold}</strong>.
-            </div>
-          </div>
-
-          <div class="footer">
-            <p>This is an automated alert from LogTide.</p>
-            <p>To manage your alerts, visit your LogTide dashboard.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  const text = `
-🚨 Alert Triggered: ${data.rule_name}
-
-Alert Details:
-- Log Count: ${data.log_count}
-- Threshold: ${data.threshold}
-- Time Window: ${data.time_window} minutes
-- Triggered At: ${new Date().toLocaleString()}
-
-Your application has generated ${data.log_count} logs in the last ${data.time_window} minutes, exceeding the threshold of ${data.threshold}.
-
-This is an automated alert from LogTide.
-  `.trim();
-
-  // Send email to all recipients
   await transporter.sendMail({
-    from: `"LogTide Alerts" <${config.SMTP_FROM || config.SMTP_USER}>`,
+    from: `"LogTide" <${config.SMTP_FROM || config.SMTP_USER}>`,
     to: data.email_recipients.join(', '),
     subject,
     text,
@@ -204,18 +205,26 @@ This is an automated alert from LogTide.
 async function sendWebhookNotification(data: AlertNotificationData) {
   if (!data.webhook_url) return;
 
+  const frontendUrl = getFrontendUrl();
+
   const response = await fetch(data.webhook_url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'User-Agent': 'LogTide/1.0',
     },
     body: JSON.stringify({
+      event_type: 'alert',
       alert_name: data.rule_name,
       log_count: data.log_count,
       threshold: data.threshold,
       time_window: data.time_window,
+      organization_id: data.organization_id,
+      project_id: data.project_id,
+      link: `${frontendUrl}/dashboard/alerts`,
       timestamp: new Date().toISOString(),
     }),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!response.ok) {
@@ -225,7 +234,7 @@ async function sendWebhookNotification(data: AlertNotificationData) {
   console.log(`Webhook notification sent to: ${data.webhook_url}`);
 }
 
-async function createInAppNotifications(data: AlertNotificationData) {
+async function createInAppNotifications(data: AlertNotificationData, projectName: string | null) {
   // Get all members of the organization
   const members = await db
     .selectFrom('organization_members')
@@ -236,17 +245,6 @@ async function createInAppNotifications(data: AlertNotificationData) {
   if (members.length === 0) {
     console.log(`⚠️  No members found for organization: ${data.organization_id}`);
     return;
-  }
-
-  // Get project name if applicable
-  let projectName: string | null = null;
-  if (data.project_id) {
-    const project = await db
-      .selectFrom('projects')
-      .select(['name'])
-      .where('id', '=', data.project_id)
-      .executeTakeFirst();
-    projectName = project?.name || null;
   }
 
   // Create notification for each member

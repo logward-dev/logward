@@ -20,8 +20,10 @@
         AlertDialogHeader,
         AlertDialogTitle,
     } from "$lib/components/ui/alert-dialog";
+    import EditSigmaChannelsDialog from "$lib/components/EditSigmaChannelsDialog.svelte";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import Eye from "@lucide/svelte/icons/eye";
+    import Bell from "@lucide/svelte/icons/bell";
     import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
     import CheckCircle from "@lucide/svelte/icons/check-circle";
 
@@ -35,7 +37,9 @@
     let { rules = [], organizationId, onrefresh, onview }: Props = $props();
 
     let showDeleteDialog = $state(false);
+    let showEditChannelsDialog = $state(false);
     let ruleToDelete = $state<string | null>(null);
+    let ruleToEditChannels = $state<SigmaRule | null>(null);
 
     function handleDeleteKeydown(event: KeyboardEvent) {
         if (event.key === "Enter" && showDeleteDialog && ruleToDelete) {
@@ -136,6 +140,18 @@
                             Details
                         </Button>
                         <Button
+                            variant="outline"
+                            size="sm"
+                            class="gap-2"
+                            onclick={() => {
+                                ruleToEditChannels = rule;
+                                showEditChannelsDialog = true;
+                            }}
+                        >
+                            <Bell class="w-4 h-4" />
+                            Channels
+                        </Button>
+                        <Button
                             variant="destructive"
                             size="sm"
                             class="gap-2"
@@ -214,3 +230,9 @@
         </AlertDialogFooter>
     </AlertDialogContent>
 </AlertDialog>
+
+<EditSigmaChannelsDialog
+    bind:open={showEditChannelsDialog}
+    rule={ruleToEditChannels}
+    onSuccess={onrefresh}
+/>

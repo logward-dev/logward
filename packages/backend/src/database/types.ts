@@ -11,6 +11,9 @@ import type {
   IncidentStatus,
   ExceptionLanguage,
   ErrorGroupStatus,
+  NotificationChannelType,
+  NotificationEventType,
+  ChannelConfig,
 } from '@logtide/shared';
 
 // Re-export types for backward compatibility (modules importing from database/types)
@@ -26,6 +29,9 @@ export type {
   IncidentStatus,
   ExceptionLanguage,
   ErrorGroupStatus,
+  NotificationChannelType,
+  NotificationEventType,
+  ChannelConfig,
 } from '@logtide/shared';
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
@@ -542,6 +548,59 @@ export interface IdentifierPatternsTable {
   updated_at: Generated<Timestamp>;
 }
 
+// ============================================================================
+// NOTIFICATION CHANNELS TABLES
+// ============================================================================
+
+export interface NotificationChannelsTable {
+  id: Generated<string>;
+  organization_id: string;
+  name: string;
+  type: NotificationChannelType;
+  enabled: Generated<boolean>;
+  config: ColumnType<ChannelConfig, ChannelConfig, ChannelConfig>;
+  description: string | null;
+  created_by: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AlertRuleChannelsTable {
+  id: Generated<string>;
+  alert_rule_id: string;
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface SigmaRuleChannelsTable {
+  id: Generated<string>;
+  sigma_rule_id: string;
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface IncidentChannelsTable {
+  id: Generated<string>;
+  incident_id: string;
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface ErrorGroupChannelsTable {
+  id: Generated<string>;
+  error_group_id: string;
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface OrganizationDefaultChannelsTable {
+  id: Generated<string>;
+  organization_id: string;
+  event_type: NotificationEventType;
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+}
+
 export interface Database {
   logs: LogsTable;
   users: UsersTable;
@@ -582,4 +641,11 @@ export interface Database {
   // Event correlation
   log_identifiers: LogIdentifiersTable;
   identifier_patterns: IdentifierPatternsTable;
+  // Notification channels
+  notification_channels: NotificationChannelsTable;
+  alert_rule_channels: AlertRuleChannelsTable;
+  sigma_rule_channels: SigmaRuleChannelsTable;
+  incident_channels: IncidentChannelsTable;
+  error_group_channels: ErrorGroupChannelsTable;
+  organization_default_channels: OrganizationDefaultChannelsTable;
 }

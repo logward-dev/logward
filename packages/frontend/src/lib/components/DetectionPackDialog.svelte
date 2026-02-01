@@ -8,11 +8,11 @@
 	import { toastStore } from "$lib/stores/toast";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import Button from "$lib/components/ui/button/button.svelte";
-	import Input from "$lib/components/ui/input/input.svelte";
 	import Label from "$lib/components/ui/label/label.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Select from "$lib/components/ui/select";
 	import Spinner from "$lib/components/Spinner.svelte";
+	import { ChannelSelector } from "$lib/components/notification-channels";
 	import Rocket from "@lucide/svelte/icons/rocket";
 	import Shield from "@lucide/svelte/icons/shield";
 	import Database from "@lucide/svelte/icons/database";
@@ -39,8 +39,7 @@
 	}: Props = $props();
 
 	let customThresholds = $state<ThresholdMap>({});
-	let emailRecipients = $state("");
-	let webhookUrl = $state("");
+	let selectedChannelIds = $state<string[]>([]);
 	let submitting = $state(false);
 	let disabling = $state(false);
 
@@ -80,8 +79,7 @@
 	}
 
 	function resetForm() {
-		emailRecipients = "";
-		webhookUrl = "";
+		selectedChannelIds = [];
 		submitting = false;
 		disabling = false;
 		initializeThresholds();
@@ -102,29 +100,13 @@
 	async function handleEnable() {
 		if (!pack) return;
 
-		const emails = emailRecipients
-			.split(",")
-			.map((e) => e.trim())
-			.filter((e) => e);
-
-		// Basic email validation if provided
-		if (emails.length > 0) {
-			const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-			const invalidEmails = emails.filter((e) => !emailRegex.test(e));
-			if (invalidEmails.length > 0) {
-				toastStore.error(`Invalid email addresses: ${invalidEmails.join(", ")}`);
-				return;
-			}
-		}
-
 		submitting = true;
 
 		try {
 			await detectionPacksAPI.enablePack(pack.id, {
 				organizationId,
 				customThresholds,
-				emailRecipients: emails.length > 0 ? emails : undefined,
-				webhookUrl: webhookUrl.trim() || null,
+				channelIds: selectedChannelIds.length > 0 ? selectedChannelIds : undefined,
 			});
 
 			toastStore.success(`${pack.name} enabled successfully`);
@@ -384,31 +366,16 @@
 						<h4 class="font-medium text-sm">Notification Settings</h4>
 
 						<div class="space-y-2">
-							<Label for="emails">Email Recipients (optional)</Label>
-							<Input
-								id="emails"
-								type="text"
-								placeholder="user@example.com, team@example.com"
-								bind:value={emailRecipients}
+							<Label>Notification Channels (optional)</Label>
+							<ChannelSelector
+								selectedIds={selectedChannelIds}
+								onSelectionChange={(ids) => (selectedChannelIds = ids)}
 								disabled={submitting}
+								placeholder="Select channels..."
 							/>
 							<p class="text-xs text-muted-foreground">
-								Comma-separated list of email addresses. You can add these later
-								from the Sigma Rules page.
-							</p>
-						</div>
-
-						<div class="space-y-2">
-							<Label for="webhook">Webhook URL (optional)</Label>
-							<Input
-								id="webhook"
-								type="url"
-								placeholder="https://hooks.slack.com/..."
-								bind:value={webhookUrl}
-								disabled={submitting}
-							/>
-							<p class="text-xs text-muted-foreground">
-								HTTP POST webhook to call when detection triggers
+								Select channels to receive notifications when detections trigger.
+								You can add these later from the Sigma Rules page.
 							</p>
 						</div>
 					</div>

@@ -18,6 +18,7 @@
 	import Spinner from "$lib/components/Spinner.svelte";
 	import AlertPreview from "$lib/components/alerts/AlertPreview.svelte";
 	import Eye from "@lucide/svelte/icons/eye";
+	import { ChannelSelector } from "$lib/components/notification-channels";
 
 	interface Props {
 		open: boolean;
@@ -41,13 +42,11 @@
 	let selectedLevels = $state<Set<string>>(new Set(["error", "critical"]));
 	let threshold = $state(10);
 	let timeWindow = $state(5);
-	let emailRecipients = $state("");
-	let webhookUrl = $state("");
+	let selectedChannelIds = $state<string[]>([]);
 
 	// Sigma state
 	let sigmaYaml = $state("");
-	let sigmaEmailRecipients = $state("");
-	let sigmaWebhookUrl = $state("");
+	let sigmaSelectedChannelIds = $state<string[]>([]);
 
 	let submitting = $state(false);
 	let showPreview = $state(false);
@@ -77,12 +76,10 @@
 		selectedLevels = new Set(["error", "critical"]);
 		threshold = 10;
 		timeWindow = 5;
-		emailRecipients = "";
-		webhookUrl = "";
+		selectedChannelIds = [];
 
 		sigmaYaml = "";
-		sigmaEmailRecipients = "";
-		sigmaWebhookUrl = "";
+		sigmaSelectedChannelIds = [];
 
 		submitting = false;
 		showPreview = false;
@@ -138,23 +135,8 @@
 			return;
 		}
 
-		const emails = emailRecipients
-			.split(",")
-			.map((e) => e.trim())
-			.filter((e) => e);
-
-		if (emails.length === 0) {
-			toastStore.error("At least one email recipient is required");
-			return;
-		}
-
-		// Basic email validation
-		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-		const invalidEmails = emails.filter((e) => !emailRegex.test(e));
-		if (invalidEmails.length > 0) {
-			toastStore.error(
-				`Invalid email addresses: ${invalidEmails.join(", ")}`,
-			);
+		if (selectedChannelIds.length === 0) {
+			toastStore.error("Select at least one notification channel");
 			return;
 		}
 
@@ -170,8 +152,7 @@
 				level: Array.from(selectedLevels) as any,
 				threshold,
 				timeWindow,
-				emailRecipients: emails,
-				webhookUrl: webhookUrl.trim() || null,
+				channelIds: selectedChannelIds,
 			};
 
 			await alertsAPI.createAlertRule(input);
@@ -198,23 +179,6 @@
 			return;
 		}
 
-		const emails = sigmaEmailRecipients
-			.split(",")
-			.map((e) => e.trim())
-			.filter((e) => e);
-
-		// Basic email validation if provided
-		if (emails.length > 0) {
-			const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-			const invalidEmails = emails.filter((e) => !emailRegex.test(e));
-			if (invalidEmails.length > 0) {
-				toastStore.error(
-					`Invalid email addresses: ${invalidEmails.join(", ")}`,
-				);
-				return;
-			}
-		}
-
 		submitting = true;
 
 		try {
@@ -222,8 +186,7 @@
 				yaml: sigmaYaml,
 				organizationId,
 				projectId: projectId || undefined,
-				emailRecipients: emails.length > 0 ? emails : undefined,
-				webhookUrl: sigmaWebhookUrl.trim() || undefined,
+				channelIds: sigmaSelectedChannelIds.length > 0 ? sigmaSelectedChannelIds : undefined,
 			});
 
 			// Check for errors
@@ -386,33 +349,17 @@
 						minute{timeWindow > 1 ? "s" : ""}
 					</div>
 
+					<!-- Notification Channels -->
 					<div class="space-y-2">
-						<Label for="emails">Email Recipients *</Label>
-						<Input
-							id="emails"
-							type="text"
-							placeholder="user@example.com, team@example.com"
-							bind:value={emailRecipients}
+						<Label>Notification Channels *</Label>
+						<ChannelSelector
+							selectedIds={selectedChannelIds}
+							onSelectionChange={(ids) => (selectedChannelIds = ids)}
 							disabled={submitting}
-							required
+							placeholder="Select channels..."
 						/>
 						<p class="text-xs text-muted-foreground">
-							Comma-separated list of email addresses
-						</p>
-					</div>
-
-					<!-- Webhook URL -->
-					<div class="space-y-2">
-						<Label for="webhook">Webhook URL (optional)</Label>
-						<Input
-							id="webhook"
-							type="url"
-							placeholder="https://hooks.slack.com/..."
-							bind:value={webhookUrl}
-							disabled={submitting}
-						/>
-						<p class="text-xs text-muted-foreground">
-							HTTP POST webhook to call when alert triggers
+							Select channels to receive notifications when alert triggers
 						</p>
 					</div>
 
@@ -478,31 +425,18 @@
 						/>
 					</div>
 
+					<!-- Notification Channels -->
 					<div class="space-y-2">
-						<Label for="sigmaEmails"
-							>Email Recipients (optional)</Label
-						>
-						<Input
-							id="sigmaEmails"
-							type="text"
-							placeholder="user@example.com, team@example.com"
-							bind:value={sigmaEmailRecipients}
+						<Label>Notification Channels (optional)</Label>
+						<ChannelSelector
+							selectedIds={sigmaSelectedChannelIds}
+							onSelectionChange={(ids) => (sigmaSelectedChannelIds = ids)}
 							disabled={submitting}
+							placeholder="Select channels..."
 						/>
 						<p class="text-xs text-muted-foreground">
-							Override recipients defined in the rule (if any)
+							Select channels to receive notifications when rule matches
 						</p>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="sigmaWebhook">Webhook URL (optional)</Label>
-						<Input
-							id="sigmaWebhook"
-							type="url"
-							placeholder="https://hooks.slack.com/..."
-							bind:value={sigmaWebhookUrl}
-							disabled={submitting}
-						/>
 					</div>
 				</form>
 			</TabsContent>

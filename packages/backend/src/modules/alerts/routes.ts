@@ -4,6 +4,7 @@ import { LOG_LEVELS } from '@logtide/shared';
 import { alertsService } from './service.js';
 import { authenticate } from '../auth/middleware.js';
 import { OrganizationsService } from '../organizations/service.js';
+import { notificationChannelsService } from '../notification-channels/index.js';
 
 const organizationsService = new OrganizationsService();
 
@@ -18,9 +19,13 @@ const createAlertRuleSchema = z.object({
   level: z.array(levelEnum).min(1),
   threshold: z.number().int().min(1),
   timeWindow: z.number().int().min(1),
-  emailRecipients: z.array(z.string().email()).min(1),
+  emailRecipients: z.array(z.string().email()).optional(),
   webhookUrl: z.string().url().optional().nullable(),
-});
+  channelIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => (data.emailRecipients && data.emailRecipients.length > 0) || (data.channelIds && data.channelIds.length > 0),
+  { message: 'At least one email recipient or notification channel is required' }
+);
 
 const updateAlertRuleSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -29,8 +34,9 @@ const updateAlertRuleSchema = z.object({
   level: z.array(levelEnum).min(1).optional(),
   threshold: z.number().int().min(1).optional(),
   timeWindow: z.number().int().min(1).optional(),
-  emailRecipients: z.array(z.string().email()).min(1).optional(),
+  emailRecipients: z.array(z.string().email()).optional(),
   webhookUrl: z.string().url().optional().nullable(),
+  channelIds: z.array(z.string().uuid()).optional(),
 });
 
 const alertRuleIdSchema = z.object({
@@ -78,6 +84,28 @@ async function checkOrganizationMembership(
   return organizations.some((org) => org.id === organizationId);
 }
 
+/**
+ * Enrich alert rule with channelIds
+ */
+async function enrichAlertRuleWithChannels<T extends { id: string }>(
+  alertRule: T
+): Promise<T & { channelIds: string[] }> {
+  const channels = await notificationChannelsService.getAlertRuleChannels(alertRule.id);
+  return {
+    ...alertRule,
+    channelIds: channels.map((c) => c.id),
+  };
+}
+
+/**
+ * Enrich multiple alert rules with channelIds
+ */
+async function enrichAlertRulesWithChannels<T extends { id: string }>(
+  alertRules: T[]
+): Promise<Array<T & { channelIds: string[] }>> {
+  return Promise.all(alertRules.map(enrichAlertRuleWithChannels));
+}
+
 export async function alertsRoutes(fastify: FastifyInstance) {
   // All routes require authentication
   fastify.addHook('onRequest', authenticate);
@@ -95,9 +123,19 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const alertRule = await alertsService.createAlertRule(body);
+      const { channelIds, ...alertData } = body;
+      const alertRule = await alertsService.createAlertRule({
+        ...alertData,
+        emailRecipients: alertData.emailRecipients || [],
+      });
 
-      return reply.status(201).send({ alertRule });
+      // Associate channels with the alert rule
+      if (channelIds && channelIds.length > 0) {
+        await notificationChannelsService.setAlertRuleChannels(alertRule.id, channelIds);
+      }
+
+      const enrichedRule = await enrichAlertRuleWithChannels(alertRule);
+      return reply.status(201).send({ alertRule: enrichedRule });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
@@ -135,7 +173,8 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         enabledOnly: query.enabledOnly,
       });
 
-      return reply.send({ alertRules });
+      const enrichedRules = await enrichAlertRulesWithChannels(alertRules);
+      return reply.send({ alertRules: enrichedRules });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
@@ -243,7 +282,8 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      return reply.send({ alertRule });
+      const enrichedRule = await enrichAlertRuleWithChannels(alertRule);
+      return reply.send({ alertRule: enrichedRule });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
@@ -276,7 +316,8 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const alertRule = await alertsService.updateAlertRule(id, organizationId, body);
+      const { channelIds, ...updateData } = body;
+      const alertRule = await alertsService.updateAlertRule(id, organizationId, updateData);
 
       if (!alertRule) {
         return reply.status(404).send({
@@ -284,7 +325,13 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      return reply.send({ alertRule });
+      // Update channels if provided
+      if (channelIds !== undefined) {
+        await notificationChannelsService.setAlertRuleChannels(id, channelIds);
+      }
+
+      const enrichedRule = await enrichAlertRuleWithChannels(alertRule);
+      return reply.send({ alertRule: enrichedRule });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return reply.status(400).send({

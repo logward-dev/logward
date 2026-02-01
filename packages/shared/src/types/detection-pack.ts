@@ -62,8 +62,11 @@ export interface DetectionPackWithStatus extends DetectionPack {
 export interface EnablePackInput {
   organizationId: string;
   customThresholds?: ThresholdMap;
+  /** @deprecated Use channelIds instead */
   emailRecipients?: string[];
+  /** @deprecated Use channelIds instead */
   webhookUrl?: string | null;
+  channelIds?: string[];
 }
 
 export interface UpdateThresholdsInput {
