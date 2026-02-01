@@ -595,3 +595,67 @@ Manage notifications: ${frontendUrl}/dashboard/settings/channels
 
   return { html, text };
 }
+
+// ============================================================================
+// INVITATION EMAIL
+// ============================================================================
+
+export interface InvitationEmailData {
+  email: string;
+  token: string;
+  organizationName: string;
+  inviterName: string;
+  role: string;
+}
+
+const roleLabels: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Member',
+};
+
+export function generateInvitationEmail(data: InvitationEmailData): { html: string; text: string } {
+  const frontendUrl = getFrontendUrl();
+  const inviteUrl = `${frontendUrl}/invite/${data.token}`;
+  const roleLabel = roleLabels[data.role] || data.role;
+
+  const html = baseTemplate(
+    card(`
+      ${header(`Join ${data.organizationName}`, { text: 'Invitation', color: colors.info })}
+      ${divider()}
+      ${subtitle(`${data.inviterName} has invited you to join their organization on LogTide.`)}
+      ${alertBox(`You've been invited as <strong>${roleLabel}</strong>. This invitation expires in 7 days.`, 'info')}
+      ${infoBox([
+        { label: 'Organization', value: data.organizationName },
+        { label: 'Invited By', value: data.inviterName },
+        { label: 'Role', value: roleLabel },
+        { label: 'Email', value: data.email },
+      ])}
+      ${cta('Accept Invitation', inviteUrl)}
+    `),
+    { preheader: `${data.inviterName} invited you to join ${data.organizationName}` }
+  );
+
+  const text = `
+INVITATION: Join ${data.organizationName}
+${'='.repeat(50)}
+
+${data.inviterName} has invited you to join ${data.organizationName} on LogTide as a ${roleLabel}.
+
+DETAILS
+-------
+Organization: ${data.organizationName}
+Invited By: ${data.inviterName}
+Role: ${roleLabel}
+Email: ${data.email}
+
+This invitation expires in 7 days.
+
+Accept invitation: ${inviteUrl}
+
+--
+Sent by LogTide
+`.trim();
+
+  return { html, text };
+}

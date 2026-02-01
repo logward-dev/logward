@@ -514,14 +514,14 @@ describe('Invitations Routes', () => {
     });
 
     // ==========================================================================
-    // GET /:organizationId/invitations - List pending invitations
+    // GET /:organizationId - List pending invitations
     // ==========================================================================
 
-    describe('GET /api/v1/invitations/:organizationId/invitations', () => {
+    describe('GET /api/v1/invitations/:organizationId', () => {
         it('should return 401 without auth token', async () => {
             const response = await app.inject({
                 method: 'GET',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations`,
+                url: `/api/v1/invitations/${testOrganization.id}`,
             });
 
             expect(response.statusCode).toBe(401);
@@ -533,7 +533,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'GET',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations`,
+                url: `/api/v1/invitations/${testOrganization.id}`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -552,7 +552,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'GET',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations`,
+                url: `/api/v1/invitations/${testOrganization.id}`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -572,7 +572,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'GET',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations`,
+                url: `/api/v1/invitations/${testOrganization.id}`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -599,7 +599,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'GET',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations`,
+                url: `/api/v1/invitations/${testOrganization.id}`,
                 headers: {
                     Authorization: `Bearer ${memberSession.token}`,
                 },
@@ -613,7 +613,7 @@ describe('Invitations Routes', () => {
     // DELETE /:organizationId/invitations/:invitationId - Revoke invitation
     // ==========================================================================
 
-    describe('DELETE /api/v1/invitations/:organizationId/invitations/:invitationId', () => {
+    describe('DELETE /api/v1/invitations/:organizationId/:invitationId', () => {
         it('should return 401 without auth token', async () => {
             const invitation = await createTestInvitation(
                 testOrganization.id,
@@ -623,7 +623,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'DELETE',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}`,
             });
 
             expect(response.statusCode).toBe(401);
@@ -638,7 +638,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'DELETE',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -677,7 +677,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'DELETE',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}`,
                 headers: {
                     Authorization: `Bearer ${memberSession.token}`,
                 },
@@ -691,7 +691,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'DELETE',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${fakeId}`,
+                url: `/api/v1/invitations/${testOrganization.id}/${fakeId}`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -705,7 +705,7 @@ describe('Invitations Routes', () => {
     // POST /:organizationId/invitations/:invitationId/resend - Resend invitation
     // ==========================================================================
 
-    describe('POST /api/v1/invitations/:organizationId/invitations/:invitationId/resend', () => {
+    describe('POST /api/v1/invitations/:organizationId/:invitationId/resend', () => {
         it('should return 401 without auth token', async () => {
             const invitation = await createTestInvitation(
                 testOrganization.id,
@@ -715,7 +715,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'POST',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}/resend`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}/resend`,
             });
 
             expect(response.statusCode).toBe(401);
@@ -730,7 +730,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'POST',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}/resend`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}/resend`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -763,7 +763,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'POST',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}/resend`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}/resend`,
                 headers: {
                     Authorization: `Bearer ${memberSession.token}`,
                 },
@@ -777,7 +777,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'POST',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${fakeId}/resend`,
+                url: `/api/v1/invitations/${testOrganization.id}/${fakeId}/resend`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
@@ -804,7 +804,7 @@ describe('Invitations Routes', () => {
 
             const response = await app.inject({
                 method: 'POST',
-                url: `/api/v1/invitations/${testOrganization.id}/invitations/${invitation.id}/resend`,
+                url: `/api/v1/invitations/${testOrganization.id}/${invitation.id}/resend`,
                 headers: {
                     Authorization: `Bearer ${authToken}`,
                 },
