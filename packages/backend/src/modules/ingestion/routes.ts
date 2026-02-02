@@ -163,7 +163,9 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
       const logs = parseNdjson(body.toString());
       done(null, { _ndjsonLogs: logs });
     } catch (err: any) {
-      done(err, undefined);
+      const error = new Error(`Invalid NDJSON: ${err.message}`);
+      (error as any).statusCode = 400;
+      done(error, undefined);
     }
   });
 
@@ -183,7 +185,9 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
         done(null, JSON.parse(bodyStr));
       }
     } catch (err: any) {
-      done(err, undefined);
+      const error = new Error(`Invalid JSON: ${err.message}`);
+      (error as any).statusCode = 400;
+      done(error, undefined);
     }
   });
 

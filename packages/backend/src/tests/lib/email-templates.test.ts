@@ -137,7 +137,7 @@ describe('Email Templates - Alert Email', () => {
       timeWindow: 5,
     });
 
-    expect(result.html).toContain('/logo/dark.png');
+    expect(result.html).toContain('data:image/png;base64,');
   });
 
   it('should include correct dashboard link', () => {
@@ -280,7 +280,7 @@ describe('Email Templates - Error Email', () => {
       projectName: 'Project',
     });
 
-    expect(result.html).toContain('/logo/dark.png');
+    expect(result.html).toContain('data:image/png;base64,');
   });
 
   it('should handle null exception message', () => {
@@ -383,7 +383,7 @@ describe('Email Templates - Incident Email', () => {
       organizationName: 'Org',
     });
 
-    expect(result.html).toContain('/logo/dark.png');
+    expect(result.html).toContain('data:image/png;base64,');
   });
 
   it('should handle null description', () => {
@@ -479,7 +479,7 @@ describe('Email Templates - Sigma Detection Email', () => {
       detectionId: 'det-1',
     });
 
-    expect(result.html).toContain('/logo/dark.png');
+    expect(result.html).toContain('data:image/png;base64,');
   });
 
   it('should show malicious activity warning for critical/high', () => {
