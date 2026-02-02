@@ -14,6 +14,7 @@ export interface AlertRule {
   timeWindow: number;
   emailRecipients: string[];
   webhookUrl: string | null;
+  channelIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -27,8 +28,9 @@ export interface CreateAlertRuleInput {
   level: LogLevel[];
   threshold: number;
   timeWindow: number;
-  emailRecipients: string[];
+  emailRecipients?: string[];
   webhookUrl?: string | null;
+  channelIds?: string[];
 }
 
 export interface UpdateAlertRuleInput {
@@ -40,6 +42,7 @@ export interface UpdateAlertRuleInput {
   timeWindow?: number;
   emailRecipients?: string[];
   webhookUrl?: string | null;
+  channelIds?: string[];
 }
 
 export interface GetAlertsOptions {

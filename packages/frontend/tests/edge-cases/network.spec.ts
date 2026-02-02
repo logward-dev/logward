@@ -1,4 +1,4 @@
-import { test, expect, registerUser, setAuthState, generateTestEmail, generateTestName, TEST_FRONTEND_URL, TestApiClient } from '../fixtures/auth';
+import { test, expect, registerUser, setAuthState, generateTestEmail, generateTestName, TEST_FRONTEND_URL, TestApiClient, waitForAuthForm } from '../fixtures/auth';
 
 test.describe('Network Edge Cases', () => {
   let userToken: string;
@@ -39,6 +39,7 @@ test.describe('Network Edge Cases', () => {
     // Clear auth and go to login
     await page.evaluate(() => localStorage.clear());
     await page.goto(`${TEST_FRONTEND_URL}/login`);
+    await waitForAuthForm(page);
 
     // Intercept API requests to simulate network failure
     await page.route('**/api/v1/auth/login', (route) => {
@@ -46,8 +47,8 @@ test.describe('Network Edge Cases', () => {
     });
 
     // Try to login
-    await page.locator('input[type="email"]').fill('test@example.com');
-    await page.locator('input[type="password"]').fill('password123');
+    await page.locator('input#email').fill('test@example.com');
+    await page.locator('input#password').fill('password123');
     await page.locator('button[type="submit"]').click();
 
     await page.waitForTimeout(2000);

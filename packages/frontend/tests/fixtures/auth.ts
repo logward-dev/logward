@@ -117,6 +117,35 @@ export async function clearAuthState(page: Page): Promise<void> {
 }
 
 /**
+ * Wait for auth form (login or register) to be ready.
+ * The form has multiple loading states:
+ * 1. checkingAuthConfig - checks if auth is required
+ * 2. ProviderSelector loading - loads available providers
+ * 3. Form renders only when hasLocalProvider is true
+ */
+export async function waitForAuthForm(page: Page, timeout = 30000): Promise<void> {
+  // Wait for the page to be in a stable state (not redirected)
+  await page.waitForLoadState('networkidle', { timeout });
+
+  // Wait for loading spinners to disappear
+  // The page shows spinners while checking auth config and loading providers
+  const spinner = page.locator('[class*="Spinner"], [class*="spinner"], [role="status"]');
+  try {
+    // Wait for spinners to be hidden (if any exist)
+    await spinner.first().waitFor({ state: 'hidden', timeout: 10000 });
+  } catch {
+    // No spinner or already hidden
+  }
+
+  // Wait a bit for the form to render after async state updates
+  await page.waitForTimeout(500);
+
+  // Now wait for the form inputs to be visible
+  // The form uses specific IDs: email, password, name (for register), confirmPassword (for register)
+  await page.waitForSelector('input#email', { state: 'visible', timeout });
+}
+
+/**
  * Generate unique email for test
  */
 export function generateTestEmail(): string {
@@ -194,6 +223,16 @@ export class TestApiClient {
       {
         method: 'POST',
         body: JSON.stringify({ name }),
+      }
+    );
+  }
+
+  async createNotificationChannel(organizationId: string, name: string, type: 'email' | 'webhook', config: Record<string, any>, options: Record<string, any> = {}) {
+    return this.request<{ channel: { id: string; name: string; type: string } }>(
+      `/notification-channels?organizationId=${organizationId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ organizationId, name, type, config, ...options }),
       }
     );
   }
@@ -347,17 +386,17 @@ export class TestApiClient {
   }
 
   async getPendingInvitations(organizationId: string) {
-    return this.request<{ invitations: any[] }>(`/invitations/${organizationId}/invitations`);
+    return this.request<{ invitations: any[] }>(`/invitations/${organizationId}`);
   }
 
   async revokeInvitation(organizationId: string, invitationId: string) {
-    return this.request<void>(`/invitations/${organizationId}/invitations/${invitationId}`, {
+    return this.request<void>(`/invitations/${organizationId}/${invitationId}`, {
       method: 'DELETE',
     });
   }
 
   async resendInvitation(organizationId: string, invitationId: string) {
-    return this.request<{ success: boolean; message: string }>(`/invitations/${organizationId}/invitations/${invitationId}/resend`, {
+    return this.request<{ success: boolean; message: string }>(`/invitations/${organizationId}/${invitationId}/resend`, {
       method: 'POST',
     });
   }

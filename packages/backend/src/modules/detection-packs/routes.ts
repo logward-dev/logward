@@ -17,8 +17,11 @@ const thresholdOverrideSchema = z.object({
 const enablePackSchema = z.object({
   organizationId: z.string().uuid(),
   customThresholds: z.record(z.string(), thresholdOverrideSchema).optional(),
+  /** @deprecated Use channelIds instead */
   emailRecipients: z.array(z.string().email()).optional(),
+  /** @deprecated Use channelIds instead */
   webhookUrl: z.string().url().optional().nullable(),
+  channelIds: z.array(z.string().uuid()).optional(),
 });
 
 const updateThresholdsSchema = z.object({
@@ -150,7 +153,8 @@ export async function detectionPacksRoutes(fastify: FastifyInstance) {
         packId,
         body.customThresholds,
         body.emailRecipients,
-        body.webhookUrl
+        body.webhookUrl,
+        body.channelIds
       );
 
       const updatedPack = await detectionPacksService.getPackWithStatus(

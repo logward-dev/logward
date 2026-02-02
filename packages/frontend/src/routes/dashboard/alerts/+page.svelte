@@ -38,6 +38,7 @@
 	} from "$lib/components/ui/alert-dialog";
 	import { Switch } from "$lib/components/ui/switch";
 	import CreateAlertDialog from "$lib/components/CreateAlertDialog.svelte";
+	import EditAlertDialog from "$lib/components/EditAlertDialog.svelte";
 	import SigmaRulesList from "$lib/components/SigmaRulesList.svelte";
 	import SigmaRuleDetailsDialog from "$lib/components/SigmaRuleDetailsDialog.svelte";
 	import SigmaSyncDialog from "$lib/components/SigmaSyncDialog.svelte";
@@ -47,6 +48,7 @@
 	import Plus from "@lucide/svelte/icons/plus";
 	import Package from "@lucide/svelte/icons/package";
 	import Trash2 from "@lucide/svelte/icons/trash-2";
+	import Pencil from "@lucide/svelte/icons/pencil";
 	import Clock from "@lucide/svelte/icons/clock";
 	import Mail from "@lucide/svelte/icons/mail";
 	import Webhook from "@lucide/svelte/icons/webhook";
@@ -56,8 +58,25 @@
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
 	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
 	import { checklistStore } from "$lib/stores/checklist";
+	import { layoutStore } from "$lib/stores/layout";
 
 	let alertRules = $state<AlertRule[]>([]);
+	let maxWidthClass = $state("max-w-7xl");
+	let containerPadding = $state("px-6 py-8");
+
+	$effect(() => {
+		const unsubscribe = layoutStore.maxWidthClass.subscribe((value) => {
+			maxWidthClass = value;
+		});
+		return unsubscribe;
+	});
+
+	$effect(() => {
+		const unsubscribe = layoutStore.containerPadding.subscribe((value) => {
+			containerPadding = value;
+		});
+		return unsubscribe;
+	});
 	let alertHistory = $state<AlertHistory[]>([]);
 	let sigmaRules = $state<SigmaRule[]>([]);
 	let loading = $state(false);
@@ -71,7 +90,9 @@
 	let showSyncDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showPacksDialog = $state(false);
+	let showEditDialog = $state(false);
 	let alertToDelete = $state<string | null>(null);
+	let alertToEdit = $state<AlertRule | null>(null);
 	let expandedHistoryLogs = $state<Map<string, any[]>>(new Map());
 	let loadingHistoryLogs = $state<Set<string>>(new Set());
 
@@ -294,7 +315,7 @@
 	<title>Alerts - LogTide</title>
 </svelte:head>
 
-<div class="container mx-auto px-6 py-8 max-w-7xl">
+<div class="container mx-auto {containerPadding} {maxWidthClass}">
 			<div class="flex items-start justify-between mb-6">
 				<div>
 					<div class="flex items-center gap-3 mb-2">
@@ -429,6 +450,18 @@
 											</div>
 											<div class="flex gap-2">
 												<Button
+													variant="outline"
+													size="sm"
+													class="gap-2"
+													onclick={() => {
+														alertToEdit = alert;
+														showEditDialog = true;
+													}}
+												>
+													<Pencil class="w-4 h-4" />
+													Edit
+												</Button>
+												<Button
 													variant="destructive"
 													size="sm"
 													class="gap-2"
@@ -479,26 +512,16 @@
 
 											<div>
 												<span class="font-medium"
-													>Email Recipients:</span
+													>Notification Channels:</span
 												>
-												<span class="ml-2"
-													>{alert.emailRecipients.join(
-														", ",
-													)}</span
-												>
+												<span class="ml-2">
+													{#if alert.channelIds && alert.channelIds.length > 0}
+														{alert.channelIds.length} channel{alert.channelIds.length > 1 ? 's' : ''} configured
+													{:else}
+														No channels configured
+													{/if}
+												</span>
 											</div>
-
-											{#if alert.webhookUrl}
-												<div>
-													<span class="font-medium"
-														>Webhook:</span
-													>
-													<span
-														class="ml-2 text-xs font-mono truncate"
-														>{alert.webhookUrl}</span
-													>
-												</div>
-											{/if}
 										</div>
 
 										<div
@@ -1002,6 +1025,16 @@
 			<CreateAlertDialog
 				bind:open={showCreateDialog}
 				organizationId={$currentOrganization.id}
+				onSuccess={() => {
+					loadAlertRules();
+					loadAlertHistory();
+				}}
+			/>
+
+			<EditAlertDialog
+				bind:open={showEditDialog}
+				organizationId={$currentOrganization.id}
+				alert={alertToEdit}
 				onSuccess={() => {
 					loadAlertRules();
 					loadAlertHistory();

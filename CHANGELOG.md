@@ -5,6 +5,32 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-02-01
+
+### Added
+
+- **Notification Channels**: Configurable notification destinations for alerts and Sigma rules
+  - Create and manage multiple notification channels per organization
+  - Support for Email (SMTP) and Webhook channel types
+  - Link channels to alert rules and Sigma rules
+  - Channel testing before saving
+  - UI for channel management in settings
+
+### Changed
+
+- **UI Space Optimization**: Maximize content area for better log visibility (#108)
+  - Reduced excessive margins and padding around main content
+  - Log lines wrap less frequently on standard screens
+  - Better use of available screen real estate
+
+### Fixed
+
+- **Invitation Email Resend**: Fixed SMTP invitation resend functionality (#111)
+  - Updated invitation API endpoints structure
+  - Refactored email generation for invitations
+
+---
+
 ## [0.5.0] - 2026-01-31
 
 ### Added

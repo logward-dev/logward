@@ -5,8 +5,8 @@
     import * as Dialog from "$lib/components/ui/dialog";
     import Button from "$lib/components/ui/button/button.svelte";
     import Label from "$lib/components/ui/label/label.svelte";
-    import Input from "$lib/components/ui/input/input.svelte";
     import SigmaTreeMultiSelect from "$lib/components/SigmaTreeMultiSelect.svelte";
+    import { ChannelSelector } from "$lib/components/notification-channels";
     import Download from "@lucide/svelte/icons/download";
     import Loader2 from "@lucide/svelte/icons/loader-2";
     import CheckCircle from "@lucide/svelte/icons/check-circle";
@@ -30,8 +30,7 @@
     let syncResult = $state<SyncResult | null>(null);
     let selectedCategories = $state<string[]>([]);
     let selectedRules = $state<string[]>([]);
-    let emailRecipientsInput = $state("");
-    let webhookUrl = $state("");
+    let selectedChannelIds = $state<string[]>([]);
 
     function handleSelectionChange(selection: {
         categories: string[];
@@ -46,12 +45,6 @@
         syncResult = null;
 
         try {
-            // Parse email recipients (comma-separated)
-            const emailRecipients = emailRecipientsInput
-                .split(",")
-                .map((e) => e.trim())
-                .filter((e) => e.length > 0);
-
             const result = await sigmaAPI.syncFromSigmaHQ({
                 organizationId,
                 selection: {
@@ -59,9 +52,7 @@
                     rules: selectedRules,
                 },
                 autoCreateAlerts: false, // Never create alert rules for Sigma rules
-                emailRecipients:
-                    emailRecipients.length > 0 ? emailRecipients : undefined,
-                webhookUrl: webhookUrl.trim() || undefined,
+                channelIds: selectedChannelIds.length > 0 ? selectedChannelIds : undefined,
             });
 
             syncResult = result;
@@ -92,8 +83,7 @@
         syncResult = null;
         selectedCategories = [];
         selectedRules = [];
-        emailRecipientsInput = "";
-        webhookUrl = "";
+        selectedChannelIds = [];
         if (onOpenChange) onOpenChange(false);
     }
 </script>
@@ -139,42 +129,23 @@
                         Notification Settings (Optional)
                     </p>
                     <p class="text-blue-800 dark:text-blue-200 text-xs">
-                        Configure email and webhook notifications for when these
+                        Select notification channels to receive alerts when these
                         Sigma rules match logs.<br />
                         Leave blank for detection-only mode (no notifications).
                     </p>
                 </div>
 
-                <div class="space-y-4">
-                    <div class="space-y-2">
-                        <Label for="emailRecipients"
-                            >Email Recipients (optional)</Label
-                        >
-                        <Input
-                            id="emailRecipients"
-                            type="text"
-                            placeholder="email1@example.com, email2@example.com"
-                            bind:value={emailRecipientsInput}
-                        />
-                        <p class="text-xs text-muted-foreground">
-                            Comma-separated list of email addresses for alert
-                            notifications
-                        </p>
-                    </div>
-
-                    <div class="space-y-2">
-                        <Label for="webhookUrl">Webhook URL (optional)</Label>
-                        <Input
-                            id="webhookUrl"
-                            type="url"
-                            placeholder="https://hooks.example.com/webhook"
-                            bind:value={webhookUrl}
-                        />
-                        <p class="text-xs text-muted-foreground">
-                            HTTP endpoint to receive alert notifications (POST
-                            requests)
-                        </p>
-                    </div>
+                <div class="space-y-2">
+                    <Label>Notification Channels (optional)</Label>
+                    <ChannelSelector
+                        selectedIds={selectedChannelIds}
+                        onSelectionChange={(ids) => (selectedChannelIds = ids)}
+                        disabled={syncing}
+                        placeholder="Select channels..."
+                    />
+                    <p class="text-xs text-muted-foreground">
+                        Select channels to receive notifications when detections trigger
+                    </p>
                 </div>
             </div>
 

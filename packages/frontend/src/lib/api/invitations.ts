@@ -84,7 +84,7 @@ export class InvitationsAPI {
   }
 
   async getPendingInvitations(organizationId: string): Promise<{ invitations: PendingInvitation[] }> {
-    const result = await this.request<{ invitations: any[] }>(`/invitations/${organizationId}/invitations`);
+    const result = await this.request<{ invitations: any[] }>(`/invitations/${organizationId}`);
     return {
       invitations: result.invitations.map((inv) => ({
         ...inv,
@@ -95,13 +95,13 @@ export class InvitationsAPI {
   }
 
   async revokeInvitation(organizationId: string, invitationId: string): Promise<void> {
-    await this.request(`/invitations/${organizationId}/invitations/${invitationId}`, {
+    await this.request(`/invitations/${organizationId}/${invitationId}`, {
       method: 'DELETE',
     });
   }
 
   async resendInvitation(organizationId: string, invitationId: string): Promise<{ success: boolean; message: string }> {
-    return this.request(`/invitations/${organizationId}/invitations/${invitationId}/resend`, {
+    return this.request(`/invitations/${organizationId}/${invitationId}/resend`, {
       method: 'POST',
     });
   }

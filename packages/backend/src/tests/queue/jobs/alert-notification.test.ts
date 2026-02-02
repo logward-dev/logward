@@ -35,6 +35,8 @@ vi.mock('../../../config/index.js', () => ({
         REDIS_URL: 'redis://localhost:6379',
         CACHE_ENABLED: true,
         CACHE_TTL: 60,
+        FRONTEND_URL: 'https://app.logtide.dev',
+        NODE_ENV: 'test',
     },
 }));
 
@@ -143,7 +145,7 @@ describe('Alert Notification Job', () => {
                 'https://hooks.example.com/alert',
                 expect.objectContaining({
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
                 })
             );
         });
