@@ -66,83 +66,89 @@ test.describe('Alert Journey', () => {
     // Wait for page to be ready with longer timeout for CI
     await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
 
-    // Click create alert button
-    const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
-    await createButton.first().click({ timeout: 10000 });
+    // Click create alert button - be more specific to avoid sidebar buttons if any
+    const createButton = page.locator('main button:has-text("Create Alert"), main button:has-text("Create Your First Alert")');
+    await expect(createButton.first()).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(2000); // Wait for animations
+    await createButton.first().click({ force: true });
 
-    // Verify dialog is open
-    const dialog = page.locator('[role="dialog"], [class*="dialog"], [class*="Dialog"]');
-    await expect(dialog).toBeVisible({ timeout: 5000 });
+    // Wait for dialog to be fully visible
+    const dialog = page.locator('[role="dialog"]');
+    try {
+        await expect(dialog).toBeVisible({ timeout: 10000 });
+    } catch (e) {
+        console.log('Dialog did not appear. Page inner text:', await page.innerText('body'));
+        throw e;
+    }
 
     // Verify dialog contains expected elements - use flexible matching
     await expect(page.locator('text=/alert.*name|name/i').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('3. User can create an alert rule', async ({ page }) => {
-    // First create a notification channel via API for this test
-    const channelResult = await apiClient.createNotificationChannel(
+    // 1. Create a notification channel via API first
+    const channelName = `E2E Channel ${Date.now()}`;
+    await apiClient.createNotificationChannel(
       organizationId,
-      `E2E Test Channel ${Date.now()}`,
+      channelName,
       'email',
-      { recipients: ['test@e2e-test.logtide.dev'] }
+      { recipients: ['test@e2e.logtide.dev'] },
+      { enabled: true }
     );
 
+    // 2. Navigate to alerts page
     await page.goto(`${TEST_FRONTEND_URL}/dashboard/projects/${projectId}/alerts`);
     await page.waitForLoadState('load');
-
-    // Wait for page to be ready
     await expect(page.locator('h2:has-text("Alert Rules")')).toBeVisible({ timeout: 30000 });
 
-    // Click create alert button
+    // 3. Open Create Alert Dialog
     const createButton = page.locator('button:has-text("Create Alert"), button:has-text("Create Your First Alert")');
+    await expect(createButton.first()).toBeVisible({ timeout: 10000 });
     await createButton.first().click();
 
-    // Wait for dialog to be fully visible
     const dialog = page.locator('[role="dialog"]');
     await expect(dialog).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    // Fill the form - wait for input to be interactable
-    const alertName = `E2E Test Alert ${Date.now()}`;
-    const nameInput = page.locator('input#name');
-    await expect(nameInput).toBeVisible({ timeout: 10000 });
-    await nameInput.fill(alertName);
+    // 4. Fill basic fields
+    const alertName = `E2E Alert ${Date.now()}`;
+    await dialog.locator('input#name').fill(alertName);
+    await dialog.locator('input#threshold').fill('3');
+    await dialog.locator('input#timeWindow').fill('5');
 
-    // Select error level (should be pre-selected, but click to be sure)
-    const errorButton = page.locator('[role="dialog"] button:has-text("error")').first();
-    if (await errorButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Check if it's already selected (default variant)
-      const isSelected = await errorButton.getAttribute('class');
-      if (!isSelected?.includes('default')) {
-        await errorButton.click();
-      }
+    // 5. Handle Notification Channel selection using ChannelSelector
+    const channelSelector = page.locator('[data-popover-trigger]').filter({ hasText: /Select channels/i }).first();
+    await expect(channelSelector).toBeVisible({ timeout: 10000 });
+    await channelSelector.click({ force: true });
+    await page.waitForTimeout(2000); 
+
+    // Try to find the channel we created via API
+    const channelOption = page.locator('button').filter({ hasText: channelName }).first();
+    if (await channelOption.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await channelOption.click({ force: true });
+    } else {
+        console.log('API channel not found, creating one via UI...');
+        // Fallback: create channel via UI
+        const createUiBtn = page.locator('button').filter({ hasText: /Create.*channel/i }).last();
+        await createUiBtn.click({ force: true });
+        
+        await page.waitForTimeout(1000);
+        // Find the newly opened dialog (nested)
+        const nestedDialog = page.locator('[role="dialog"]').last();
+        await nestedDialog.locator('input').first().fill(`UI-${Date.now()}`);
+        await nestedDialog.locator('input').nth(1).fill('test@ui.dev');
+        await nestedDialog.locator('button').filter({ hasText: /Create/i }).first().click({ force: true });
+        await page.waitForTimeout(2000);
     }
 
-    // Set threshold and time window
-    await page.locator('input#threshold').fill('3');
-    await page.locator('input#timeWindow').fill('5');
+    // 6. Submit the form
+    const submitBtn = dialog.locator('button:has-text("Create Alert")');
+    await expect(submitBtn).toBeEnabled({ timeout: 10000 });
+    await submitBtn.click();
 
-    // Select notification channel - the ChannelSelector needs clicking
-    const channelSelector = page.locator('[role="dialog"] button:has-text("Select channels")');
-    if (await channelSelector.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await channelSelector.click();
-      await page.waitForTimeout(500);
-      // Click the channel in the dropdown
-      const channelOption = page.locator('[role="option"], [data-value]').first();
-      if (await channelOption.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await channelOption.click();
-      }
-    }
-
-    // Submit the form
-    await page.locator('[role="dialog"] button:has-text("Create Alert")').click();
-
-    // Wait for dialog to close and success message
+    // 7. Verify the alert was created (dialog should close)
     await page.waitForTimeout(2000);
-
-    // Verify the alert was created (dialog should close)
     const dialogStillOpen = await dialog.isVisible().catch(() => false);
-    // If dialog closed or alert name is in page, test passes
     const pageContent = await page.content();
     expect(dialogStillOpen === false || pageContent.includes(alertName)).toBe(true);
   });

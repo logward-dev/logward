@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { generateTestEmail, generateTestName, TEST_FRONTEND_URL, TEST_API_URL } from '../fixtures/auth';
+import { generateTestEmail, generateTestName, TEST_FRONTEND_URL, TEST_API_URL, waitForAuthForm } from '../fixtures/auth';
 import { createTestLog } from '../helpers/factories';
 
 test.describe('New User Journey', () => {
@@ -22,26 +22,24 @@ test.describe('New User Journey', () => {
 
   test('1. User can view the register page', async ({ page }) => {
     await page.goto(`${TEST_FRONTEND_URL}/register`);
-    await page.waitForLoadState('load');
+    await waitForAuthForm(page);
 
     // Verify register form is displayed - look for text that indicates register page
-    await expect(page.locator('text=/create.*account|sign up|get started/i').first()).toBeVisible();
-    await expect(page.locator('input[type="email"]')).toBeVisible();
-    await expect(page.locator('input[type="password"]').first()).toBeVisible();
+    await expect(page.locator('text=/create.*account|sign up|get started/i').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('input#email')).toBeVisible();
+    await expect(page.locator('input#password')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
   test('2. User can register a new account', async ({ page }) => {
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
     // Fill registration form
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    // Fill password fields
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     // Submit form
     await page.locator('button[type="submit"]').click();
@@ -53,8 +51,9 @@ test.describe('New User Journey', () => {
   test('3. User can create an organization', async ({ page }) => {
     // Login first
     await page.goto(`${TEST_FRONTEND_URL}/login`);
-    await page.locator('input[type="email"]').fill(userEmail);
-    await page.locator('input[type="password"]').fill(userPassword);
+    await waitForAuthForm(page);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
     await page.locator('button[type="submit"]').click();
 
     // Should be on onboarding page
@@ -122,8 +121,9 @@ test.describe('New User Journey', () => {
 
     // Login
     await page.goto(`${TEST_FRONTEND_URL}/login`);
-    await page.locator('input[type="email"]').fill(userEmail);
-    await page.locator('input[type="password"]').fill(userPassword);
+    await waitForAuthForm(page);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
     await page.locator('button[type="submit"]').click();
 
     // Wait for redirect (could be dashboard, projects, or onboarding)
@@ -224,8 +224,9 @@ test.describe('New User Journey', () => {
   test('5. User can create an API key', async ({ page }) => {
     // Login
     await page.goto(`${TEST_FRONTEND_URL}/login`);
-    await page.locator('input[type="email"]').fill(userEmail);
-    await page.locator('input[type="password"]').fill(userPassword);
+    await waitForAuthForm(page);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
     await page.locator('button[type="submit"]').click();
 
     // Navigate to project settings
@@ -341,8 +342,9 @@ test.describe('New User Journey', () => {
 
     // Login and verify log appears in dashboard
     await page.goto(`${TEST_FRONTEND_URL}/login`);
-    await page.locator('input[type="email"]').fill(userEmail);
-    await page.locator('input[type="password"]').fill(userPassword);
+    await waitForAuthForm(page);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
     await page.locator('button[type="submit"]').click();
 
     await page.waitForURL(/dashboard|projects/, { timeout: 15000 });

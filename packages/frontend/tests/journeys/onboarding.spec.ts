@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { generateTestEmail, generateTestName, TEST_FRONTEND_URL, TEST_API_URL } from '../fixtures/auth';
+import { generateTestEmail, generateTestName, TEST_FRONTEND_URL, TEST_API_URL, waitForAuthForm } from '../fixtures/auth';
 
 const ONBOARDING_STORAGE_KEY = 'logtide_onboarding';
 
@@ -20,13 +20,12 @@ test.describe('Onboarding Tutorial Journey', () => {
   test('1. New user sees welcome step after registration', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -223,13 +222,12 @@ test.describe('Tutorial Skip and Resume', () => {
   test('User can skip tutorial from welcome step', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -268,13 +266,12 @@ test.describe('Tutorial Skip and Resume', () => {
   test('User can resume tutorial after page refresh', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -370,13 +367,12 @@ test.describe('Onboarding Mobile Responsive', () => {
   test('Onboarding displays correctly on mobile', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -465,13 +461,12 @@ test.describe('Onboarding Accessibility', () => {
   test('Welcome step has proper ARIA labels and structure', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -504,13 +499,12 @@ test.describe('Onboarding Accessibility', () => {
   test('Form inputs have proper labels', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -542,13 +536,12 @@ test.describe('Onboarding Accessibility', () => {
   test('Keyboard navigation works through tutorial', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 
@@ -581,13 +574,12 @@ test.describe('Onboarding Accessibility', () => {
   test('Focus is properly managed during step transitions', async ({ page }) => {
     // Register a new user
     await page.goto(`${TEST_FRONTEND_URL}/register`);
+    await waitForAuthForm(page);
 
-    await page.locator('input[type="text"], input#name').fill(userName);
-    await page.locator('input[type="email"]').fill(userEmail);
-
-    const passwordInputs = page.locator('input[type="password"]');
-    await passwordInputs.first().fill(userPassword);
-    await passwordInputs.nth(1).fill(userPassword);
+    await page.locator('input#name').fill(userName);
+    await page.locator('input#email').fill(userEmail);
+    await page.locator('input#password').fill(userPassword);
+    await page.locator('input#confirmPassword').fill(userPassword);
 
     await page.locator('button[type="submit"]').click();
 

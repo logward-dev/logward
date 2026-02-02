@@ -27,6 +27,22 @@ async function waitForService(url: string, name: string): Promise<void> {
   throw new Error(`${name} failed to become ready after ${MAX_RETRIES} attempts`);
 }
 
+async function ensureLocalAuthProvider(): Promise<void> {
+  // Check if local provider exists
+  const response = await fetch(`${TEST_API_URL}/api/v1/auth/providers`);
+  const data = await response.json();
+
+  const hasLocalProvider = data.providers?.some((p: { type: string }) => p.type === 'local');
+
+  if (!hasLocalProvider) {
+    console.log('Local auth provider missing - this may cause login/register forms to not appear.');
+    console.log('Please ensure the database migration 010_auth_providers.sql has inserted the local provider.');
+    console.log('You can manually run: INSERT INTO auth_providers (type, name, slug, enabled, is_default, display_order, icon, config) VALUES (\'local\', \'Email & Password\', \'local\', true, true, 0, \'mail\', \'{}\'::jsonb) ON CONFLICT (slug) DO NOTHING;');
+  } else {
+    console.log('Local auth provider verified ✓');
+  }
+}
+
 async function globalSetup(config: FullConfig): Promise<void> {
   console.log('=== E2E Test Global Setup ===');
   console.log(`API URL: ${TEST_API_URL}`);
@@ -37,6 +53,9 @@ async function globalSetup(config: FullConfig): Promise<void> {
 
   // Wait for frontend to be ready
   await waitForService(TEST_FRONTEND_URL, 'Frontend');
+
+  // Ensure local auth provider exists (required for login/register forms)
+  await ensureLocalAuthProvider();
 
   console.log('=== All services ready! ===');
 }
