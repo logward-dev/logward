@@ -6,6 +6,27 @@ import { CacheManager } from '../../utils/cache.js';
 import { notificationPublisher } from '../streaming/index.js';
 import { correlationService, type IdentifierMatch } from '../correlation/service.js';
 
+/**
+ * Remove null characters (\u0000) that PostgreSQL doesn't support in text fields.
+ */
+function sanitizeForPostgres<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') {
+    return value.replace(/\u0000/g, '') as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeForPostgres) as T;
+  }
+  if (typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = sanitizeForPostgres(v);
+    }
+    return result as T;
+  }
+  return value;
+}
+
 export class IngestionService {
   /**
    * Ingest logs in batch
@@ -40,16 +61,16 @@ export class IngestionService {
       }
     }
 
-    // Convert logs to database format
+    // Convert logs to database format (sanitize to remove \u0000 which PostgreSQL doesn't support)
     const dbLogs = logs.map((log) => ({
       time: typeof log.time === 'string' ? new Date(log.time) : log.time,
       project_id: projectId,
-      service: log.service,
+      service: sanitizeForPostgres(log.service),
       level: log.level,
-      message: log.message,
-      metadata: log.metadata || null,
-      trace_id: log.trace_id || null,
-      span_id: (log as { span_id?: string }).span_id || null,
+      message: sanitizeForPostgres(log.message),
+      metadata: sanitizeForPostgres(log.metadata) || null,
+      trace_id: sanitizeForPostgres(log.trace_id) || null,
+      span_id: sanitizeForPostgres((log as { span_id?: string }).span_id) || null,
     }));
 
     // Insert logs in batch and return IDs

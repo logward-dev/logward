@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports up to 1000 logs in tail mode without errors
   - Batches executed in parallel for performance
 
+- **Unicode Escape Sequences**: Fixed `unsupported Unicode escape sequence` error during log ingestion
+  - Sanitizes `\u0000` (null characters) from log data before PostgreSQL insertion
+  - Affects message, service, metadata, trace_id, and span_id fields
+
 - **POST Requests Without Body**: Fixed CDN/proxy compatibility issues with empty POST requests
   - `disablePack`: Now sends `organizationId` in request body instead of query string
   - `notification-channels/test`: Now sends `organizationId` in request body
