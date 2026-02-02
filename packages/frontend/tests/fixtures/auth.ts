@@ -198,6 +198,16 @@ export class TestApiClient {
     );
   }
 
+  async createNotificationChannel(organizationId: string, name: string, type: 'email' | 'webhook', config: Record<string, any>) {
+    return this.request<{ channel: { id: string; name: string; type: string } }>(
+      `/notification-channels?organizationId=${organizationId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ organizationId, name, type, config }),
+      }
+    );
+  }
+
   async ingestLogs(apiKey: string, logs: any[]) {
     const response = await fetch(`${TEST_API_URL}/api/v1/ingest`, {
       method: 'POST',
