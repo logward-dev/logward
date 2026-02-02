@@ -621,4 +621,336 @@ describe('Notification Channels Routes', () => {
       expect(body.channels).toHaveLength(1);
     });
   });
+
+  describe('POST /api/v1/notification-channels/:id/test', () => {
+    it('should test a channel', async () => {
+      const [channel] = await db
+        .insertInto('notification_channels')
+        .values({
+          organization_id: testOrganization.id,
+          name: 'Test Channel',
+          type: 'webhook',
+          config: { url: 'https://httpbin.org/post' },
+        })
+        .returningAll()
+        .execute();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels/${channel.id}/test?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.result).toBeDefined();
+    });
+
+    it('should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000/test`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other-test@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000/test?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('should return 403 for non-admin', async () => {
+      const memberUser = await createTestUser({ email: 'member-test@test.com' });
+      await db
+        .insertInto('organization_members')
+        .values({
+          user_id: memberUser.id,
+          organization_id: testOrganization.id,
+          role: 'member',
+        })
+        .execute();
+      const memberSession = await createTestSession(memberUser.id);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000/test?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${memberSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('should return 404 for non-existent channel', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000/test?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('Additional edge cases', () => {
+    it('GET /:id should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('GET /:id should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other2@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('POST / should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels`,
+        headers: { Authorization: `Bearer ${authToken}` },
+        payload: {
+          name: 'Test',
+          type: 'email',
+          config: { recipients: ['test@example.com'] },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('POST / should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other3@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/notification-channels?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+        payload: {
+          name: 'Test',
+          type: 'email',
+          config: { recipients: ['test@example.com'] },
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('PUT /:id should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000`,
+        headers: { Authorization: `Bearer ${authToken}` },
+        payload: { name: 'Updated' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('PUT /:id should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other4@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+        payload: { name: 'Updated' },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('PUT /:id should return 403 for non-admin', async () => {
+      const memberUser = await createTestUser({ email: 'member2@test.com' });
+      await db
+        .insertInto('organization_members')
+        .values({
+          user_id: memberUser.id,
+          organization_id: testOrganization.id,
+          role: 'member',
+        })
+        .execute();
+      const memberSession = await createTestSession(memberUser.id);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${memberSession.token}` },
+        payload: { name: 'Updated' },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('DELETE /:id should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('DELETE /:id should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other5@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('DELETE /:id should return 403 for non-admin', async () => {
+      const memberUser = await createTestUser({ email: 'member3@test.com' });
+      await db
+        .insertInto('organization_members')
+        .values({
+          user_id: memberUser.id,
+          organization_id: testOrganization.id,
+          role: 'member',
+        })
+        .execute();
+      const memberSession = await createTestSession(memberUser.id);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/notification-channels/00000000-0000-0000-0000-000000000000?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${memberSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /defaults should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/defaults`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('GET /defaults should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other6@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/defaults?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /defaults/:eventType should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/defaults/alert`,
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('GET /defaults/:eventType should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other7@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/notification-channels/defaults/alert?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('PUT /defaults/:eventType should return 400 without organizationId', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/defaults/alert`,
+        headers: { Authorization: `Bearer ${authToken}` },
+        payload: { channelIds: [] },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('PUT /defaults/:eventType should return 403 for non-member', async () => {
+      const otherUser = await createTestUser({ email: 'other8@test.com' });
+      const otherSession = await createTestSession(otherUser.id);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/defaults/alert?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${otherSession.token}` },
+        payload: { channelIds: [] },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('PUT /defaults/:eventType should return 403 for non-admin', async () => {
+      const memberUser = await createTestUser({ email: 'member4@test.com' });
+      await db
+        .insertInto('organization_members')
+        .values({
+          user_id: memberUser.id,
+          organization_id: testOrganization.id,
+          role: 'member',
+        })
+        .execute();
+      const memberSession = await createTestSession(memberUser.id);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/defaults/alert?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${memberSession.token}` },
+        payload: { channelIds: [] },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('PUT /defaults/:eventType should return 400 for invalid event type', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/notification-channels/defaults/invalid?organizationId=${testOrganization.id}`,
+        headers: { Authorization: `Bearer ${authToken}` },
+        payload: { channelIds: [] },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
 });
