@@ -106,6 +106,7 @@ export class AdminAuthAPI {
   async testConnection(id: string): Promise<TestConnectionResult> {
     return this.request(`/admin/auth/providers/${id}/test`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 
