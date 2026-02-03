@@ -125,6 +125,6 @@ const internalLoggingPlugin: FastifyPluginCallback = (fastify, _options, done) =
 };
 
 export default fp(internalLoggingPlugin, {
-  fastify: '4.x',
+  fastify: '5.x',
   name: 'internal-logging-plugin',
 });

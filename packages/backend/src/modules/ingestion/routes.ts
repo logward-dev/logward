@@ -225,6 +225,19 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
             timestamp: { type: 'string' },
           },
         },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            details: { type: 'object' },
+          },
+        },
+        401: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
       },
     },
     handler: async (request: any, reply) => {
@@ -303,6 +316,19 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
           properties: {
             received: { type: 'number' },
             timestamp: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            details: { type: 'object' },
+          },
+        },
+        401: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
           },
         },
       },

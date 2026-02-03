@@ -21,8 +21,8 @@ declare module 'fastify' {
  */
 const authPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.decorateRequest('authenticated', false);
-  fastify.decorateRequest('projectId', null);
-  fastify.decorateRequest('organizationId', null);
+  fastify.decorateRequest('projectId', undefined);
+  fastify.decorateRequest('organizationId', undefined);
 
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip auth for public routes and session-based auth routes
@@ -121,5 +121,5 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
 
 export default fp(authPlugin, {
   name: 'auth',
-  fastify: '4.x',
+  fastify: '5.x',
 });
