@@ -199,6 +199,10 @@ test.describe('Alert Journey', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
+    // Find the alert row containing our alert name
+    const alertRow = page.locator(`text=${alertName}`).first();
+    await expect(alertRow).toBeVisible({ timeout: 5000 });
+
     // Find and click delete button
     const deleteButton = page.locator('button:has-text("Delete")').first();
     if (await deleteButton.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -209,12 +213,10 @@ test.describe('Alert Journey', () => {
       const confirmButton = page.locator('[role="alertdialog"] button:has-text("Delete"), [class*="AlertDialog"] button:has-text("Delete")');
       if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
         await confirmButton.click();
-        await page.waitForTimeout(2000);
-      }
 
-      // Verify the alert was deleted
-      const pageContent = await page.content();
-      expect(pageContent).not.toContain(alertName);
+        // Wait for the alert row to be removed from the DOM
+        await expect(alertRow).toBeHidden({ timeout: 10000 });
+      }
     }
   });
 
