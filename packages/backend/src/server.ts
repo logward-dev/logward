@@ -48,6 +48,26 @@ export async function build(opts = {}) {
     ...opts,
   });
 
+  // Override default JSON parser to allow empty bodies (Fastify 5 breaking change)
+  // This is needed because some routes may receive requests with Content-Type: application/json
+  // but empty body (e.g., POST requests without body from some clients)
+  fastify.removeContentTypeParser('application/json');
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    try {
+      const bodyStr = body?.toString()?.trim() || '';
+      if (!bodyStr) {
+        // Empty body - return empty object
+        done(null, {});
+      } else {
+        done(null, JSON.parse(bodyStr));
+      }
+    } catch (err: any) {
+      const error = new Error(`Invalid JSON: ${err.message}`);
+      (error as any).statusCode = 400;
+      done(error, undefined);
+    }
+  });
+
   await fastify.register(cors, {
     origin: true,
     credentials: true,
