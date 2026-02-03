@@ -5,7 +5,14 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.2] - 2026-02-02
+## [0.5.2] - 2026-02-03
+
+### Security
+
+- **Fastify Security Vulnerabilities**: Upgraded Fastify from 4.x to 5.7.3+ to fix critical CVEs
+  - CVE: Content-Type header tab character allows body validation bypass (fixed in 5.7.2)
+  - CVE: DoS via Unbounded Memory Allocation in sendWebStream (fixed in 5.7.3)
+  - Updated all @fastify/* plugins to compatible v5 versions
 
 ### Fixed
 
