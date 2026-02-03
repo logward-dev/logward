@@ -199,6 +199,9 @@ test.describe('Alert Journey', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
+    // Verify the alert is visible before deleting
+    await expect(page.locator(`text=${alertName}`).first()).toBeVisible({ timeout: 5000 });
+
     // Find the alert card containing our alert name and its delete button
     const alertCard = page.locator(`[data-testid="alert-card"]:has-text("${alertName}")`).first();
 
@@ -227,12 +230,11 @@ test.describe('Alert Journey', () => {
     const confirmButton = page.getByRole('button', { name: 'Delete', exact: true }).last();
     await confirmButton.click();
 
-    // Wait for dialog to close and page to update
-    await page.waitForTimeout(2000);
+    // Wait for success toast to appear (indicates delete completed and list refreshed)
+    await expect(page.locator('text=Alert deleted successfully')).toBeVisible({ timeout: 10000 });
 
-    // Verify the alert was deleted by checking it's no longer in the list
-    const alertStillExists = await page.locator(`text=${alertName}`).first().isVisible({ timeout: 2000 }).catch(() => false);
-    expect(alertStillExists).toBe(false);
+    // Now verify the alert is no longer in the list
+    await expect(page.locator(`text=${alertName}`).first()).toBeHidden({ timeout: 5000 });
   });
 
   test('6. Alert is triggered when threshold is reached', async ({ page }) => {
