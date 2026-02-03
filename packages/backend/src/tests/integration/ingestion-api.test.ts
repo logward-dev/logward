@@ -215,6 +215,122 @@ describe('Ingestion API', () => {
                 .expect(200);
         });
 
+        it('should extract service from nested kubernetes.container_name', async () => {
+            const uniqueMsg = `k8s-nested-container-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    container_name: 'my-k8s-container',
+                    pod_name: 'my-pod-abc123',
+                    namespace_name: 'production',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-k8s-container');
+            expect(dbLog?.metadata).toHaveProperty('kubernetes');
+            expect((dbLog?.metadata as any).kubernetes.pod_name).toBe('my-pod-abc123');
+            expect((dbLog?.metadata as any).kubernetes.namespace_name).toBe('production');
+        });
+
+        it('should extract service from kubernetes labels app', async () => {
+            const uniqueMsg = `k8s-label-app-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    pod_name: 'my-pod-abc123',
+                    labels: {
+                        app: 'my-labeled-app',
+                    },
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-labeled-app');
+        });
+
+        it('should extract service from kubernetes labels app.kubernetes.io/name', async () => {
+            const uniqueMsg = `k8s-label-app-k8s-name-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    pod_name: 'my-pod-abc123',
+                    labels: {
+                        'app.kubernetes.io/name': 'my-k8s-app-name',
+                    },
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-k8s-app-name');
+        });
+
+        it('should prefer top-level service over kubernetes.container_name', async () => {
+            const uniqueMsg = `k8s-service-priority-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'explicit-service',
+                kubernetes: {
+                    container_name: 'k8s-container',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('explicit-service');
+        });
+
         it('should normalize numeric log levels (Pino format)', async () => {
             const testCases = [
                 { level: 60, expected: 'critical' },

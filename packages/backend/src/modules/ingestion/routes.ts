@@ -143,15 +143,35 @@ const normalizeLogData = (logData: any) => {
   }
 
   // Standard Fluent Bit format
+  // Extract service from various sources (top-level or nested kubernetes metadata)
+  const k8s = logData.kubernetes || {};
+  const service = logData.service
+    || logData.container_name
+    || k8s.container_name
+    || k8s.labels?.app
+    || k8s.labels?.['app.kubernetes.io/name']
+    || 'unknown';
+
   return {
     time: logData.time || (logData.date ? new Date(logData.date * 1000).toISOString() : new Date().toISOString()),
-    service: logData.service || logData.container_name || 'unknown',
+    service,
     level: normalizeLevel(logData.level),
     message: logData.message || logData.log || '',
     metadata: {
       ...logData.metadata,
-      container_id: logData.container_id,
+      container_id: logData.container_id || k8s.container_id,
       container_short_id: logData.container_short_id,
+      // Include k8s metadata if present
+      ...(Object.keys(k8s).length > 0 && {
+        kubernetes: {
+          pod_name: k8s.pod_name,
+          namespace_name: k8s.namespace_name,
+          container_name: k8s.container_name,
+          pod_id: k8s.pod_id,
+          host: k8s.host,
+          labels: k8s.labels,
+        },
+      }),
     },
   };
 };
