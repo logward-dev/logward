@@ -398,6 +398,7 @@ export class TestApiClient {
   async resendInvitation(organizationId: string, invitationId: string) {
     return this.request<{ success: boolean; message: string }>(`/invitations/${organizationId}/${invitationId}/resend`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 

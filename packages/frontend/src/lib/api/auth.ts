@@ -91,8 +91,10 @@ export class AuthAPI {
     const response = await fetch(`${getApiBaseUrl()}/auth/logout`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {

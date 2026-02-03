@@ -101,6 +101,7 @@ export class OrganizationsAPI {
   async leaveOrganization(organizationId: string): Promise<void> {
     await this.request(`/organizations/${organizationId}/leave`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 

@@ -158,9 +158,9 @@ export const notificationChannelsAPI = {
    * Test a notification channel
    */
   async test(id: string, organizationId: string): Promise<TestChannelResult> {
-    const params = new URLSearchParams({ organizationId });
-    const response = await fetchWithAuth(`${getApiUrl()}/api/v1/notification-channels/${id}/test?${params}`, {
+    const response = await fetchWithAuth(`${getApiUrl()}/api/v1/notification-channels/${id}/test`, {
       method: 'POST',
+      body: JSON.stringify({ organizationId }),
     });
 
     if (!response.ok) {

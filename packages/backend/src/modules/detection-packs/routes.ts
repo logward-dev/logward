@@ -186,11 +186,12 @@ export async function detectionPacksRoutes(fastify: FastifyInstance) {
   fastify.post('/:packId/disable', async (request: any, reply) => {
     try {
       const { packId } = packIdSchema.parse(request.params);
-      const organizationId = request.query.organizationId as string;
+      // Accept from body (preferred) or query (legacy)
+      const organizationId = (request.body?.organizationId || request.query.organizationId) as string;
 
       if (!organizationId) {
         return reply.status(400).send({
-          error: 'organizationId query parameter is required',
+          error: 'organizationId is required',
         });
       }
 

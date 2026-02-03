@@ -182,6 +182,12 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
           },
         },
         response: {
+          403: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
+            },
+          },
           404: {
             type: 'object',
             properties: {
@@ -345,6 +351,12 @@ export async function sigmaRoutes(fastify: FastifyInstance) {
             type: 'object',
             properties: {
               success: { type: 'boolean' },
+            },
+          },
+          403: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
             },
           },
         },

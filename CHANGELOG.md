@@ -5,6 +5,34 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-02-03
+
+### Security
+
+- **Fastify Security Vulnerabilities**: Upgraded Fastify from 4.x to 5.7.3+ to fix critical CVEs
+  - CVE: Content-Type header tab character allows body validation bypass (fixed in 5.7.2)
+  - CVE: DoS via Unbounded Memory Allocation in sendWebStream (fixed in 5.7.3)
+  - Updated all @fastify/* plugins to compatible v5 versions
+
+### Fixed
+
+- **API Batch Request Limit**: Fixed `logIds must NOT have more than 100 items` error in log search tail mode
+  - `getLogIdentifiersBatch` now automatically splits requests into batches of 100
+  - Supports up to 1000 logs in tail mode without errors
+  - Batches executed in parallel for performance
+
+- **Unicode Escape Sequences**: Fixed `unsupported Unicode escape sequence` error during log ingestion
+  - Sanitizes `\u0000` (null characters) from log data before PostgreSQL insertion
+  - Affects message, service, metadata, trace_id, and span_id fields
+
+- **POST Requests Without Body**: Fixed CDN/proxy compatibility issues with empty POST requests
+  - `disablePack`: Now sends `organizationId` in request body instead of query string
+  - `notification-channels/test`: Now sends `organizationId` in request body
+  - `resendInvitation`, `testConnection`, `leaveOrganization`: Now send empty `{}` body
+  - Backend routes accept `organizationId` from body or query for backwards compatibility
+
+---
+
 ## [0.5.1] - 2026-02-01
 
 ### Added

@@ -94,16 +94,35 @@ class CorrelationAPI {
       return {};
     }
 
+    const BATCH_SIZE = 100;
     const url = `${getApiBaseUrl()}/logs/identifiers/batch`;
-    const response = await this.fetch<{
-      success: boolean;
-      data: { identifiers: Record<string, IdentifierMatch[]> };
-    }>(url, {
-      method: 'POST',
-      body: JSON.stringify({ logIds }),
-    });
 
-    return response.data.identifiers;
+    // Split into batches of 100 to respect API limits
+    const batches: string[][] = [];
+    for (let i = 0; i < logIds.length; i += BATCH_SIZE) {
+      batches.push(logIds.slice(i, i + BATCH_SIZE));
+    }
+
+    // Execute all batches in parallel
+    const results = await Promise.all(
+      batches.map((batch) =>
+        this.fetch<{
+          success: boolean;
+          data: { identifiers: Record<string, IdentifierMatch[]> };
+        }>(url, {
+          method: 'POST',
+          body: JSON.stringify({ logIds: batch }),
+        })
+      )
+    );
+
+    // Merge all results
+    const merged: Record<string, IdentifierMatch[]> = {};
+    for (const response of results) {
+      Object.assign(merged, response.data.identifiers);
+    }
+
+    return merged;
   }
 }
 

@@ -171,9 +171,15 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Override default JSON parser to handle NDJSON disguised as application/json
   // Fluent Bit sometimes sends json_lines with application/json content-type
+  fastify.removeContentTypeParser('application/json');
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
     try {
-      const bodyStr = body.toString().trim();
+      const bodyStr = body?.toString()?.trim() || '';
+      if (!bodyStr) {
+        // Empty body - return empty object (Fastify 5 compatibility)
+        done(null, {});
+        return;
+      }
       // Check if it looks like NDJSON (multiple lines, each starting with {)
       const lines = bodyStr.split('\n').filter(line => line.trim());
       if (lines.length > 1 && lines.every(line => line.trim().startsWith('{'))) {
@@ -223,6 +229,19 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
           properties: {
             received: { type: 'number' },
             timestamp: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            details: { type: 'object' },
+          },
+        },
+        401: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
           },
         },
       },
@@ -303,6 +322,19 @@ const ingestionRoutes: FastifyPluginAsync = async (fastify) => {
           properties: {
             received: { type: 'number' },
             timestamp: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            details: { type: 'object' },
+          },
+        },
+        401: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
           },
         },
       },

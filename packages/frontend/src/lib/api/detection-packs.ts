@@ -65,10 +65,10 @@ export class DetectionPacksAPI {
   }
 
   async disablePack(packId: string, organizationId: string): Promise<void> {
-    return this.request(
-      `/api/v1/detection-packs/${packId}/disable?organizationId=${organizationId}`,
-      { method: 'POST' }
-    );
+    return this.request(`/api/v1/detection-packs/${packId}/disable`, {
+      method: 'POST',
+      body: JSON.stringify({ organizationId }),
+    });
   }
 
   async updateThresholds(

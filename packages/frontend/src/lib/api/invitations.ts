@@ -103,6 +103,7 @@ export class InvitationsAPI {
   async resendInvitation(organizationId: string, invitationId: string): Promise<{ success: boolean; message: string }> {
     return this.request(`/invitations/${organizationId}/${invitationId}/resend`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 }

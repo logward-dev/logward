@@ -184,7 +184,7 @@ test.describe('Alert Journey', () => {
   test('5. User can delete an alert rule', async ({ page }) => {
     // First create an alert via API
     const alertName = `Delete Test Alert ${Date.now()}`;
-    await apiClient.createAlertRule(projectId, {
+    const createdAlert = await apiClient.createAlertRule(projectId, {
       organizationId,
       projectId,
       name: alertName,
@@ -199,23 +199,37 @@ test.describe('Alert Journey', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
-    // Find and click delete button
-    const deleteButton = page.locator('button:has-text("Delete")').first();
-    if (await deleteButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await deleteButton.click();
-      await page.waitForTimeout(500);
+    // Find the alert name in the page (CardTitle is a div with role="heading")
+    const alertTitle = page.locator(`div[role="heading"]:has-text("${alertName}")`).first();
+    await expect(alertTitle).toBeVisible({ timeout: 5000 });
 
-      // Confirm deletion in dialog
-      const confirmButton = page.locator('[role="alertdialog"] button:has-text("Delete"), [class*="AlertDialog"] button:has-text("Delete")');
-      if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
-      }
+    // Find the card that contains this alert - go up to the Card element
+    // Card structure: div.grid > Card (div) > CardHeader > div > div > CardTitle
+    // We need to find the Delete button in the same Card
+    const cardWithAlert = page.locator(`div.grid.gap-4 > div:has(div[role="heading"]:has-text("${alertName}"))`).first();
+    const deleteButton = cardWithAlert.locator('button:has-text("Delete")');
 
-      // Verify the alert was deleted
-      const pageContent = await page.content();
-      expect(pageContent).not.toContain(alertName);
-    }
+    await expect(deleteButton).toBeVisible({ timeout: 5000 });
+    await deleteButton.click();
+    await page.waitForTimeout(500);
+
+    // Wait for confirmation dialog
+    const dialogTitle = page.locator('text=Delete Alert Rule');
+    await expect(dialogTitle).toBeVisible({ timeout: 5000 });
+
+    // Confirm deletion
+    const confirmButton = page.getByRole('button', { name: 'Delete', exact: true }).last();
+    await confirmButton.click();
+
+    // Wait for the dialog to close (indicates action was taken)
+    await expect(dialogTitle).toBeHidden({ timeout: 10000 });
+
+    // Verify via API that the alert count decreased or specific alert is gone
+    // This is more reliable than checking UI on CI
+    await page.waitForTimeout(1000); // Give backend time to process
+    const alerts = await apiClient.getAlertRules(organizationId, projectId);
+    const alertStillExists = alerts.alertRules?.some((a: any) => a.name === alertName) ?? false;
+    expect(alertStillExists).toBe(false);
   });
 
   test('6. Alert is triggered when threshold is reached', async ({ page }) => {

@@ -277,7 +277,8 @@ export async function notificationChannelsRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/test', async (request: any, reply) => {
     try {
       const { id } = channelIdSchema.parse(request.params);
-      const organizationId = request.query.organizationId as string;
+      // Accept from body (preferred) or query (legacy)
+      const organizationId = (request.body?.organizationId || request.query.organizationId) as string;
 
       if (!organizationId) {
         return reply.status(400).send({ error: 'organizationId is required' });
