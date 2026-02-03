@@ -199,14 +199,14 @@ test.describe('Alert Journey', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
-    // Find the alert name in the page
-    const alertTitle = page.locator(`h3:has-text("${alertName}")`).first();
+    // Find the alert name in the page (CardTitle is a div with role="heading")
+    const alertTitle = page.locator(`div[role="heading"]:has-text("${alertName}")`).first();
     await expect(alertTitle).toBeVisible({ timeout: 5000 });
 
     // Find the card that contains this alert - go up to the Card element
-    // Card structure: div.grid > Card (div) > CardHeader > div > div > h3
+    // Card structure: div.grid > Card (div) > CardHeader > div > div > CardTitle
     // We need to find the Delete button in the same Card
-    const cardWithAlert = page.locator(`div.grid.gap-4 > div:has(h3:has-text("${alertName}"))`).first();
+    const cardWithAlert = page.locator(`div.grid.gap-4 > div:has(div[role="heading"]:has-text("${alertName}"))`).first();
     const deleteButton = cardWithAlert.locator('button:has-text("Delete")');
 
     await expect(deleteButton).toBeVisible({ timeout: 5000 });
