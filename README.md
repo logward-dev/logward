@@ -201,7 +201,7 @@ We have ready-to-use SDKs for the most popular languages.
 * ✅ **Alerting:** Get notified via Email or Webhook (Slack/Discord) on error spikes.
 * ✅ **Retention Policy:** Automatic cleanup of old logs via TimescaleDB.
 * ✅ **Sigma Rules Detection:** Built-in engine to run security detection rules (YAML) against your logs for threat detection.
-* ✅ **SIEM Dashboard:** Security dashboard with incident management, MITRE ATT&CK mapping, and PDF report export. *(New in 0.3.0)*
+* ✅ **SIEM Dashboard:** Security dashboard with incident management, MITRE ATT&CK mapping, and PDF report export.
 * ✅ **OpenTelemetry Support:** Native OTLP ingestion for logs and traces (protobuf + JSON).
 * ✅ **Distributed Tracing:** Trace viewer with span timeline, service dependencies graph, and trace-to-logs correlation.
 * ✅ **Redis Optional:** Run without Redis using PostgreSQL-based alternatives for simpler deployments. *(New in 0.5.0)*
