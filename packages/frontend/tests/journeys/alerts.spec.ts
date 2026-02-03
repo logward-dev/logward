@@ -199,25 +199,40 @@ test.describe('Alert Journey', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
-    // Find the alert row containing our alert name
-    const alertRow = page.locator(`text=${alertName}`).first();
-    await expect(alertRow).toBeVisible({ timeout: 5000 });
+    // Find the alert card containing our alert name and its delete button
+    const alertCard = page.locator(`[data-testid="alert-card"]:has-text("${alertName}")`).first();
 
-    // Find and click delete button
-    const deleteButton = page.locator('button:has-text("Delete")').first();
-    if (await deleteButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+    // If no data-testid, fall back to finding by text
+    const alertVisible = await alertCard.isVisible({ timeout: 3000 }).catch(() => false);
+
+    if (alertVisible) {
+      // Click delete button within this specific card
+      const deleteButton = alertCard.locator('button:has-text("Delete")');
       await deleteButton.click();
-      await page.waitForTimeout(500);
-
-      // Confirm deletion in dialog
-      const confirmButton = page.locator('[role="alertdialog"] button:has-text("Delete"), [class*="AlertDialog"] button:has-text("Delete")');
-      if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await confirmButton.click();
-
-        // Wait for the alert row to be removed from the DOM
-        await expect(alertRow).toBeHidden({ timeout: 10000 });
-      }
+    } else {
+      // Fallback: click first delete button
+      const deleteButton = page.locator('button:has-text("Delete")').first();
+      await deleteButton.click();
     }
+
+    await page.waitForTimeout(500);
+
+    // Wait for confirmation dialog and click confirm
+    // The dialog appears in a portal, look for the dialog content with "Delete Alert Rule" title
+    const dialogTitle = page.locator('text=Delete Alert Rule');
+    await expect(dialogTitle).toBeVisible({ timeout: 5000 });
+
+    // Find the Delete button in the dialog footer (not the one we clicked before)
+    // The dialog has Cancel and Delete buttons
+    const confirmButton = page.getByRole('button', { name: 'Delete', exact: true }).last();
+    await confirmButton.click();
+
+    // Wait for dialog to close and page to update
+    await page.waitForTimeout(2000);
+
+    // Verify the alert was deleted by checking it's no longer in the list
+    const alertStillExists = await page.locator(`text=${alertName}`).first().isVisible({ timeout: 2000 }).catch(() => false);
+    expect(alertStillExists).toBe(false);
   });
 
   test('6. Alert is triggered when threshold is reached', async ({ page }) => {
