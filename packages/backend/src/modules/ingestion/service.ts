@@ -46,12 +46,13 @@ export class IngestionService {
     const organizationId = project?.organization_id;
 
     // Extract identifiers from logs before insertion (using org-specific patterns)
+    // Note: org_id and project_id are excluded from extraction to avoid storing useless data
     const identifiersByLog = new Map<number, IdentifierMatch[]>();
     for (let i = 0; i < logs.length; i++) {
       try {
         const identifiers = organizationId
-          ? await correlationService.extractIdentifiersAsync(logs[i], organizationId)
-          : correlationService.extractIdentifiers(logs[i]);
+          ? await correlationService.extractIdentifiersAsync(logs[i], organizationId, projectId)
+          : correlationService.extractIdentifiers(logs[i], new Set([projectId.toLowerCase()]));
         if (identifiers.length > 0) {
           identifiersByLog.set(i, identifiers);
         }

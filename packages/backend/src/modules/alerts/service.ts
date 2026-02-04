@@ -236,6 +236,9 @@ export class AlertsService {
 
   /**
    * Check alert rules and trigger if threshold is met
+   *
+   * PERFORMANCE: Pre-fetches all org->projects mappings in one query
+   * instead of querying per rule (N+1 fix).
    */
   async checkAlertRules() {
     const rules = await db
@@ -244,10 +247,31 @@ export class AlertsService {
       .where('enabled', '=', true)
       .execute();
 
+    if (rules.length === 0) {
+      return [];
+    }
+
+    // PERFORMANCE: Pre-fetch all org->projects mappings in one query
+    // instead of querying per rule (N+1 fix)
+    const orgIds = [...new Set(rules.filter(r => !r.project_id).map(r => r.organization_id))];
+    const orgProjectsMap = new Map<string, string[]>();
+
+    if (orgIds.length > 0) {
+      const allProjects = await db
+        .selectFrom('projects')
+        .select(['id', 'organization_id'])
+        .where('organization_id', 'in', orgIds)
+        .execute();
+
+      for (const orgId of orgIds) {
+        orgProjectsMap.set(orgId, allProjects.filter(p => p.organization_id === orgId).map(p => p.id));
+      }
+    }
+
     const triggeredAlerts = [];
 
     for (const rule of rules) {
-      const triggered = await this.checkRule(rule);
+      const triggered = await this.checkRule(rule, orgProjectsMap);
       if (triggered) {
         triggeredAlerts.push(triggered);
       }
@@ -258,8 +282,10 @@ export class AlertsService {
 
   /**
    * Check a single rule
+   *
+   * PERFORMANCE: Uses pre-fetched orgProjectsMap instead of querying per rule
    */
-  private async checkRule(rule: any) {
+  private async checkRule(rule: any, orgProjectsMap: Map<string, string[]>) {
     // Get the last trigger time for this rule
     const lastTrigger = await db
       .selectFrom('alert_history')
@@ -299,14 +325,8 @@ export class AlertsService {
       query = query.where('project_id', '=', rule.project_id);
     } else {
       // Security: For organization-wide rules, filter by organization's projects
-      // Get all project IDs for this organization
-      const orgProjects = await db
-        .selectFrom('projects')
-        .select(['id'])
-        .where('organization_id', '=', rule.organization_id)
-        .execute();
-
-      const projectIds = orgProjects.map((p) => p.id);
+      // Use pre-fetched mapping instead of querying per rule (N+1 fix)
+      const projectIds = orgProjectsMap.get(rule.organization_id) || [];
 
       if (projectIds.length > 0) {
         query = query.where('project_id', 'in', projectIds);

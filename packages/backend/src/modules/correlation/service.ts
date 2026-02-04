@@ -46,34 +46,47 @@ export class CorrelationService {
    */
   async extractIdentifiersAsync(
     log: LogInput,
-    organizationId: string
+    organizationId: string,
+    projectId?: string
   ): Promise<IdentifierMatch[]> {
     const patterns = await patternRegistry.getPatternsForOrg(organizationId);
-    return this.extractIdentifiersWithPatterns(log, patterns);
+    // Exclude org/project IDs from extraction - they appear in every log and are useless for correlation
+    const excludeValues = new Set([organizationId.toLowerCase()]);
+    if (projectId) {
+      excludeValues.add(projectId.toLowerCase());
+    }
+    return this.extractIdentifiersWithPatterns(log, patterns, excludeValues);
   }
 
   /**
    * Extract identifiers from a single log entry (sync - uses default patterns)
    * Fallback for when organizationId is not available
    */
-  extractIdentifiers(log: LogInput): IdentifierMatch[] {
+  extractIdentifiers(log: LogInput, excludeValues?: Set<string>): IdentifierMatch[] {
     const patterns = patternRegistry.getDefaultPatterns();
-    return this.extractIdentifiersWithPatterns(log, patterns);
+    return this.extractIdentifiersWithPatterns(log, patterns, excludeValues);
   }
 
   /**
    * Extract identifiers using provided patterns
+   * @param excludeValues - Set of lowercase values to exclude (e.g., org_id, project_id)
    */
   private extractIdentifiersWithPatterns(
     log: LogInput,
-    patterns: PatternDefinition[]
+    patterns: PatternDefinition[],
+    excludeValues?: Set<string>
   ): IdentifierMatch[] {
     const matches: IdentifierMatch[] = [];
     const seen = new Set<string>();
 
-    // Helper to add unique matches
+    // Helper to add unique matches (excludes org/project IDs)
     const addMatch = (match: IdentifierMatch) => {
-      const key = `${match.type}:${match.value.toLowerCase()}`;
+      const valueLower = match.value.toLowerCase();
+      // Skip excluded values (org_id, project_id)
+      if (excludeValues?.has(valueLower)) {
+        return;
+      }
+      const key = `${match.type}:${valueLower}`;
       if (!seen.has(key)) {
         matches.push(match);
         seen.add(key);

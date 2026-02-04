@@ -32,7 +32,8 @@
     "load:e2e:ingestion": "bash scripts/run-load-tests.sh ingestion",
     "load:e2e:query": "bash scripts/run-load-tests.sh query",
     "load:e2e:all": "bash scripts/run-load-tests.sh all",
-    "seed:load-test": "tsx src/scripts/seed-load-test.ts"
+    "seed:load-test": "tsx src/scripts/seed-load-test.ts",
+    "seed:massive": "tsx src/scripts/seed-massive-data.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

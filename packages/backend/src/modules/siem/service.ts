@@ -56,6 +56,9 @@ export class SiemService {
 
   /**
    * Get detection events for an organization (with filters)
+   *
+   * PERFORMANCE: Uses default 7-day time filter to avoid full table scan.
+   * Selects specific columns instead of selectAll() for better performance.
    */
   async getDetectionEvents(filters: {
     organizationId: string;
@@ -66,10 +69,32 @@ export class SiemService {
     limit?: number;
     offset?: number;
   }): Promise<DetectionEvent[]> {
+    // Default to last 7 days to avoid full table scan
+    const effectiveStartTime = filters.startTime || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     let query = this.db
       .selectFrom('detection_events')
-      .selectAll()
-      .where('organization_id', '=', filters.organizationId);
+      .select([
+        'id',
+        'time',
+        'organization_id',
+        'project_id',
+        'sigma_rule_id',
+        'log_id',
+        'severity',
+        'rule_title',
+        'rule_description',
+        'mitre_tactics',
+        'mitre_techniques',
+        'service',
+        'log_level',
+        'log_message',
+        'trace_id',
+        'matched_fields',
+        'incident_id',
+      ])
+      .where('organization_id', '=', filters.organizationId)
+      .where('time', '>=', effectiveStartTime);
 
     if (filters.projectId) {
       query = query.where('project_id', '=', filters.projectId);
@@ -77,10 +102,6 @@ export class SiemService {
 
     if (filters.severity && filters.severity.length > 0) {
       query = query.where('severity', 'in', filters.severity as Severity[]);
-    }
-
-    if (filters.startTime) {
-      query = query.where('time', '>=', filters.startTime);
     }
 
     if (filters.endTime) {
