@@ -244,8 +244,8 @@
 				<!-- Status filter -->
 				<Select.Root
 					type="single"
-					value={{ value: statusFilter, label: statusOptions.find(o => o.value === statusFilter)?.label || 'All Statuses' }}
-					onValueChange={(v) => handleStatusChange((v?.value as ErrorGroupStatus | '') || '')}
+					value={statusFilter}
+					onValueChange={(v) => handleStatusChange((v as ErrorGroupStatus | '') || '')}
 				>
 					<Select.Trigger>
 						{statusOptions.find(o => o.value === statusFilter)?.label || 'All Statuses'}
@@ -260,8 +260,8 @@
 				<!-- Language filter -->
 				<Select.Root
 					type="single"
-					value={{ value: languageFilter, label: languageOptions.find(o => o.value === languageFilter)?.label || 'All Languages' }}
-					onValueChange={(v) => handleLanguageChange((v?.value as ExceptionLanguage | '') || '')}
+					value={languageFilter}
+					onValueChange={(v) => handleLanguageChange((v as ExceptionLanguage | '') || '')}
 				>
 					<Select.Trigger>
 						{languageOptions.find(o => o.value === languageFilter)?.label || 'All Languages'}

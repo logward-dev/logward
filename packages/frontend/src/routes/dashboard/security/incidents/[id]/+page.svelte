@@ -171,8 +171,8 @@
 		}
 	}
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatDate(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		return date.toLocaleDateString('it-IT', {
 			year: 'numeric',
 			month: 'long',
@@ -182,10 +182,10 @@
 		});
 	}
 
-	function formatDuration(start: string, end: string | null): string {
+	function formatDuration(start: string | Date, end: string | Date | null): string {
 		if (!end) return 'Ongoing';
-		const startDate = new Date(start);
-		const endDate = new Date(end);
+		const startDate = typeof start === 'string' ? new Date(start) : start;
+		const endDate = typeof end === 'string' ? new Date(end) : end;
 		const diffMs = endDate.getTime() - startDate.getTime();
 		const diffMins = Math.floor(diffMs / 60000);
 		const diffHours = Math.floor(diffMs / 3600000);
@@ -463,13 +463,13 @@
 
 				<!-- IP Reputation (if enriched) -->
 				{#if incident.ipReputation && Object.keys(incident.ipReputation).length > 0}
-					<IpReputationCard ipReputation={incident.ipReputation} />
+					<IpReputationCard ipReputation={incident.ipReputation as any} />
 				{/if}
 
 				<!-- GeoIP Data (if enriched) -->
 				{#if incident.geoData && Object.keys(incident.geoData).length > 0}
-					<GeoIpCard geoData={incident.geoData} />
-					<GeoIpMap geoData={incident.geoData} />
+					<GeoIpCard geoData={incident.geoData as any} />
+					<GeoIpMap geoData={incident.geoData as any} />
 				{/if}
 			</div>
 		</div>

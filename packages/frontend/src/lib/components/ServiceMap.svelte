@@ -112,7 +112,7 @@
         ...tooltipStyle
       },
       animationDuration: 1500,
-      animationEasingUpdate: "quinticInOut",
+      animationEasingUpdate: "quinticInOut" as const,
       series: [
         {
           type: "graph",

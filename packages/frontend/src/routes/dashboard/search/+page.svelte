@@ -801,16 +801,13 @@
                 />
                 <Select.Root
                   type="single"
-                  value={{ value: searchMode, label: searchMode === "fulltext" ? "Full-text" : "Substring" }}
+                  value={searchMode}
                   onValueChange={(v) => {
-                    if (v) {
-                      const newValue = typeof v === 'string' ? v : v.value;
-                      if (newValue === "fulltext" || newValue === "substring") {
-                        searchMode = newValue;
-                        sessionStorage.setItem("logtide_search_mode", searchMode);
-                        if (searchQuery) {
-                          debouncedSearch();
-                        }
+                    if (v && (v === "fulltext" || v === "substring")) {
+                      searchMode = v;
+                      sessionStorage.setItem("logtide_search_mode", searchMode);
+                      if (searchQuery) {
+                        debouncedSearch();
                       }
                     }
                   }}
@@ -1244,11 +1241,10 @@
                 {#if liveTail}
                   <Select.Root
                     type="single"
-                    value={{ value: String(liveTailLimit), label: `${liveTailLimit}` }}
+                    value={String(liveTailLimit)}
                     onValueChange={(v) => {
                       if (v) {
-                        const val = typeof v === 'string' ? v : v.value;
-                        liveTailLimit = parseInt(val, 10);
+                        liveTailLimit = parseInt(v, 10);
                         localStorage.setItem("logtide_livetail_limit", String(liveTailLimit));
                         if (logs.length > liveTailLimit) {
                           logs = logs.slice(0, liveTailLimit);
@@ -1723,7 +1719,7 @@
     closeCorrelationDialog();
     const logEntry = {
       id: correlatedLog.id,
-      time: typeof correlatedLog.time === 'string' ? correlatedLog.time : correlatedLog.time.toISOString(),
+      time: correlatedLog.time,
       service: correlatedLog.service,
       level: correlatedLog.level as LogEntry["level"],
       message: correlatedLog.message,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { checklistStore, checklistProgress, isChecklistComplete, type ChecklistItem } from '$lib/stores/checklist';
+  import { checklistStore, checklistProgress, isChecklistComplete, type ChecklistItem, type ChecklistState } from '$lib/stores/checklist';
   import { currentOrganization } from '$lib/stores/organization';
   import { authStore } from '$lib/stores/auth';
   import { ProjectsAPI } from '$lib/api/projects';
@@ -15,27 +15,14 @@
   import X from '@lucide/svelte/icons/x';
   import Rocket from '@lucide/svelte/icons/rocket';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import type { OrganizationWithRole } from '@logtide/shared';
 
-  let state = $state(checklistStore);
-  let progress = $state(checklistProgress);
-  let isComplete = $state(isChecklistComplete);
-  let org = $state(currentOrganization);
-  let token: string | null = $state(null);
-
-  $effect(() => {
-    const unsubState = checklistStore.subscribe(s => { state = s as any; });
-    const unsubProgress = checklistProgress.subscribe(p => { progress = p as any; });
-    const unsubComplete = isChecklistComplete.subscribe(c => { isComplete = c as any; });
-    const unsubOrg = currentOrganization.subscribe(o => { org = o as any; });
-    const unsubAuth = authStore.subscribe(s => { token = s.token; });
-    return () => {
-      unsubState();
-      unsubProgress();
-      unsubComplete();
-      unsubOrg();
-      unsubAuth();
-    };
-  });
+  // Use $ prefix for store subscriptions in Svelte 5
+  const checklistState = $derived($checklistStore);
+  const progressValue = $derived($checklistProgress);
+  const complete = $derived($isChecklistComplete);
+  const org = $derived($currentOrganization);
+  const authState = $derived($authStore);
 
   function toggleCollapsed() {
     checklistStore.toggleCollapsed();
@@ -47,9 +34,9 @@
 
   async function navigateToItem(item: ChecklistItem) {
     // Special handling for create-api-key: navigate to first project's settings
-    if (item.id === 'create-api-key' && org && token) {
+    if (item.id === 'create-api-key' && org && authState.token) {
       try {
-        const api = new ProjectsAPI(() => token);
+        const api = new ProjectsAPI(() => authState.token);
         const { projects } = await api.getProjects(org.id);
         if (projects.length > 0) {
           goto(`/dashboard/projects/${projects[0].id}/settings`);
@@ -67,7 +54,7 @@
   }
 </script>
 
-{#if !state.dismissed && !isComplete}
+{#if !checklistState.dismissed && !complete}
   <Card class="border-primary/20 bg-primary/5">
     <CardHeader class="pb-2">
       <div class="flex items-center justify-between">
@@ -81,9 +68,9 @@
             size="icon"
             class="h-6 w-6"
             onclick={toggleCollapsed}
-            aria-label={state.collapsed ? 'Expand checklist' : 'Collapse checklist'}
+            aria-label={checklistState.collapsed ? 'Expand checklist' : 'Collapse checklist'}
           >
-            {#if state.collapsed}
+            {#if checklistState.collapsed}
               <ChevronDown class="w-4 h-4" />
             {:else}
               <ChevronUp class="w-4 h-4" />
@@ -101,16 +88,16 @@
         </div>
       </div>
       <div class="flex items-center gap-2 mt-2">
-        <Progress value={progress} class="h-1.5 flex-1" />
-        <span class="text-xs text-muted-foreground font-medium">{progress}%</span>
+        <Progress value={progressValue} class="h-1.5 flex-1" />
+        <span class="text-xs text-muted-foreground font-medium">{progressValue}%</span>
       </div>
     </CardHeader>
 
-    {#if !state.collapsed}
+    {#if !checklistState.collapsed}
       <div transition:slide={{ duration: 200 }}>
         <CardContent class="pt-2">
           <ul class="space-y-1">
-          {#each state.items as item}
+          {#each checklistState.items as item}
             <li>
               <button
                 onclick={() => navigateToItem(item)}
@@ -140,7 +127,7 @@
       </div>
     {/if}
   </Card>
-{:else if isComplete && !state.dismissed}
+{:else if complete && !checklistState.dismissed}
   <Card class="border-green-500/20 bg-green-500/5">
     <CardContent class="py-4">
       <div class="flex items-center gap-3">

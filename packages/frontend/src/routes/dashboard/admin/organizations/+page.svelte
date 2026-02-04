@@ -75,8 +75,9 @@
         }
     }
 
-    function formatDate(dateString: string) {
-        return new Date(dateString).toLocaleString();
+    function formatDate(dateString: string | Date) {
+        const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+        return date.toLocaleString();
     }
 
     onMount(() => {

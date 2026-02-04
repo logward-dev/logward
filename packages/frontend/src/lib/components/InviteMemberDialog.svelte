@@ -9,7 +9,7 @@
   import type { OrgRole } from '@logtide/shared';
 
   interface Props {
-    onSubmit: (data: { email: string; role: OrgRole }) => Promise<{ type: 'direct_add' | 'email_sent'; message: string }>;
+    onSubmit: (data: { email: string; role: OrgRole }) => Promise<{ type: 'notification_sent' | 'email_sent'; message: string }>;
     open?: boolean;
   }
 

@@ -187,11 +187,9 @@
     {#if $authStore.user?.is_admin}
         <div class="grid gap-4 md:grid-cols-3">
             <Card
-                class={healthStats?.overall === "healthy"
+                class={healthStats?.overall === "up"
                     ? "border-green-500/50 bg-green-500/5"
-                    : healthStats?.overall === "degraded"
-                      ? "border-yellow-500/50 bg-yellow-500/5"
-                      : "border-red-500/50 bg-red-500/5"}
+                    : "border-red-500/50 bg-red-500/5"}
             >
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 pb-2"
