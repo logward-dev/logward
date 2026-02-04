@@ -736,6 +736,24 @@ describe('Query API Integration Tests', () => {
             expect(response.body.errors.length).toBeLessThanOrEqual(2);
         });
 
+        it('should filter by from and to date parameters', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-errors')
+                .query({
+                    projectId,
+                    from: twoHoursAgo.toISOString(),
+                    to: oneHourAgo.toISOString(),
+                })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.errors).toBeInstanceOf(Array);
+        });
+
         it('should require authentication', async () => {
             await request(app.server)
                 .get('/api/v1/logs/top-errors')
