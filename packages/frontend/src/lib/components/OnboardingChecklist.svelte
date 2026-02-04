@@ -16,10 +16,12 @@
   import Rocket from '@lucide/svelte/icons/rocket';
   import ExternalLink from '@lucide/svelte/icons/external-link';
 
-  let state = $state($checklistStore);
-  let progress = $state($checklistProgress);
-  let isComplete = $state($isChecklistComplete);
-  let org = $state($currentOrganization);
+  import { get } from 'svelte/store';
+
+  let state = $state(get(checklistStore));
+  let progress = $state(get(checklistProgress));
+  let isComplete = $state(get(isChecklistComplete));
+  let org = $state(get(currentOrganization));
   let token = $state<string | null>(null);
 
   checklistStore.subscribe(s => { state = s; });

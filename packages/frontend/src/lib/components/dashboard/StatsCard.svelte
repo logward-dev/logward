@@ -1,11 +1,11 @@
 <script lang="ts">
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-  import type { ComponentType } from 'svelte';
+  import type { Component } from 'svelte';
 
   interface Props {
     title: string;
     value: string | number;
-    icon: ComponentType;
+    icon: Component<{ class?: string }>;
     description?: string;
     trend?: {
       value: number;

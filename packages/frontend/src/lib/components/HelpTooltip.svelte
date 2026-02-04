@@ -17,7 +17,7 @@
   const iconSize = $derived(size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4');
 </script>
 
-<Tooltip.Root openDelay={200}>
+<Tooltip.Root delayDuration={200}>
   <Tooltip.Trigger>
     {#snippet child({ props })}
       <span
