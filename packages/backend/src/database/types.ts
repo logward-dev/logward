@@ -265,6 +265,73 @@ export interface LogsDailyStatsTable {
   log_count: number;
 }
 
+// ============================================================================
+// SPANS CONTINUOUS AGGREGATES
+// ============================================================================
+
+export interface SpansHourlyStatsTable {
+  bucket: Timestamp;
+  project_id: string;
+  service_name: string;
+  span_count: number;
+  duration_p50_ms: number | null;
+  duration_p95_ms: number | null;
+  duration_p99_ms: number | null;
+  duration_min_ms: number | null;
+  duration_max_ms: number | null;
+  duration_avg_ms: number | null;
+  error_rate: number | null; // 0.0 to 1.0
+  error_count: number | null;
+}
+
+export interface SpansDailyStatsTable {
+  bucket: Timestamp;
+  project_id: string;
+  service_name: string;
+  span_count: number;
+  duration_p50_ms: number | null;
+  duration_p95_ms: number | null;
+  duration_p99_ms: number | null;
+  duration_min_ms: number | null;
+  duration_max_ms: number | null;
+  duration_avg_ms: number | null;
+  error_rate: number | null;
+  error_count: number | null;
+}
+
+// ============================================================================
+// DETECTION EVENTS CONTINUOUS AGGREGATES (SIEM Dashboard)
+// ============================================================================
+
+export interface DetectionEventsHourlyStatsTable {
+  bucket: Timestamp;
+  organization_id: string;
+  project_id: string | null;
+  severity: Severity;
+  sigma_rule_id: string;
+  rule_title: string;
+  service: string;
+  detection_count: number;
+}
+
+export interface DetectionEventsDailyStatsTable {
+  bucket: Timestamp;
+  organization_id: string;
+  project_id: string | null;
+  severity: Severity;
+  detection_count: number;
+}
+
+export interface DetectionEventsRuleStatsTable {
+  date: Timestamp;
+  organization_id: string;
+  project_id: string | null;
+  sigma_rule_id: string;
+  rule_title: string;
+  severity: Severity;
+  detection_count: number;
+}
+
 // Checklist items state stored as JSON: { "item-id": true, ... }
 export type ChecklistItemsState = Record<string, boolean>;
 
@@ -523,9 +590,10 @@ export interface DetectionPackActivationsTable {
 // ============================================================================
 
 export interface LogIdentifiersTable {
-  id: Generated<string>;
-  log_id: string;
+  // Note: This table is a TimescaleDB hypertable without a UUID primary key
+  // (converted in migration 018 for performance)
   log_time: Timestamp;
+  log_id: string;
   project_id: string;
   organization_id: string;
   identifier_type: string;
@@ -626,6 +694,11 @@ export interface Database {
   // Continuous aggregates (TimescaleDB materialized views)
   logs_hourly_stats: LogsHourlyStatsTable;
   logs_daily_stats: LogsDailyStatsTable;
+  spans_hourly_stats: SpansHourlyStatsTable;
+  spans_daily_stats: SpansDailyStatsTable;
+  detection_events_hourly_stats: DetectionEventsHourlyStatsTable;
+  detection_events_daily_stats: DetectionEventsDailyStatsTable;
+  detection_events_rule_stats: DetectionEventsRuleStatsTable;
   // Exception tracking tables
   exceptions: ExceptionsTable;
   stack_frames: StackFramesTable;

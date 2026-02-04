@@ -339,6 +339,24 @@
                         </div>
                         <div class="flex justify-between items-center">
                             <span class="text-sm text-muted-foreground"
+                                >Compression Ratio</span
+                            >
+                            <span class="font-bold text-green-500"
+                                >{performanceStats?.storage.compressionRatio
+                                    ? `${performanceStats.storage.compressionRatio.toFixed(1)}x`
+                                    : "-"}</span
+                            >
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground"
+                                >Logs Storage</span
+                            >
+                            <span class="font-bold"
+                                >{performanceStats?.storage.logsSize || "-"}</span
+                            >
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground"
                                 >Redis Memory</span
                             >
                             <span class="font-bold"

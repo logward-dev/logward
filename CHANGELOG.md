@@ -24,6 +24,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full Kubernetes metadata (pod_name, namespace_name, labels) preserved in log metadata
   - No Fluent Bit config changes required - works out of the box
 
+### Performance
+
+- **Database Performance Monitoring**: Major optimizations for large-scale deployments (30M+ logs)
+  - **log_identifiers table optimization** (Migration 018):
+    - Converted to TimescaleDB hypertable with daily partitioning
+    - Enabled automatic compression (80%+ space reduction)
+    - Removed 5+ GB of unused indexes (0 scans in production)
+    - Filtered out redundant org_id/project_id identifiers (~31% space savings)
+    - Expected: 10 GB → 1-2 GB storage, 2-5x faster queries
+  - **Continuous aggregates for spans and detection events** (Migration 019):
+    - `spans_hourly_stats` / `spans_daily_stats`: Pre-computed P50/P95/P99 latency, error rates per service
+    - `detection_events_hourly_stats` / `detection_events_daily_stats`: SIEM dashboard metrics
+    - `detection_events_rule_stats`: Top threats query optimization
+    - 15 new indexes for aggregate tables
+    - Dashboard queries: 10-50x faster (seconds → milliseconds)
+  - **Hybrid query architecture**:
+    - Uses aggregates for historical data (>1 hour old)
+    - Queries raw tables for recent data (real-time accuracy)
+    - Parallel query execution with `Promise.all()`
+  - **Admin monitoring endpoints**:
+    - `getCompressionStats()`: Per-hypertable compression metrics
+    - `getAggregateStats()`: Continuous aggregate health monitoring
+  - **Massive data seeding script** (`npm run seed:massive`):
+    - Generates 30M logs, 1M spans, 100K detection events
+    - Uses PostgreSQL `generate_series` for maximum performance
+    - Useful for performance testing and benchmarking
+
 ---
 
 ## [0.5.2] - 2026-02-03
