@@ -5,6 +5,18 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3]
+
+### Fixed
+
+- **Fluent Bit Kubernetes Metadata**: Fixed service showing as "unknown" when using Fluent Bit DaemonSet in Kubernetes (#118)
+  - Service name now correctly extracted from nested `kubernetes.container_name`
+  - Falls back to `kubernetes.labels.app` or `kubernetes.labels['app.kubernetes.io/name']`
+  - Full Kubernetes metadata (pod_name, namespace_name, labels) preserved in log metadata
+  - No Fluent Bit config changes required - works out of the box
+
+---
+
 ## [0.5.2] - 2026-02-03
 
 ### Security
