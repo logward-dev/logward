@@ -77,6 +77,7 @@
   let traceId = $state("");
   let selectedProjects = $state<string[]>([]);
   let selectedServices = $state<string[]>([]);
+  let selectedHostnames = $state<string[]>([]);
   let selectedLevels = $state<string[]>([]);
   let liveTail = $state(false);
   let liveTailConnectionKey = $state<string | null>(null);
@@ -221,7 +222,9 @@
     // Reset selections when org changes
     selectedProjects = [];
     selectedServices = [];
+    selectedHostnames = [];
     availableServices = [];
+    availableHostnames = [];
     logs = [];
     totalLogs = 0;
     currentPage = 1;
@@ -284,7 +287,7 @@
 
     if (shouldLoadLogs && selectedProjects.length > 0) {
       urlParamsProcessed = true;
-      loadServices().then(() => loadLogs());
+      Promise.all([loadServices(), loadHostnames()]).then(() => loadLogs());
     }
   });
 
@@ -335,7 +338,7 @@
 
       if (projects.length > 0 && selectedProjects.length === 0) {
         selectedProjects = projects.map((p) => p.id);
-        await loadServices();
+        await Promise.all([loadServices(), loadHostnames()]);
         loadLogs();
       }
     } catch (e) {
@@ -425,6 +428,8 @@
 
   let availableServices = $state<string[]>([]);
   let isLoadingServices = $state(false);
+  let availableHostnames = $state<string[]>([]);
+  let isLoadingHostnames = $state(false);
 
   async function loadServices() {
     if (selectedProjects.length === 0) {
@@ -452,9 +457,38 @@
     }
   }
 
+  async function loadHostnames() {
+    if (selectedProjects.length === 0) {
+      availableHostnames = [];
+      return;
+    }
+
+    isLoadingHostnames = true;
+    try {
+      const timeRange = getTimeRange();
+      const hostnames = await logsAPI.getHostnames({
+        projectId: selectedProjects,
+        from: timeRange.from.toISOString(),
+        to: timeRange.to.toISOString(),
+      });
+      availableHostnames = hostnames;
+    } catch (e) {
+      console.error("Failed to load hostnames:", e);
+      availableHostnames = [];
+    } finally {
+      isLoadingHostnames = false;
+    }
+  }
+
   // Combine available services with selected services (in case selected ones aren't in current time range)
   let displayedServices = $derived(() => {
     const combined = new Set([...availableServices, ...selectedServices]);
+    return [...combined].sort((a, b) => a.localeCompare(b));
+  });
+
+  // Combine available hostnames with selected hostnames
+  let displayedHostnames = $derived(() => {
+    const combined = new Set([...availableHostnames, ...selectedHostnames]);
     return [...combined].sort((a, b) => a.localeCompare(b));
   });
 
@@ -679,7 +713,7 @@
   }
 
   async function handleTimeRangeChange() {
-    await loadServices();
+    await Promise.all([loadServices(), loadHostnames()]);
     applyFilters();
   }
 
@@ -825,7 +859,7 @@
                         class="flex-1"
                         onclick={async () => {
                           selectedProjects = projects.map((p) => p.id);
-                          await loadServices();
+                          await Promise.all([loadServices(), loadHostnames()]);
                           applyFilters();
                         }}
                       >
@@ -838,6 +872,7 @@
                         onclick={() => {
                           selectedProjects = [];
                           availableServices = [];
+                          availableHostnames = [];
                           applyFilters();
                         }}
                       >
@@ -866,7 +901,7 @@
                                   (id) => id !== project.id,
                                 );
                               }
-                              await loadServices();
+                              await Promise.all([loadServices(), loadHostnames()]);
                               applyFilters();
                             }}
                             class="h-4 w-4 rounded border-gray-300"
@@ -973,6 +1008,111 @@
                               class="h-4 w-4 rounded border-gray-300"
                             />
                             <span class="text-sm flex-1 {!hasLogsInTimeRange ? 'text-muted-foreground italic' : ''}">{service}</span>
+                            {#if !hasLogsInTimeRange}
+                              <span class="text-xs text-muted-foreground">(no logs)</span>
+                            {/if}
+                          </label>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                </Popover.Content>
+              </Popover.Root>
+            </div>
+
+            <div class="space-y-2">
+              <Label>Hostnames</Label>
+              <Popover.Root>
+                <Popover.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="outline"
+                      role="combobox"
+                      class="w-full justify-between font-normal"
+                    >
+                      <span class="truncate">
+                        {#if selectedHostnames.length === 0}
+                          All hosts
+                        {:else if selectedHostnames.length === availableHostnames.length && availableHostnames.length > 0}
+                          All hosts ({availableHostnames.length})
+                        {:else if selectedHostnames.length === 1}
+                          {selectedHostnames[0]}
+                        {:else}
+                          {selectedHostnames.length} hosts
+                        {/if}
+                      </span>
+                      <ChevronDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  {/snippet}
+                </Popover.Trigger>
+                <Popover.Content class="w-[300px] p-0" align="start">
+                  <div class="p-2 border-b">
+                    <div class="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="flex-1"
+                        onclick={() => {
+                          selectedHostnames = [...availableHostnames];
+                          applyFilters();
+                        }}
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="flex-1"
+                        onclick={() => {
+                          selectedHostnames = [];
+                          applyFilters();
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                  <div class="max-h-[300px] overflow-y-auto p-2">
+                    {#if isLoadingHostnames}
+                      <div
+                        class="text-center py-4 text-sm text-muted-foreground"
+                      >
+                        Loading hostnames...
+                      </div>
+                    {:else if displayedHostnames().length === 0}
+                      <div
+                        class="text-center py-4 text-sm text-muted-foreground"
+                      >
+                        No hostnames available
+                      </div>
+                    {:else}
+                      <div class="space-y-1">
+                        {#each displayedHostnames() as hostname}
+                          {@const hasLogsInTimeRange = availableHostnames.includes(hostname)}
+                          <label
+                            class="flex items-center gap-2 cursor-pointer hover:bg-accent px-3 py-2 rounded-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              value={hostname}
+                              checked={selectedHostnames.includes(hostname)}
+                              onchange={(e) => {
+                                if (e.currentTarget.checked) {
+                                  selectedHostnames = [
+                                    ...selectedHostnames,
+                                    hostname,
+                                  ];
+                                } else {
+                                  selectedHostnames = selectedHostnames.filter(
+                                    (h) => h !== hostname,
+                                  );
+                                }
+                                applyFilters();
+                              }}
+                              class="h-4 w-4 rounded border-gray-300"
+                            />
+                            <span class="text-sm flex-1 font-mono {!hasLogsInTimeRange ? 'text-muted-foreground italic' : ''}">{hostname}</span>
                             {#if !hasLogsInTimeRange}
                               <span class="text-xs text-muted-foreground">(no logs)</span>
                             {/if}
@@ -1256,21 +1396,38 @@
                         </a>
                       </TableCell>
                       <TableCell>
-                        <button
-                          onclick={() => {
-                            if (!selectedServices.includes(log.service)) {
-                              selectedServices = [
-                                ...selectedServices,
-                                log.service,
-                              ];
-                              applyFilters();
-                            }
-                          }}
-                          title="Click to filter by this service"
-                          class="hover:opacity-80 transition-opacity"
-                        >
-                          <Badge variant="outline">{log.service}</Badge>
-                        </button>
+                        <div class="flex flex-col gap-0.5">
+                          <button
+                            onclick={() => {
+                              if (!selectedServices.includes(log.service)) {
+                                selectedServices = [
+                                  ...selectedServices,
+                                  log.service,
+                                ];
+                                applyFilters();
+                              }
+                            }}
+                            title="Click to filter by this service"
+                            class="hover:opacity-80 transition-opacity"
+                          >
+                            <Badge variant="outline">{log.service}</Badge>
+                          </button>
+                          {#if log.metadata?.hostname}
+                            <button
+                              onclick={() => {
+                                const hostname = log.metadata?.hostname;
+                                if (hostname && !selectedHostnames.includes(hostname)) {
+                                  selectedHostnames = [...selectedHostnames, hostname];
+                                  applyFilters();
+                                }
+                              }}
+                              title="Click to filter by this host"
+                              class="text-xs text-muted-foreground font-mono hover:text-foreground transition-colors truncate max-w-[140px]"
+                            >
+                              @{log.metadata.hostname}
+                            </button>
+                          {/if}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <button

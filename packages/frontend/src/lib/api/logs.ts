@@ -231,6 +231,37 @@ export class LogsAPI {
     return data.services;
   }
 
+  async getHostnames(params: {
+    projectId: string | string[];
+    from?: string;
+    to?: string;
+  }): Promise<string[]> {
+    const queryParams = new URLSearchParams();
+
+    if (Array.isArray(params.projectId)) {
+      params.projectId.forEach((id) => queryParams.append('projectId', id));
+    } else {
+      queryParams.append('projectId', params.projectId);
+    }
+
+    if (params.from) queryParams.append('from', params.from);
+    if (params.to) queryParams.append('to', params.to);
+
+    const url = `${getApiBaseUrl()}/logs/hostnames?${queryParams.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch hostnames: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.hostnames;
+  }
+
   async getLogById(logId: string, projectId: string): Promise<{ log: LogEntry } | null> {
     const queryParams = new URLSearchParams();
     queryParams.append('projectId', projectId);
