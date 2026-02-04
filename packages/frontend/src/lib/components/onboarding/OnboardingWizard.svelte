@@ -61,7 +61,11 @@
 
   const visibleSteps = onboardingStore.stepOrder;
 
-  let currentStepIndex = $derived(visibleSteps.indexOf(state.currentStep));
+  let currentStepIndex = $derived(
+    state.currentStep === 'completed'
+      ? visibleSteps.length - 1
+      : visibleSteps.indexOf(state.currentStep)
+  );
   let progressPercent = $derived(((currentStepIndex + 1) / visibleSteps.length) * 100);
 
   function isStepCompleted(step: OnboardingStep) {

@@ -10,8 +10,6 @@
 	import User from '@lucide/svelte/icons/user';
 	import Edit from '@lucide/svelte/icons/edit';
 	import Plus from '@lucide/svelte/icons/plus';
-	import type { ComponentType } from 'svelte';
-
 	interface Props {
 		history: IncidentHistoryEntry[];
 	}
@@ -19,7 +17,7 @@
 	let { history }: Props = $props();
 
 	interface ActionConfig {
-		icon: ComponentType;
+		icon: typeof Plus;
 		color: string;
 		format: (entry: IncidentHistoryEntry) => string;
 	}
@@ -31,7 +29,7 @@
 			format: () => 'Incident created',
 		},
 		status_changed: {
-			icon: getStatusIcon,
+			icon: Edit,
 			color: 'text-blue-500 bg-blue-500/10',
 			format: (entry) => `Status changed from ${formatValue(entry.oldValue)} to ${formatValue(entry.newValue)}`,
 		},
@@ -53,11 +51,6 @@
 		},
 	};
 
-	function getStatusIcon(_entry: IncidentHistoryEntry): ComponentType {
-		// Default to edit icon for status changes
-		return Edit;
-	}
-
 	function formatValue(value: string | null): string {
 		if (!value) return 'none';
 		return value.replace(/_/g, ' ');
@@ -70,8 +63,8 @@
 			.replace(/\b\w/g, (l) => l.toUpperCase());
 	}
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatDate(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		return date.toLocaleDateString('it-IT', {
 			month: 'short',
 			day: 'numeric',
@@ -80,8 +73,8 @@
 		});
 	}
 
-	function formatTimeAgo(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatTimeAgo(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		const now = new Date();
 		const diffMs = now.getTime() - date.getTime();
 		const diffMins = Math.floor(diffMs / 60000);

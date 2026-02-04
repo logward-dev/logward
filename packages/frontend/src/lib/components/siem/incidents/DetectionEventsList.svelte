@@ -37,8 +37,8 @@
 		expandedRows = newExpanded;
 	}
 
-	function formatTime(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatTime(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		return date.toLocaleTimeString('it-IT', {
 			hour: '2-digit',
 			minute: '2-digit',
@@ -46,8 +46,8 @@
 		});
 	}
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatDate(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		return date.toLocaleDateString('it-IT', {
 			month: 'short',
 			day: 'numeric',
