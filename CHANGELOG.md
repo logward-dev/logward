@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.3]
 
+### Added
+
+- **Hostname Filter for Syslog Sources**: See which machine each log comes from (#80)
+  - Hostname automatically extracted from `hostname`, `host`, `_HOSTNAME` (journald), or `kubernetes.host`
+  - New **Hostnames** filter dropdown in log search page
+  - Hostname displayed in log table under service badge (e.g., `nginx @proxmox-node-1`)
+  - Click hostname to filter logs from that specific machine
+  - New `/api/v1/logs/hostnames` endpoint for distinct hostnames
+
 ### Fixed
 
 - **Fluent Bit Kubernetes Metadata**: Fixed service showing as "unknown" when using Fluent Bit DaemonSet in Kubernetes (#118)
