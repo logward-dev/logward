@@ -16,19 +16,26 @@
   import Rocket from '@lucide/svelte/icons/rocket';
   import ExternalLink from '@lucide/svelte/icons/external-link';
 
-  import { get } from 'svelte/store';
+  let state = $state(checklistStore);
+  let progress = $state(checklistProgress);
+  let isComplete = $state(isChecklistComplete);
+  let org = $state(currentOrganization);
+  let token: string | null = $state(null);
 
-  let state = $state(get(checklistStore));
-  let progress = $state(get(checklistProgress));
-  let isComplete = $state(get(isChecklistComplete));
-  let org = $state(get(currentOrganization));
-  let token = $state<string | null>(null);
-
-  checklistStore.subscribe(s => { state = s; });
-  checklistProgress.subscribe(p => { progress = p; });
-  isChecklistComplete.subscribe(c => { isComplete = c; });
-  currentOrganization.subscribe(o => { org = o; });
-  authStore.subscribe(s => { token = s.token; });
+  $effect(() => {
+    const unsubState = checklistStore.subscribe(s => { state = s as any; });
+    const unsubProgress = checklistProgress.subscribe(p => { progress = p as any; });
+    const unsubComplete = isChecklistComplete.subscribe(c => { isComplete = c as any; });
+    const unsubOrg = currentOrganization.subscribe(o => { org = o as any; });
+    const unsubAuth = authStore.subscribe(s => { token = s.token; });
+    return () => {
+      unsubState();
+      unsubProgress();
+      unsubComplete();
+      unsubOrg();
+      unsubAuth();
+    };
+  });
 
   function toggleCollapsed() {
     checklistStore.toggleCollapsed();
