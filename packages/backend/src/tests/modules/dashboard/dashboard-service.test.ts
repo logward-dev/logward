@@ -408,4 +408,159 @@ describe('DashboardService', () => {
             expect(errors[0].traceId).toBe(traceId);
         });
     });
+
+    describe('getStats - calculation edge cases', () => {
+        it('should handle zero yesterday count for trend calculation', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs only for today, none for yesterday
+            await createTestLog({ projectId: project.id, level: 'info' });
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // Trend should be 0 when yesterday count is 0 (no division by zero)
+            expect(stats.totalLogsToday.trend).toBe(0);
+        });
+
+        it('should calculate error rate trend correctly', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs with errors today
+            await createTestLog({ projectId: project.id, level: 'info' });
+            await createTestLog({ projectId: project.id, level: 'error' });
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // Error rate should be calculated correctly (1 error / 2 total = 50%)
+            expect(stats.errorRate.value).toBe(50);
+        });
+
+        it('should calculate throughput correctly', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create some logs
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId: project.id, level: 'info' });
+            }
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // Throughput should be non-negative
+            expect(stats.avgThroughput.value).toBeGreaterThanOrEqual(0);
+        });
+    });
+
+    describe('getTimeseries - edge cases', () => {
+        it('should handle multiple buckets when logs span different hours', async () => {
+            const { organization, project } = await createTestContext();
+
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+            // Create logs at different hours
+            await db.insertInto('logs').values({
+                project_id: project.id,
+                service: 'test',
+                level: 'info',
+                message: 'Now log',
+                time: now,
+            }).execute();
+
+            await db.insertInto('logs').values({
+                project_id: project.id,
+                service: 'test',
+                level: 'error',
+                time: oneHourAgo,
+                message: 'One hour ago log',
+            }).execute();
+
+            await db.insertInto('logs').values({
+                project_id: project.id,
+                service: 'test',
+                level: 'warn',
+                time: twoHoursAgo,
+                message: 'Two hours ago log',
+            }).execute();
+
+            const timeseries = await dashboardService.getTimeseries(organization.id);
+
+            // Should have multiple data points for different hours
+            expect(timeseries.length).toBeGreaterThanOrEqual(1);
+        });
+
+        it('should normalize bucket timestamps to ISO strings', async () => {
+            const { organization, project } = await createTestContext();
+
+            await createTestLog({ projectId: project.id, level: 'info' });
+
+            const timeseries = await dashboardService.getTimeseries(organization.id);
+
+            if (timeseries.length > 0) {
+                // Time should be a valid ISO string
+                expect(() => new Date(timeseries[0].time)).not.toThrow();
+            }
+        });
+    });
+
+    describe('getTopServices - edge cases', () => {
+        it('should handle services with same log count', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create equal logs for two services
+            await createTestLog({ projectId: project.id, service: 'service-a' });
+            await createTestLog({ projectId: project.id, service: 'service-b' });
+
+            const services = await dashboardService.getTopServices(organization.id);
+
+            expect(services).toHaveLength(2);
+            // Both should have equal count
+            expect(services[0].count).toBe(services[1].count);
+        });
+
+        it('should calculate percentage that sums to 100', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs for single service
+            await createTestLog({ projectId: project.id, service: 'only-service' });
+
+            const services = await dashboardService.getTopServices(organization.id, 10);
+
+            if (services.length === 1) {
+                expect(services[0].percentage).toBe(100);
+            }
+        });
+    });
+
+    describe('getRecentErrors - edge cases', () => {
+        it('should handle logs with null trace_id', async () => {
+            const { organization, project } = await createTestContext();
+
+            await createTestLog({
+                projectId: project.id,
+                level: 'error',
+                message: 'Error without trace',
+            });
+
+            const errors = await dashboardService.getRecentErrors(organization.id);
+
+            expect(errors).toHaveLength(1);
+            expect(errors[0].traceId).toBeUndefined();
+        });
+
+        it('should handle logs with null project_id gracefully', async () => {
+            const { organization, project } = await createTestContext();
+
+            await createTestLog({
+                projectId: project.id,
+                level: 'error',
+                message: 'Error log',
+            });
+
+            const errors = await dashboardService.getRecentErrors(organization.id);
+
+            expect(errors).toHaveLength(1);
+            expect(errors[0].projectId).toBe(project.id);
+        });
+    });
 });

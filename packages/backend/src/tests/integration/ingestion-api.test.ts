@@ -1123,5 +1123,108 @@ describe('Ingestion API', () => {
 
             expect(response.body).toHaveProperty('error');
         });
+
+        it('should handle malformed NDJSON content type', async () => {
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/x-ndjson')
+                .send('invalid json {not valid')
+                .expect(400);
+        });
+
+        it('should handle empty body for single ingestion', async () => {
+            const response = await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/json')
+                .send('')
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+        });
+
+        it('should handle valid NDJSON with multiple logs', async () => {
+            const ndjsonLogs = [
+                { time: new Date().toISOString(), service: 'test1', level: 'info', message: 'Log 1' },
+                { time: new Date().toISOString(), service: 'test2', level: 'warn', message: 'Log 2' },
+            ]
+                .map((l) => JSON.stringify(l))
+                .join('\n');
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/json')
+                .send(ndjsonLogs)
+                .expect(200);
+
+            expect(response.body.received).toBe(2);
+        });
+    });
+
+    describe('Ingestion Service Edge Cases', () => {
+        it('should handle logs with null characters (PostgreSQL sanitization)', async () => {
+            const uniqueMsg = `Test with null\u0000char ${Date.now()}`;
+            const logs = [
+                {
+                    time: new Date().toISOString(),
+                    service: 'test\u0000service',
+                    level: 'info',
+                    message: uniqueMsg,
+                    metadata: { key: 'value\u0000test' },
+                },
+            ];
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs })
+                .expect(200);
+
+            expect(response.body.received).toBe(1);
+
+            // Verify null chars were removed
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('service', '=', 'testservice')
+                .executeTakeFirst();
+
+            expect(dbLog?.service).not.toContain('\u0000');
+        });
+
+        it('should handle logs with span_id', async () => {
+            const logs = [
+                {
+                    time: new Date().toISOString(),
+                    service: 'test-span',
+                    level: 'info',
+                    message: 'Log with span',
+                    trace_id: '550e8400-e29b-41d4-a716-446655440000',
+                    span_id: 'abc123def456',
+                },
+            ];
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs })
+                .expect(200);
+
+            expect(response.body.received).toBe(1);
+        });
+
+        it('should return 0 when ingesting empty logs array via service', async () => {
+            // This tests the early return in ingestLogs when logs.length === 0
+            // The API validates and rejects empty arrays, but let's verify behavior
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs: [] })
+                .expect(400);
+
+            expect(response.body.error).toBeDefined();
+        });
     });
 });

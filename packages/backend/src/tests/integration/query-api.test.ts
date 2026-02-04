@@ -1032,4 +1032,329 @@ describe('Query API Integration Tests', () => {
             });
         });
     });
+
+    describe('Multi-Project Access Control', () => {
+        let otherProjectId: string;
+        let sessionToken: string;
+
+        beforeEach(async () => {
+            // Create another project in a different organization that user doesn't have access to
+            const otherContext = await createTestContext();
+            otherProjectId = otherContext.project.id;
+
+            // Create a session for the original user
+            const session = await db
+                .insertInto('sessions')
+                .values({
+                    user_id: userId,
+                    token: 'test-session-token-' + Date.now(),
+                    expires_at: new Date(Date.now() + 3600000),
+                })
+                .returning(['token'])
+                .executeTakeFirstOrThrow();
+            sessionToken = session.token;
+        });
+
+        it('should deny access when requesting multiple projects and one is inaccessible', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId: [projectId, otherProjectId] })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for services endpoint with inaccessible project', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId: [projectId, otherProjectId] })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for hostnames endpoint with inaccessible project', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({ projectId: [projectId, otherProjectId] })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+    });
+
+    describe('Date Validation Errors', () => {
+        it('should reject invalid from date in services endpoint', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId, from: 'invalid-date-format' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+
+            expect(response.body).toBeDefined();
+        });
+
+        it('should reject invalid to date in services endpoint', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/services')
+                .query({ projectId, to: 'not-a-valid-date' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+
+            expect(response.body).toBeDefined();
+        });
+
+        it('should reject invalid from date in hostnames endpoint', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({ projectId, from: 'bad-date' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+
+            expect(response.body).toBeDefined();
+        });
+
+        it('should reject invalid to date in hostnames endpoint', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({ projectId, to: 'xyz' })
+                .set('x-api-key', apiKey)
+                .expect(400);
+
+            expect(response.body).toBeDefined();
+        });
+    });
+
+    describe('Session-based Authentication with Project Access', () => {
+        let sessionToken: string;
+
+        beforeEach(async () => {
+            // Create a session for the user
+            const session = await db
+                .insertInto('sessions')
+                .values({
+                    user_id: userId,
+                    token: 'session-test-' + Date.now(),
+                    expires_at: new Date(Date.now() + 3600000),
+                })
+                .returning(['token'])
+                .executeTakeFirstOrThrow();
+            sessionToken = session.token;
+        });
+
+        it('should allow access with session cookie and valid project', async () => {
+            await createTestLog({ projectId, service: 'test', level: 'info', message: 'Test' });
+
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('logs');
+        });
+
+        it('should deny access to project user is not member of', async () => {
+            // Create a project in a different organization
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId: otherContext.project.id })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for trace endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/trace/some-trace-id')
+                .query({ projectId: otherContext.project.id })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for context endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/context')
+                .query({ projectId: otherContext.project.id, time: new Date().toISOString() })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for single log endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/00000000-0000-0000-0000-000000000000')
+                .query({ projectId: otherContext.project.id })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for aggregated endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/aggregated')
+                .query({
+                    projectId: otherContext.project.id,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for top-services endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-services')
+                .query({ projectId: otherContext.project.id })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+
+        it('should deny access for top-errors endpoint with inaccessible project', async () => {
+            const otherContext = await createTestContext();
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/top-errors')
+                .query({ projectId: otherContext.project.id })
+                .set('Cookie', `session=${sessionToken}`)
+                .expect(403);
+
+            expect(response.body.error).toContain('Access denied');
+        });
+    });
+
+    describe('Cursor Pagination', () => {
+        beforeEach(async () => {
+            // Create multiple logs
+            for (let i = 0; i < 15; i++) {
+                await createTestLog({
+                    projectId,
+                    service: 'pagination-test',
+                    level: 'info',
+                    message: `Log number ${i}`,
+                });
+            }
+        });
+
+        it('should return nextCursor when more results exist', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, limit: 5 })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.logs).toHaveLength(5);
+            expect(response.body.nextCursor).toBeDefined();
+        });
+
+        it('should paginate using cursor', async () => {
+            // First page
+            const firstPage = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, limit: 5 })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(firstPage.body.nextCursor).toBeDefined();
+
+            // Second page using cursor
+            const secondPage = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, limit: 5, cursor: firstPage.body.nextCursor })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(secondPage.body.logs).toHaveLength(5);
+            // Logs should be different
+            const firstIds = firstPage.body.logs.map((l: any) => l.id);
+            const secondIds = secondPage.body.logs.map((l: any) => l.id);
+            expect(firstIds).not.toEqual(secondIds);
+        });
+
+        it('should handle invalid cursor gracefully', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, cursor: 'invalid-cursor-format' })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            // Should return results without error (cursor is ignored if invalid)
+            expect(response.body.logs).toBeDefined();
+        });
+    });
+
+    describe('Hostname Filtering', () => {
+        beforeEach(async () => {
+            await createTestLog({
+                projectId,
+                service: 'api',
+                level: 'info',
+                message: 'From host1',
+                metadata: { hostname: 'host1.example.com' },
+            });
+            await createTestLog({
+                projectId,
+                service: 'api',
+                level: 'info',
+                message: 'From host2',
+                metadata: { hostname: 'host2.example.com' },
+            });
+            await createTestLog({
+                projectId,
+                service: 'api',
+                level: 'info',
+                message: 'From host1 again',
+                metadata: { hostname: 'host1.example.com' },
+            });
+        });
+
+        it('should filter logs by single hostname', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, hostname: 'host1.example.com' })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.logs.length).toBe(2);
+            response.body.logs.forEach((log: any) => {
+                expect(log.metadata.hostname).toBe('host1.example.com');
+            });
+        });
+
+        it('should filter logs by multiple hostnames', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs')
+                .query({ projectId, hostname: ['host1.example.com', 'host2.example.com'] })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.logs.length).toBe(3);
+        });
+    });
 });
