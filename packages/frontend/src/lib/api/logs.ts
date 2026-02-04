@@ -26,6 +26,7 @@ interface LogFilters {
   projectId?: string | string[];
   service?: string | string[];
   level?: string | string[];
+  hostname?: string | string[];
   traceId?: string;
   from?: string;
   to?: string;
@@ -103,6 +104,14 @@ export class LogsAPI {
       }
     }
 
+    if (filters.hostname) {
+      if (Array.isArray(filters.hostname)) {
+        filters.hostname.forEach((h) => params.append('hostname', h));
+      } else {
+        params.append('hostname', filters.hostname);
+      }
+    }
+
     if (filters.traceId) params.append('traceId', filters.traceId);
     if (filters.from) params.append('from', filters.from);
     if (filters.to) params.append('to', filters.to);
@@ -148,11 +157,12 @@ export class LogsAPI {
     return response.json();
   }
 
-  createLogsWebSocket(filters: { service?: string; level?: string; projectId: string }): WebSocket {
+  createLogsWebSocket(filters: { service?: string; level?: string; hostname?: string; projectId: string }): WebSocket {
     const params = new URLSearchParams();
     params.append('projectId', filters.projectId);
     if (filters.service) params.append('service', filters.service);
     if (filters.level) params.append('level', filters.level);
+    if (filters.hostname) params.append('hostname', filters.hostname);
 
     const token = this.getToken();
     if (token) {

@@ -382,6 +382,12 @@
               ? selectedLevels[0]
               : selectedLevels
             : undefined,
+        hostname:
+          selectedHostnames.length > 0
+            ? selectedHostnames.length === 1
+              ? selectedHostnames[0]
+              : selectedHostnames
+            : undefined,
         traceId: traceId || undefined,
         q: searchQuery || undefined,
         searchMode: searchQuery ? searchMode : undefined,
@@ -549,6 +555,8 @@
         service:
           selectedServices.length === 1 ? selectedServices[0] : undefined,
         level: selectedLevels.length === 1 ? selectedLevels[0] : undefined,
+        hostname:
+          selectedHostnames.length === 1 ? selectedHostnames[0] : undefined,
       });
 
       socket.onmessage = (event) => {
@@ -734,6 +742,12 @@
         ? selectedLevels.length === 1
           ? selectedLevels[0]
           : selectedLevels
+        : undefined,
+    hostname:
+      selectedHostnames.length > 0
+        ? selectedHostnames.length === 1
+          ? selectedHostnames[0]
+          : selectedHostnames
         : undefined,
     traceId: traceId || undefined,
     q: searchQuery || undefined,

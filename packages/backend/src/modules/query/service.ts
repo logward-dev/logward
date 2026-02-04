@@ -10,6 +10,7 @@ export interface LogQueryParams {
   projectId: string | string[]; // Support single or multiple projects
   service?: string | string[]; // Support single or multiple services
   level?: LogLevel | LogLevel[]; // Support single or multiple levels
+  hostname?: string | string[]; // Filter by hostname (from metadata.hostname)
   traceId?: string; // Filter by trace ID
   from?: Date;
   to?: Date;
@@ -30,6 +31,7 @@ export class QueryService {
       projectId,
       service,
       level,
+      hostname,
       traceId,
       from,
       to,
@@ -44,6 +46,7 @@ export class QueryService {
     const cacheParams = {
       service: service || null,
       level: level || null,
+      hostname: hostname || null,
       traceId: traceId || null,
       from: from?.toISOString() || null,
       to: to?.toISOString() || null,
@@ -114,6 +117,17 @@ export class QueryService {
       } else {
         // Single level
         query = query.where('level', '=', level);
+      }
+    }
+
+    // Filter by hostname (stored in metadata JSONB)
+    if (hostname) {
+      if (Array.isArray(hostname)) {
+        // Multiple hostnames - use IN clause with JSONB operator
+        query = query.where(sql`metadata->>'hostname'`, 'in', hostname);
+      } else {
+        // Single hostname
+        query = query.where(sql`metadata->>'hostname'`, '=', hostname);
       }
     }
 
