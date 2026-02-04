@@ -23,8 +23,8 @@
 	let newComment = $state('');
 	let submitting = $state(false);
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatDate(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		return date.toLocaleDateString('it-IT', {
 			month: 'short',
 			day: 'numeric',
@@ -33,8 +33,8 @@
 		});
 	}
 
-	function formatTimeAgo(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatTimeAgo(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		const now = new Date();
 		const diffMs = now.getTime() - date.getTime();
 		const diffMins = Math.floor(diffMs / 60000);

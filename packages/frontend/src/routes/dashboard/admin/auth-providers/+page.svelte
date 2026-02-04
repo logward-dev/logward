@@ -471,7 +471,7 @@
             <Label for="ldapSearchFilter">Search Filter</Label>
             <Input
               id="ldapSearchFilter"
-              placeholder="(uid={{username}})"
+              placeholder={'(uid={{username}})'}
               bind:value={ldapSearchFilter}
             />
             <p class="text-xs text-muted-foreground">Use {'{{username}}'} as placeholder for user input</p>
@@ -607,7 +607,7 @@
             <Label for="edit-ldapSearchFilter">Search Filter</Label>
             <Input
               id="edit-ldapSearchFilter"
-              placeholder="(uid={{username}})"
+              placeholder={'(uid={{username}})'}
               bind:value={ldapSearchFilter}
             />
             <p class="text-xs text-muted-foreground">Use {'{{username}}'} as placeholder for user input</p>

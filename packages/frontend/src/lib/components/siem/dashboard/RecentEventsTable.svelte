@@ -16,8 +16,8 @@
 
 	let { events, loading = false, onEventClick }: Props = $props();
 
-	function formatTimeAgo(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatTimeAgo(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		const now = new Date();
 		const diffMs = now.getTime() - date.getTime();
 		const diffMins = Math.floor(diffMs / 60000);

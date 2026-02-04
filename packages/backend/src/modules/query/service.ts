@@ -10,6 +10,7 @@ export interface LogQueryParams {
   projectId: string | string[]; // Support single or multiple projects
   service?: string | string[]; // Support single or multiple services
   level?: LogLevel | LogLevel[]; // Support single or multiple levels
+  hostname?: string | string[]; // Filter by hostname (from metadata.hostname)
   traceId?: string; // Filter by trace ID
   from?: Date;
   to?: Date;
@@ -30,6 +31,7 @@ export class QueryService {
       projectId,
       service,
       level,
+      hostname,
       traceId,
       from,
       to,
@@ -44,6 +46,7 @@ export class QueryService {
     const cacheParams = {
       service: service || null,
       level: level || null,
+      hostname: hostname || null,
       traceId: traceId || null,
       from: from?.toISOString() || null,
       to: to?.toISOString() || null,
@@ -114,6 +117,17 @@ export class QueryService {
       } else {
         // Single level
         query = query.where('level', '=', level);
+      }
+    }
+
+    // Filter by hostname (stored in metadata JSONB)
+    if (hostname) {
+      if (Array.isArray(hostname)) {
+        // Multiple hostnames - use IN clause with JSONB operator
+        query = query.where(sql`metadata->>'hostname'`, 'in', hostname);
+      } else {
+        // Single hostname
+        query = query.where(sql`metadata->>'hostname'`, '=', hostname);
       }
     }
 
@@ -489,6 +503,66 @@ export class QueryService {
     await CacheManager.set(cacheKey, services, CACHE_TTL.STATS);
 
     return services;
+  }
+
+  /**
+   * Get all distinct hostnames from logs within a time range.
+   * Hostnames are extracted from metadata.hostname field.
+   * Cached for performance - used for filter dropdowns.
+   */
+  async getDistinctHostnames(
+    projectId: string | string[],
+    from?: Date,
+    to?: Date
+  ): Promise<string[]> {
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(
+      Array.isArray(projectId) ? projectId.join(',') : projectId,
+      'distinct-hostnames',
+      {
+        from: from?.toISOString() || null,
+        to: to?.toISOString() || null,
+      }
+    );
+    const cached = await CacheManager.get<string[]>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    // Query distinct hostnames from metadata JSONB field
+    let query = db
+      .selectFrom('logs')
+      .select(sql<string>`metadata->>'hostname'`.as('hostname'))
+      .distinct()
+      .where(sql`metadata->>'hostname'`, 'is not', null)
+      .where(sql`metadata->>'hostname'`, '!=', '')
+      .orderBy(sql`metadata->>'hostname'`, 'asc');
+
+    // Project filter - support single or multiple projects
+    if (Array.isArray(projectId)) {
+      query = query.where('project_id', 'in', projectId);
+    } else {
+      query = query.where('project_id', '=', projectId);
+    }
+
+    if (from) {
+      query = query.where('time', '>=', from);
+    }
+
+    if (to) {
+      query = query.where('time', '<=', to);
+    }
+
+    const results = await query.execute();
+    const hostnames = results
+      .map((r) => r.hostname)
+      .filter((h): h is string => h !== null && h !== undefined);
+
+    // Cache for 5 minutes
+    await CacheManager.set(cacheKey, hostnames, CACHE_TTL.STATS);
+
+    return hostnames;
   }
 
   /**

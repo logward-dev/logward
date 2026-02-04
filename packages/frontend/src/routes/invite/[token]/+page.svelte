@@ -253,7 +253,7 @@
           {:else if emailMismatch}
             <Button
               onclick={() => {
-                authStore.logout();
+                authStore.clearAuth();
                 goto(`/login?redirect=/invite/${token}`);
               }}
               variant="outline"

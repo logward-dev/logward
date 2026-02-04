@@ -5,8 +5,6 @@
 	import Search from '@lucide/svelte/icons/search';
 	import CheckCircle from '@lucide/svelte/icons/check-circle';
 	import XCircle from '@lucide/svelte/icons/x-circle';
-	import type { ComponentType } from 'svelte';
-
 	interface Props {
 		status: IncidentStatus;
 		showIcon?: boolean;
@@ -18,7 +16,7 @@
 	interface StatusConfig {
 		color: string;
 		label: string;
-		icon: ComponentType;
+		icon: typeof AlertCircle;
 	}
 
 	function getStatusConfig(s: IncidentStatus): StatusConfig {

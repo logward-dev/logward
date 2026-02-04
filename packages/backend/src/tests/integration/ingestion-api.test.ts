@@ -331,6 +331,135 @@ describe('Ingestion API', () => {
             expect(dbLog?.service).toBe('explicit-service');
         });
 
+        // ======================================================================
+        // Hostname extraction tests
+        // ======================================================================
+        it('should extract hostname from top-level hostname field', async () => {
+            const uniqueMsg = `hostname-toplevel-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'test-service',
+                hostname: 'server-01.example.com',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'server-01.example.com');
+        });
+
+        it('should extract hostname from host field (syslog style)', async () => {
+            const uniqueMsg = `hostname-host-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'test-service',
+                host: 'proxmox-node-1',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'proxmox-node-1');
+        });
+
+        it('should extract hostname from kubernetes.host', async () => {
+            const uniqueMsg = `hostname-k8s-host-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    container_name: 'my-app',
+                    host: 'k8s-worker-01',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'k8s-worker-01');
+        });
+
+        it('should extract hostname from journald _HOSTNAME', async () => {
+            const uniqueMsg = `hostname-journald-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'test-daemon',
+                PRIORITY: '6',
+                _HOSTNAME: 'ubuntu-server',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'ubuntu-server');
+        });
+
+        it('should prefer top-level hostname over _HOSTNAME', async () => {
+            const uniqueMsg = `hostname-priority-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'test',
+                PRIORITY: '6',
+                _HOSTNAME: 'journald-host',
+                hostname: 'explicit-host',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'explicit-host');
+        });
+
         it('should normalize numeric log levels (Pino format)', async () => {
             const testCases = [
                 { level: 60, expected: 'critical' },

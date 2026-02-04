@@ -17,8 +17,8 @@
 	let chartContainer: HTMLDivElement;
 	let chart: echarts.ECharts | null = null;
 
-	function formatTimeLabel(timestamp: string): string {
-		const date = new Date(timestamp);
+	function formatTimeLabel(timestamp: string | Date): string {
+		const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
 
 		if (timeRange === '24h') {
 			return date.toLocaleTimeString('it-IT', {

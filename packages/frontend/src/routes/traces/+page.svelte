@@ -400,10 +400,10 @@
               <Label>Project</Label>
               <Select.Root
                 type="single"
-                value={{ value: selectedProject || "", label: projects.find(p => p.id === selectedProject)?.name || "Select project" }}
+                value={selectedProject || ""}
                 onValueChange={(v) => {
                   if (v) {
-                    selectedProject = v.value;
+                    selectedProject = v;
                     applyFilters();
                   }
                 }}
@@ -424,9 +424,9 @@
               <Label>Service</Label>
               <Select.Root
                 type="single"
-                value={{ value: selectedService || "", label: selectedService || "All services" }}
+                value={selectedService || ""}
                 onValueChange={(v) => {
-                  selectedService = v?.value || null;
+                  selectedService = v || null;
                   applyFilters();
                 }}
               >
@@ -446,9 +446,9 @@
               <Label>Status</Label>
               <Select.Root
                 type="single"
-                value={{ value: errorOnly ? "error" : "all", label: errorOnly ? "Errors only" : "All traces" }}
+                value={errorOnly ? "error" : "all"}
                 onValueChange={(v) => {
-                  errorOnly = v?.value === "error";
+                  errorOnly = v === "error";
                   applyFilters();
                 }}
               >

@@ -880,6 +880,85 @@ describe('Query API Integration Tests', () => {
         });
     });
 
+    describe('GET /api/v1/logs/hostnames - Get Distinct Hostnames', () => {
+        beforeEach(async () => {
+            // Insert logs with different hostnames in metadata
+            await createTestLog({
+                projectId,
+                service: 'nginx',
+                level: 'info',
+                message: 'Log from server1',
+                metadata: { hostname: 'server1.example.com' },
+            });
+            await createTestLog({
+                projectId,
+                service: 'nginx',
+                level: 'info',
+                message: 'Log from server2',
+                metadata: { hostname: 'server2.example.com' },
+            });
+            await createTestLog({
+                projectId,
+                service: 'api',
+                level: 'error',
+                message: 'Log from server1 again',
+                metadata: { hostname: 'server1.example.com' },
+            });
+            await createTestLog({
+                projectId,
+                service: 'worker',
+                level: 'info',
+                message: 'Log without hostname',
+            });
+        });
+
+        it('should return distinct hostnames', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({ projectId })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.hostnames).toBeInstanceOf(Array);
+            expect(response.body.hostnames.length).toBeGreaterThanOrEqual(2);
+            expect(response.body.hostnames).toContain('server1.example.com');
+            expect(response.body.hostnames).toContain('server2.example.com');
+        });
+
+        it('should filter by time range', async () => {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({
+                    projectId,
+                    from: oneHourAgo.toISOString(),
+                    to: now.toISOString(),
+                })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.hostnames).toBeInstanceOf(Array);
+        });
+
+        it('should require authentication', async () => {
+            await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .expect(401);
+        });
+
+        it('should support multiple projectIds', async () => {
+            const response = await request(app.server)
+                .get('/api/v1/logs/hostnames')
+                .query({ projectId: [projectId] })
+                .set('x-api-key', apiKey)
+                .expect(200);
+
+            expect(response.body.hostnames).toBeInstanceOf(Array);
+        });
+    });
+
     describe('Authentication Tests', () => {
         it('should work with API key that has projectId association', async () => {
             // The API key created by createTestContext has a projectId association
