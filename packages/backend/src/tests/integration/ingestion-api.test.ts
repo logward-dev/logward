@@ -1202,7 +1202,7 @@ describe('Ingestion API', () => {
                     level: 'info',
                     message: 'Log with span',
                     trace_id: '550e8400-e29b-41d4-a716-446655440000',
-                    span_id: 'abc123def456',
+                    span_id: 'abc123def4567890', // Must be exactly 16 hex characters
                 },
             ];
 
