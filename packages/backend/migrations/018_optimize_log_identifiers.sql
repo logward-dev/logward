@@ -2,6 +2,12 @@
 -- Migration: 018_optimize_log_identifiers
 -- Description: Optimize log_identifiers table for performance
 --
+-- NOTE: Disable statement timeout for this migration (large data migration)
+-- ============================================================================
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+
+-- ============================================================================
 -- Problems found:
 -- 1. Table is NOT a hypertable (no compression)
 -- 2. 10+ GB for 30M rows (~350 bytes/row avg)
