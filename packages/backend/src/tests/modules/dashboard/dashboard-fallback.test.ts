@@ -508,4 +508,225 @@ describe('DashboardService - Fallback Paths', () => {
             expect(services[1].percentage).toBe(33); // Rounded from 33.33
         });
     });
+
+    describe('getStats - with yesterday data for trends', () => {
+        it('should calculate logs trend when yesterday has data', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs for yesterday - make sure time is in yesterday's window
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+            const yesterdayMiddle = new Date(yesterdayStart.getTime() + 12 * 60 * 60 * 1000);
+
+            for (let i = 0; i < 5; i++) {
+                await db.insertInto('logs').values({
+                    project_id: project.id,
+                    service: 'test',
+                    level: 'info',
+                    message: `Yesterday log ${i}`,
+                    time: yesterdayMiddle,
+                }).execute();
+            }
+
+            // Create logs for today
+            for (let i = 0; i < 10; i++) {
+                await createTestLog({ projectId: project.id, level: 'info' });
+            }
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            expect(stats.totalLogsToday.value).toBeGreaterThanOrEqual(10);
+            // Trend should be a number (positive when increased)
+            expect(typeof stats.totalLogsToday.trend).toBe('number');
+        });
+
+        it('should calculate error rate trend', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs for yesterday
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+            const yesterdayMiddle = new Date(yesterdayStart.getTime() + 12 * 60 * 60 * 1000);
+
+            // Yesterday: 1 error out of 10 (10% error rate)
+            for (let i = 0; i < 9; i++) {
+                await db.insertInto('logs').values({
+                    project_id: project.id,
+                    service: 'test',
+                    level: 'info',
+                    message: `Yesterday info ${i}`,
+                    time: yesterdayMiddle,
+                }).execute();
+            }
+            await db.insertInto('logs').values({
+                project_id: project.id,
+                service: 'test',
+                level: 'error',
+                message: 'Yesterday error',
+                time: yesterdayMiddle,
+            }).execute();
+
+            // Today: 5 errors out of 10 (50% error rate)
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId: project.id, level: 'info' });
+            }
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId: project.id, level: 'error' });
+            }
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // Error rate should be 50%
+            expect(stats.errorRate.value).toBe(50);
+            // Trend should be a number (positive when increased)
+            expect(typeof stats.errorRate.trend).toBe('number');
+        });
+    });
+
+    describe('getTopServices - with multiple projects', () => {
+        it('should aggregate services across multiple projects', async () => {
+            const { organization, project: project1 } = await createTestContext();
+
+            const project2 = await db
+                .insertInto('projects')
+                .values({
+                    name: 'Project 2',
+                    organization_id: organization.id,
+                    user_id: organization.owner_id,
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+
+            // Same service in both projects
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId: project1.id, service: 'shared-service' });
+            }
+            for (let i = 0; i < 5; i++) {
+                await createTestLog({ projectId: project2.id, service: 'shared-service' });
+            }
+
+            const services = await dashboardService.getTopServices(organization.id, 5);
+
+            expect(services.length).toBeGreaterThan(0);
+            expect(services[0].name).toBe('shared-service');
+            expect(services[0].count).toBe(10); // Combined from both projects
+        });
+    });
+
+    describe('getRecentErrors - edge cases', () => {
+        it('should return only error and critical levels', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create various log levels
+            await createTestLog({ projectId: project.id, level: 'debug', message: 'Debug' });
+            await createTestLog({ projectId: project.id, level: 'info', message: 'Info' });
+            await createTestLog({ projectId: project.id, level: 'warn', message: 'Warn' });
+            await createTestLog({ projectId: project.id, level: 'error', message: 'Error' });
+            await createTestLog({ projectId: project.id, level: 'critical', message: 'Critical' });
+
+            const errors = await dashboardService.getRecentErrors(organization.id);
+
+            expect(errors.length).toBe(2);
+            errors.forEach(e => {
+                expect(['error', 'critical']).toContain(e.level);
+            });
+        });
+
+        it('should return empty array for organization without errors', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create only non-error logs
+            await createTestLog({ projectId: project.id, level: 'info', message: 'Info log' });
+            await createTestLog({ projectId: project.id, level: 'debug', message: 'Debug log' });
+
+            const errors = await dashboardService.getRecentErrors(organization.id);
+
+            expect(errors).toEqual([]);
+        });
+
+        it('should handle traceId being undefined gracefully', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Error without trace_id
+            await createTestLog({
+                projectId: project.id,
+                level: 'error',
+                message: 'Error without trace',
+            });
+
+            const errors = await dashboardService.getRecentErrors(organization.id);
+
+            expect(errors.length).toBe(1);
+            expect(errors[0].traceId).toBeUndefined();
+        });
+    });
+
+    describe('getTimeseries - with logs older than 24 hours', () => {
+        it('should not include logs older than 24 hours', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create old log (36 hours ago - outside 24h window)
+            const oldTime = new Date(Date.now() - 36 * 60 * 60 * 1000);
+            await db.insertInto('logs').values({
+                project_id: project.id,
+                service: 'test',
+                level: 'info',
+                message: 'Old log',
+                time: oldTime,
+            }).execute();
+
+            // Create recent log
+            await createTestLog({ projectId: project.id, level: 'info' });
+
+            const timeseries = await dashboardService.getTimeseries(organization.id);
+
+            // Should only include the recent log
+            const totalLogs = timeseries.reduce((sum, p) => sum + p.total, 0);
+            expect(totalLogs).toBe(1);
+        });
+    });
+
+    describe('getStats - throughput calculations', () => {
+        it('should calculate throughput as logs per second', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create 360 logs in the last hour = 0.1 logs/sec
+            for (let i = 0; i < 36; i++) {
+                await createTestLog({ projectId: project.id, level: 'info' });
+            }
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // 36 logs / 3600 seconds = 0.01 logs/sec
+            expect(stats.avgThroughput.value).toBeCloseTo(0.01, 2);
+        });
+
+        it('should calculate throughput trend when previous hour has data', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create logs 1.5 hours ago (in previous hour window)
+            const prevHour = new Date(Date.now() - 90 * 60 * 1000);
+            for (let i = 0; i < 10; i++) {
+                await db.insertInto('logs').values({
+                    project_id: project.id,
+                    service: 'test',
+                    level: 'info',
+                    message: `Prev hour log ${i}`,
+                    time: prevHour,
+                }).execute();
+            }
+
+            // Create logs now (in current hour)
+            for (let i = 0; i < 20; i++) {
+                await createTestLog({ projectId: project.id, level: 'info' });
+            }
+
+            const stats = await dashboardService.getStats(organization.id);
+
+            // Throughput should have increased (20 vs 10)
+            expect(stats.avgThroughput.trend).toBeGreaterThan(0);
+        });
+    });
 });
