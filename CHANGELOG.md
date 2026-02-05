@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Log Retention on Compressed Chunks**: Fixed retention cleanup not deleting logs from TimescaleDB compressed chunks
+  - Retention service now automatically decompresses chunks before deleting old logs
+  - Identifies only chunks containing data for the specific organization (not all chunks)
+  - Compressed chunks are re-compressed automatically by TimescaleDB's compression policy
+  - Fixes issue where per-org retention settings were ignored for data older than `compress_after` interval
+
 - **Fluent Bit Kubernetes Metadata**: Fixed service showing as "unknown" when using Fluent Bit DaemonSet in Kubernetes (#118)
   - Service name now correctly extracted from nested `kubernetes.container_name`
   - Falls back to `kubernetes.labels.app` or `kubernetes.labels['app.kubernetes.io/name']`

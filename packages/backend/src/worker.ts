@@ -398,7 +398,7 @@ async function runRetentionCleanup() {
     const summary = await retentionService.executeRetentionForAllOrganizations();
     const duration = Date.now() - startTime;
 
-    console.log(`[Worker] Retention cleanup completed: ${summary.totalLogsDeleted} logs deleted from ${summary.successfulOrganizations}/${summary.totalOrganizations} orgs in ${duration}ms`);
+    console.log(`[Worker] Retention cleanup completed: ${summary.totalLogsDeleted} logs deleted, ${summary.totalChunksDecompressed} chunks decompressed, from ${summary.successfulOrganizations}/${summary.totalOrganizations} orgs in ${duration}ms`);
 
     if (logger) {
       logger.info('worker-retention-completed', 'Retention cleanup completed', {
@@ -406,6 +406,7 @@ async function runRetentionCleanup() {
         successfulOrganizations: summary.successfulOrganizations,
         failedOrganizations: summary.failedOrganizations,
         totalLogsDeleted: summary.totalLogsDeleted,
+        totalChunksDecompressed: summary.totalChunksDecompressed,
         duration_ms: duration,
       });
     }
