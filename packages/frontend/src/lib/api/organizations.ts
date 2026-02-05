@@ -2,6 +2,8 @@ import type { Organization, OrganizationWithRole, OrganizationMemberWithUser, Or
 import { getApiBaseUrl } from '$lib/config';
 import { getAuthToken } from '$lib/utils/auth';
 
+export type { OrganizationMemberWithUser } from '@logtide/shared';
+
 export interface CreateOrganizationInput {
   name: string;
   description?: string;

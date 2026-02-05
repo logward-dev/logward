@@ -80,6 +80,27 @@ export interface PerformanceStats {
     };
 }
 
+// TimescaleDB compression statistics per hypertable
+export interface CompressionStats {
+    hypertable: string;
+    totalChunks: number;
+    compressedChunks: number;
+    uncompressedSizeBytes: number;
+    compressedSizeBytes: number;
+    compressionRatio: number; // e.g., 10.5 means 10.5:1 compression
+    spaceSavedBytes: number;
+    spaceSavedPretty: string;
+}
+
+// Continuous aggregate health
+export interface AggregateStats {
+    viewName: string;
+    hypertableName: string;
+    lastRefresh: Date | null;
+    refreshInterval: string;
+    totalRows: number;
+}
+
 // Alert system statistics
 export interface AlertsStats {
     rules: {
@@ -148,6 +169,9 @@ export interface HealthStats {
 export class AdminService {
     /**
      * Get system-wide statistics
+     *
+     * PERFORMANCE: Uses conditional aggregation to get all stats in 3 queries
+     * instead of 13 separate queries.
      */
     async getSystemStats(): Promise<SystemStats> {
         const now = new Date();
@@ -156,110 +180,64 @@ export class AdminService {
         const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-        // Total users
-        const totalUsers = await db
+        // PERFORMANCE: Single query for all user stats using conditional aggregation
+        const userStats = await db
             .selectFrom('users')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
+            .select([
+                sql<number>`COUNT(*)::int`.as('total'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})::int`.as('today'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})::int`.as('week'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${monthAgo})::int`.as('month'),
+                sql<number>`COUNT(*) FILTER (WHERE last_login >= ${thirtyDaysAgo})::int`.as('active'),
+            ])
             .executeTakeFirstOrThrow();
 
-        // Users created today/week/month
-        const usersToday = await db
-            .selectFrom('users')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', today)
-            .executeTakeFirstOrThrow();
-
-        const usersWeek = await db
-            .selectFrom('users')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', weekAgo)
-            .executeTakeFirstOrThrow();
-
-        const usersMonth = await db
-            .selectFrom('users')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', monthAgo)
-            .executeTakeFirstOrThrow();
-
-        // Active users (logged in last 30 days)
-        const activeUsers = await db
-            .selectFrom('users')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('last_login', '>=', thirtyDaysAgo)
-            .executeTakeFirstOrThrow();
-
-        // Organizations
-        const totalOrgs = await db
+        // PERFORMANCE: Single query for all organization stats
+        const orgStats = await db
             .selectFrom('organizations')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
+            .select([
+                sql<number>`COUNT(*)::int`.as('total'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})::int`.as('today'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})::int`.as('week'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${monthAgo})::int`.as('month'),
+            ])
             .executeTakeFirstOrThrow();
 
-        const orgsToday = await db
-            .selectFrom('organizations')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', today)
-            .executeTakeFirstOrThrow();
-
-        const orgsWeek = await db
-            .selectFrom('organizations')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', weekAgo)
-            .executeTakeFirstOrThrow();
-
-        const orgsMonth = await db
-            .selectFrom('organizations')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', monthAgo)
-            .executeTakeFirstOrThrow();
-
-        // Projects
-        const totalProjects = await db
+        // PERFORMANCE: Single query for all project stats
+        const projectStats = await db
             .selectFrom('projects')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .executeTakeFirstOrThrow();
-
-        const projectsToday = await db
-            .selectFrom('projects')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', today)
-            .executeTakeFirstOrThrow();
-
-        const projectsWeek = await db
-            .selectFrom('projects')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', weekAgo)
-            .executeTakeFirstOrThrow();
-
-        const projectsMonth = await db
-            .selectFrom('projects')
-            .select(sql<number>`COUNT(*)::int`.as('count'))
-            .where('created_at', '>=', monthAgo)
+            .select([
+                sql<number>`COUNT(*)::int`.as('total'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})::int`.as('today'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})::int`.as('week'),
+                sql<number>`COUNT(*) FILTER (WHERE created_at >= ${monthAgo})::int`.as('month'),
+            ])
             .executeTakeFirstOrThrow();
 
         return {
             users: {
-                total: totalUsers.count,
+                total: userStats.total,
                 growth: {
-                    today: usersToday.count,
-                    week: usersWeek.count,
-                    month: usersMonth.count,
+                    today: userStats.today,
+                    week: userStats.week,
+                    month: userStats.month,
                 },
-                active: activeUsers.count,
+                active: userStats.active,
             },
             organizations: {
-                total: totalOrgs.count,
+                total: orgStats.total,
                 growth: {
-                    today: orgsToday.count,
-                    week: orgsWeek.count,
-                    month: orgsMonth.count,
+                    today: orgStats.today,
+                    week: orgStats.week,
+                    month: orgStats.month,
                 },
             },
             projects: {
-                total: totalProjects.count,
+                total: projectStats.total,
                 growth: {
-                    today: projectsToday.count,
-                    week: projectsWeek.count,
-                    month: projectsMonth.count,
+                    today: projectStats.today,
+                    week: projectStats.week,
+                    month: projectStats.month,
                 },
             },
         };
@@ -494,28 +472,173 @@ export class AdminService {
     private async getCompressionRatio(): Promise<number> {
         try {
             const compressionStats = await db.executeQuery<{
-                uncompressed_bytes: number;
-                compressed_bytes: number;
+                uncompressed_bytes: string;
+                compressed_bytes: string;
             }>(
                 sql`
                     SELECT
-                        SUM(before_compression_total_bytes)::bigint AS uncompressed_bytes,
-                        SUM(after_compression_total_bytes)::bigint AS compressed_bytes
-                    FROM timescaledb_information.chunk_compression_stats
-                    WHERE hypertable_name = 'logs'
+                        before_compression_total_bytes::bigint AS uncompressed_bytes,
+                        after_compression_total_bytes::bigint AS compressed_bytes
+                    FROM hypertable_compression_stats('logs')
                 `.compile(db)
             );
 
             const row = compressionStats.rows[0];
-            if (row && row.uncompressed_bytes && row.compressed_bytes && row.uncompressed_bytes > 0) {
-                // Ratio = uncompressed / compressed (e.g., 10x means 10:1 compression)
-                return parseFloat((row.uncompressed_bytes / row.compressed_bytes).toFixed(2));
+            if (row && row.uncompressed_bytes && row.compressed_bytes) {
+                const uncompressed = Number(row.uncompressed_bytes);
+                const compressed = Number(row.compressed_bytes);
+                if (uncompressed > 0 && compressed > 0) {
+                    // Ratio = uncompressed / compressed (e.g., 10x means 10:1 compression)
+                    return parseFloat((uncompressed / compressed).toFixed(2));
+                }
             }
 
             return 0; // No compression stats available yet
         } catch (error) {
             console.error('[AdminService] Error fetching compression ratio:', error);
             return 0;
+        }
+    }
+
+    /**
+     * Get detailed compression statistics for all TimescaleDB hypertables
+     *
+     * Returns per-hypertable compression metrics including:
+     * - Number of compressed vs uncompressed chunks
+     * - Compression ratio
+     * - Space saved
+     */
+    async getCompressionStats(): Promise<CompressionStats[]> {
+        try {
+            // Get all hypertables and their compression stats using the function
+            const stats = await db.executeQuery<{
+                hypertable: string;
+                total_chunks: number;
+                compressed_chunks: number;
+                uncompressed_bytes: string;
+                compressed_bytes: string;
+                space_saved: string;
+            }>(
+                sql`
+                    WITH hypertables AS (
+                        SELECT hypertable_name FROM timescaledb_information.hypertables
+                    ),
+                    compression_data AS (
+                        SELECT
+                            h.hypertable_name AS hypertable,
+                            COALESCE(c.total_chunks, 0)::int AS total_chunks,
+                            COALESCE(c.number_compressed_chunks, 0)::int AS compressed_chunks,
+                            COALESCE(c.before_compression_total_bytes, 0)::bigint AS uncompressed_bytes,
+                            COALESCE(c.after_compression_total_bytes, 0)::bigint AS compressed_bytes,
+                            pg_size_pretty(COALESCE(c.before_compression_total_bytes - c.after_compression_total_bytes, 0)) AS space_saved
+                        FROM hypertables h
+                        LEFT JOIN LATERAL hypertable_compression_stats(h.hypertable_name::regclass) c ON true
+                    )
+                    SELECT * FROM compression_data
+                    WHERE total_chunks > 0
+                    ORDER BY uncompressed_bytes DESC
+                `.compile(db)
+            );
+
+            return stats.rows.map((row) => {
+                const uncompressed = BigInt(row.uncompressed_bytes || '0');
+                const compressed = BigInt(row.compressed_bytes || '0');
+                const ratio = compressed > 0n ? Number(uncompressed) / Number(compressed) : 0;
+
+                return {
+                    hypertable: row.hypertable,
+                    totalChunks: row.total_chunks,
+                    compressedChunks: row.compressed_chunks,
+                    uncompressedSizeBytes: Number(uncompressed),
+                    compressedSizeBytes: Number(compressed),
+                    compressionRatio: parseFloat(ratio.toFixed(2)),
+                    spaceSavedBytes: Number(uncompressed - compressed),
+                    spaceSavedPretty: row.space_saved,
+                };
+            });
+        } catch (error) {
+            console.error('[AdminService] Error fetching compression stats:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get continuous aggregate health and refresh status
+     *
+     * Returns information about all continuous aggregates including:
+     * - Last refresh time
+     * - Refresh policy interval
+     * - Row counts
+     */
+    async getAggregateStats(): Promise<AggregateStats[]> {
+        try {
+            // Get continuous aggregate info
+            const aggregates = await db.executeQuery<{
+                view_name: string;
+                materialization_hypertable_name: string;
+            }>(
+                sql`
+                    SELECT
+                        view_name,
+                        materialization_hypertable_name
+                    FROM timescaledb_information.continuous_aggregates
+                    ORDER BY view_name
+                `.compile(db)
+            );
+
+            const results: AggregateStats[] = [];
+
+            for (const agg of aggregates.rows) {
+                // Get refresh policy for this aggregate
+                const policyResult = await db.executeQuery<{
+                    schedule_interval: string;
+                }>(
+                    sql`
+                        SELECT
+                            config->>'schedule_interval' AS schedule_interval
+                        FROM timescaledb_information.jobs
+                        WHERE hypertable_name = ${agg.view_name}
+                        AND proc_name = 'policy_refresh_continuous_aggregate'
+                        LIMIT 1
+                    `.compile(db)
+                );
+
+                // Get approximate row count from materialization hypertable
+                const countResult = await db.executeQuery<{ count: number }>(
+                    sql`
+                        SELECT reltuples::bigint AS count
+                        FROM pg_class
+                        WHERE relname = ${agg.materialization_hypertable_name}
+                    `.compile(db)
+                );
+
+                // Get last refresh time from job stats
+                const lastRefreshResult = await db.executeQuery<{
+                    last_run_started_at: Date | null;
+                }>(
+                    sql`
+                        SELECT last_run_started_at
+                        FROM timescaledb_information.job_stats js
+                        JOIN timescaledb_information.jobs j ON j.job_id = js.job_id
+                        WHERE j.hypertable_name = ${agg.view_name}
+                        AND j.proc_name = 'policy_refresh_continuous_aggregate'
+                        LIMIT 1
+                    `.compile(db)
+                );
+
+                results.push({
+                    viewName: agg.view_name,
+                    hypertableName: agg.materialization_hypertable_name,
+                    lastRefresh: lastRefreshResult.rows[0]?.last_run_started_at || null,
+                    refreshInterval: policyResult.rows[0]?.schedule_interval || 'unknown',
+                    totalRows: Number(countResult.rows[0]?.count || 0),
+                });
+            }
+
+            return results;
+        } catch (error) {
+            console.error('[AdminService] Error fetching aggregate stats:', error);
+            return [];
         }
     }
 
@@ -994,28 +1117,44 @@ export class AdminService {
 
         const total = Number(countResult?.count || 0);
 
-        // Get member counts for each organization
-        const orgsWithCounts = await Promise.all(
-            organizations.map(async (org) => {
-                const memberCount = await db
-                    .selectFrom('organization_members')
-                    .select(({ fn }) => [fn.count<number>('user_id').as('count')])
-                    .where('organization_id', '=', org.id)
-                    .executeTakeFirst();
+        if (organizations.length === 0) {
+            return {
+                organizations: [],
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            };
+        }
 
-                const projectCount = await db
-                    .selectFrom('projects')
-                    .select(({ fn }) => [fn.count<number>('id').as('count')])
-                    .where('organization_id', '=', org.id)
-                    .executeTakeFirst();
+        // PERFORMANCE: Batch queries instead of N+1 (100+ queries → 2 queries)
+        const orgIds = organizations.map((o) => o.id);
 
-                return {
-                    ...org,
-                    memberCount: Number(memberCount?.count || 0),
-                    projectCount: Number(projectCount?.count || 0),
-                };
-            })
-        );
+        const [memberCounts, projectCounts] = await Promise.all([
+            db
+                .selectFrom('organization_members')
+                .select(['organization_id', sql<number>`COUNT(*)::int`.as('count')])
+                .where('organization_id', 'in', orgIds)
+                .groupBy('organization_id')
+                .execute(),
+            db
+                .selectFrom('projects')
+                .select(['organization_id', sql<number>`COUNT(*)::int`.as('count')])
+                .where('organization_id', 'in', orgIds)
+                .groupBy('organization_id')
+                .execute(),
+        ]);
+
+        // Build lookup maps
+        const membersMap = new Map(memberCounts.map((r) => [r.organization_id, r.count]));
+        const projectsMap = new Map(projectCounts.map((r) => [r.organization_id, r.count]));
+
+        // Merge counts with organizations
+        const orgsWithCounts = organizations.map((org) => ({
+            ...org,
+            memberCount: membersMap.get(org.id) || 0,
+            projectCount: projectsMap.get(org.id) || 0,
+        }));
 
         return {
             organizations: orgsWithCounts,
@@ -1124,36 +1263,57 @@ export class AdminService {
 
         const total = Number(countResult?.count || 0);
 
-        // Get counts for each project
-        const projectsWithCounts = await Promise.all(
-            projects.map(async (project) => {
-                const logsCount = await db
-                    .selectFrom('logs')
-                    .select(({ fn }) => [fn.count<number>('id').as('count')])
-                    .where('project_id', '=', project.id)
-                    .executeTakeFirst();
+        if (projects.length === 0) {
+            return {
+                projects: [],
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            };
+        }
 
-                const apiKeysCount = await db
-                    .selectFrom('api_keys')
-                    .select(({ fn }) => [fn.count<number>('id').as('count')])
-                    .where('project_id', '=', project.id)
-                    .where('revoked', '=', false)
-                    .executeTakeFirst();
+        // PERFORMANCE: Batch queries instead of N+1
+        // Get all project IDs for batch lookup
+        const projectIds = projects.map((p) => p.id);
 
-                const alertRulesCount = await db
-                    .selectFrom('alert_rules')
-                    .select(({ fn }) => [fn.count<number>('id').as('count')])
-                    .where('project_id', '=', project.id)
-                    .executeTakeFirst();
+        // PERFORMANCE: Single query for logs counts (last 30 days only to avoid full scan)
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const [logsCounts, apiKeysCounts, alertRulesCounts] = await Promise.all([
+            db
+                .selectFrom('logs')
+                .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
+                .where('project_id', 'in', projectIds)
+                .where('time', '>=', thirtyDaysAgo)
+                .groupBy('project_id')
+                .execute(),
+            db
+                .selectFrom('api_keys')
+                .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
+                .where('project_id', 'in', projectIds)
+                .where('revoked', '=', false)
+                .groupBy('project_id')
+                .execute(),
+            db
+                .selectFrom('alert_rules')
+                .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
+                .where('project_id', 'in', projectIds)
+                .groupBy('project_id')
+                .execute(),
+        ]);
 
-                return {
-                    ...project,
-                    logsCount: Number(logsCount?.count || 0),
-                    apiKeysCount: Number(apiKeysCount?.count || 0),
-                    alertRulesCount: Number(alertRulesCount?.count || 0),
-                };
-            })
-        );
+        // Build lookup maps
+        const logsMap = new Map(logsCounts.map((r) => [r.project_id, r.count]));
+        const apiKeysMap = new Map(apiKeysCounts.map((r) => [r.project_id, r.count]));
+        const alertRulesMap = new Map(alertRulesCounts.map((r) => [r.project_id, r.count]));
+
+        // Merge counts with projects
+        const projectsWithCounts = projects.map((project) => ({
+            ...project,
+            logsCount: logsMap.get(project.id) || 0,
+            apiKeysCount: apiKeysMap.get(project.id) || 0,
+            alertRulesCount: alertRulesMap.get(project.id) || 0,
+        }));
 
         return {
             projects: projectsWithCounts,

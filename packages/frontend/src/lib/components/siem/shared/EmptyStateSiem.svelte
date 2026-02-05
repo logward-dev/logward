@@ -5,7 +5,7 @@
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import FileSearch from '@lucide/svelte/icons/file-search';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
-	import type { ComponentType } from 'svelte';
+	import type { Component } from 'svelte';
 
 	interface Props {
 		type: 'incidents' | 'detections' | 'comments' | 'history';
@@ -19,7 +19,7 @@
 
 	const configs: Record<
 		string,
-		{ icon: ComponentType; defaultTitle: string; defaultDescription: string }
+		{ icon: Component<{ class?: string }>; defaultTitle: string; defaultDescription: string }
 	> = {
 		incidents: {
 			icon: Shield,

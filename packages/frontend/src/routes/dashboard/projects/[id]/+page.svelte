@@ -472,16 +472,13 @@
 						/>
 						<Select.Root
 							type="single"
-							value={{ value: searchMode, label: searchMode === "fulltext" ? "Full-text" : "Substring" }}
+							value={searchMode}
 							onValueChange={(v) => {
-								if (v) {
-									const newValue = typeof v === 'string' ? v : v.value;
-									if (newValue === "fulltext" || newValue === "substring") {
-										searchMode = newValue;
-										sessionStorage.setItem("logtide_project_search_mode", searchMode);
-										if (searchQuery) {
-											debouncedSearch();
-										}
+								if (v && (v === "fulltext" || v === "substring")) {
+									searchMode = v;
+									sessionStorage.setItem("logtide_project_search_mode", searchMode);
+									if (searchQuery) {
+										debouncedSearch();
 									}
 								}
 							}}

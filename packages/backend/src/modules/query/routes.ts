@@ -46,6 +46,12 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
               }
             ]
           },
+          hostname: {
+            anyOf: [
+              { type: 'string' },
+              { type: 'array', items: { type: 'string' } }
+            ]
+          },
           traceId: { type: 'string' },
           from: { type: 'string', format: 'date-time' },
           to: { type: 'string', format: 'date-time' },
@@ -58,9 +64,10 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     handler: async (request: any, reply) => {
-      const { service, level, traceId, from, to, q, searchMode, limit, offset, cursor, projectId: queryProjectId } = request.query as {
+      const { service, level, hostname, traceId, from, to, q, searchMode, limit, offset, cursor, projectId: queryProjectId } = request.query as {
         service?: string | string[];
         level?: LogLevel | LogLevel[];
+        hostname?: string | string[];
         traceId?: string;
         from?: string;
         to?: string;
@@ -110,6 +117,7 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
         projectId,
         service,
         level,
+        hostname,
         traceId,
         from: from ? new Date(from) : undefined,
         to: to ? new Date(to) : undefined,
@@ -461,6 +469,85 @@ const queryRoutes: FastifyPluginAsync = async (fastify) => {
       );
 
       return { services };
+    },
+  });
+
+  // GET /api/v1/logs/hostnames - Get all distinct hostnames
+  fastify.get('/api/v1/logs/hostnames', {
+    schema: {
+      description: 'Get all distinct hostnames for filter dropdowns',
+      tags: ['query'],
+      querystring: {
+        type: 'object',
+        properties: {
+          projectId: {
+            anyOf: [
+              { type: 'string' },
+              { type: 'array', items: { type: 'string' } }
+            ]
+          },
+          from: { type: 'string', format: 'date-time' },
+          to: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+    handler: async (request: any, reply) => {
+      const { from, to, projectId: queryProjectId } = request.query as {
+        projectId?: string | string[];
+        from?: string;
+        to?: string;
+      };
+
+      // Get projectId from query params (for session auth) or from auth plugin (for API key auth)
+      const projectId = queryProjectId || request.projectId;
+
+      if (!projectId) {
+        return reply.code(400).send({
+          error: 'Project context missing - provide projectId query parameter',
+        });
+      }
+
+      if (request.user?.id) {
+        const projectIds = Array.isArray(projectId) ? projectId : [projectId];
+        for (const pid of projectIds) {
+          const hasAccess = await verifyProjectAccess(pid, request.user.id);
+          if (!hasAccess) {
+            return reply.code(403).send({
+              error: `Access denied - you do not have access to project ${pid}`,
+            });
+          }
+        }
+      }
+
+      // Validate date parameters
+      let fromDate: Date | undefined;
+      let toDate: Date | undefined;
+
+      if (from) {
+        fromDate = new Date(from);
+        if (isNaN(fromDate.getTime())) {
+          return reply.code(400).send({
+            error: 'Invalid date format for "from" parameter',
+          });
+        }
+      }
+
+      if (to) {
+        toDate = new Date(to);
+        if (isNaN(toDate.getTime())) {
+          return reply.code(400).send({
+            error: 'Invalid date format for "to" parameter',
+          });
+        }
+      }
+
+      const hostnames = await queryService.getDistinctHostnames(
+        projectId,
+        fromDate,
+        toDate
+      );
+
+      return { hostnames };
     },
   });
 

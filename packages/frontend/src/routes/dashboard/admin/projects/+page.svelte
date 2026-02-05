@@ -81,8 +81,9 @@
         loadProjects();
     }
 
-    function formatDate(date: string) {
-        return new Date(date).toLocaleDateString("en-US", {
+    function formatDate(dateStr: string | Date) {
+        const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+        return date.toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
             day: "numeric",

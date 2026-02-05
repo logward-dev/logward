@@ -505,4 +505,188 @@ describe('AdminService', () => {
             ).rejects.toThrow('User not found');
         });
     });
+
+    describe('getCompressionStats', () => {
+        it('should return compression statistics array', async () => {
+            const stats = await adminService.getCompressionStats();
+
+            expect(Array.isArray(stats)).toBe(true);
+            // Each item should have the expected structure
+            for (const stat of stats) {
+                expect(stat).toHaveProperty('hypertable');
+                expect(stat).toHaveProperty('totalChunks');
+                expect(stat).toHaveProperty('compressedChunks');
+                expect(stat).toHaveProperty('uncompressedSizeBytes');
+                expect(stat).toHaveProperty('compressedSizeBytes');
+                expect(stat).toHaveProperty('compressionRatio');
+                expect(stat).toHaveProperty('spaceSavedBytes');
+                expect(stat).toHaveProperty('spaceSavedPretty');
+            }
+        });
+
+        it('should return empty array when no hypertables have compression', async () => {
+            // In test environment, there may be no compressed chunks yet
+            const stats = await adminService.getCompressionStats();
+
+            // Should not throw, should return array (possibly empty)
+            expect(Array.isArray(stats)).toBe(true);
+        });
+    });
+
+    describe('getAggregateStats', () => {
+        it('should return aggregate statistics array', async () => {
+            const stats = await adminService.getAggregateStats();
+
+            expect(Array.isArray(stats)).toBe(true);
+            // Each item should have the expected structure
+            for (const stat of stats) {
+                expect(stat).toHaveProperty('viewName');
+                expect(stat).toHaveProperty('hypertableName');
+                expect(stat).toHaveProperty('lastRefresh');
+                expect(stat).toHaveProperty('refreshInterval');
+                expect(stat).toHaveProperty('totalRows');
+            }
+        });
+
+        it('should return empty array when no continuous aggregates exist', async () => {
+            // In test environment, aggregates may or may not exist
+            const stats = await adminService.getAggregateStats();
+
+            // Should not throw, should return array
+            expect(Array.isArray(stats)).toBe(true);
+        });
+    });
+
+    describe('getOrganizations with member/project counts', () => {
+        it('should return organizations with memberCount and projectCount', async () => {
+            const { organization, user } = await createTestContext();
+
+            const result = await adminService.getOrganizations(1, 10);
+
+            expect(result.organizations.length).toBeGreaterThan(0);
+            const org = result.organizations.find((o) => o.id === organization.id);
+            expect(org).toBeDefined();
+            expect(org).toHaveProperty('memberCount');
+            expect(org).toHaveProperty('projectCount');
+            expect(org?.memberCount).toBeGreaterThanOrEqual(1); // At least the owner
+            expect(org?.projectCount).toBeGreaterThanOrEqual(1); // At least one project from createTestContext
+        });
+    });
+
+    describe('getProjects with counts', () => {
+        it('should return projects with logsCount, apiKeysCount, alertRulesCount', async () => {
+            const { project } = await createTestContext();
+            await createTestLog({ projectId: project.id });
+
+            const result = await adminService.getProjects(1, 10);
+
+            expect(result.projects.length).toBeGreaterThan(0);
+            const proj = result.projects.find((p) => p.id === project.id);
+            expect(proj).toBeDefined();
+            expect(proj).toHaveProperty('logsCount');
+            expect(proj).toHaveProperty('apiKeysCount');
+            expect(proj).toHaveProperty('alertRulesCount');
+        });
+    });
+
+    describe('getHealthStats edge cases', () => {
+        it('should handle degraded database latency', async () => {
+            // This test ensures the latency thresholds are applied correctly
+            const stats = await adminService.getHealthStats();
+
+            // Database status should be one of the valid values
+            expect(['healthy', 'degraded', 'down']).toContain(stats.database.status);
+            expect(['healthy', 'degraded', 'down', 'not_configured']).toContain(stats.redis.status);
+            expect(['healthy', 'degraded', 'down']).toContain(stats.overall);
+        });
+
+        it('should include all required fields', async () => {
+            const stats = await adminService.getHealthStats();
+
+            expect(stats.database).toHaveProperty('status');
+            expect(stats.database).toHaveProperty('latency');
+            expect(stats.database).toHaveProperty('connections');
+            expect(stats.redis).toHaveProperty('status');
+            expect(stats.redis).toHaveProperty('latency');
+            expect(stats.pool).toHaveProperty('totalConnections');
+            expect(stats.pool).toHaveProperty('idleConnections');
+            expect(stats.pool).toHaveProperty('waitingRequests');
+        });
+    });
+
+    describe('getSystemStats with growth metrics', () => {
+        it('should return growth metrics for users, orgs, and projects', async () => {
+            const stats = await adminService.getSystemStats();
+
+            expect(stats.users.growth).toHaveProperty('today');
+            expect(stats.users.growth).toHaveProperty('week');
+            expect(stats.users.growth).toHaveProperty('month');
+            expect(stats.organizations.growth).toHaveProperty('today');
+            expect(stats.organizations.growth).toHaveProperty('week');
+            expect(stats.organizations.growth).toHaveProperty('month');
+            expect(stats.projects.growth).toHaveProperty('today');
+            expect(stats.projects.growth).toHaveProperty('week');
+            expect(stats.projects.growth).toHaveProperty('month');
+        });
+
+        it('should count active users', async () => {
+            // Create a user with recent login
+            const user = await createTestUser();
+            await db.updateTable('users').set({ last_login: new Date() }).where('id', '=', user.id).execute();
+
+            const stats = await adminService.getSystemStats();
+
+            expect(stats.users).toHaveProperty('active');
+            expect(stats.users.active).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    describe('getLogsStats with top organizations and projects', () => {
+        it('should return top organizations by log count', async () => {
+            const { project } = await createTestContext();
+            await createTestLog({ projectId: project.id });
+
+            const stats = await adminService.getLogsStats();
+
+            expect(Array.isArray(stats.topOrganizations)).toBe(true);
+            expect(Array.isArray(stats.topProjects)).toBe(true);
+        });
+
+        it('should return growth metrics', async () => {
+            const stats = await adminService.getLogsStats();
+
+            expect(stats.growth).toHaveProperty('logsPerHour');
+            expect(stats.growth).toHaveProperty('logsPerDay');
+        });
+    });
+
+    describe('getPerformanceStats', () => {
+        it('should return ingestion throughput and latency', async () => {
+            const stats = await adminService.getPerformanceStats();
+
+            expect(stats.ingestion).toHaveProperty('throughput');
+            expect(stats.ingestion).toHaveProperty('avgLatency');
+            expect(typeof stats.ingestion.throughput).toBe('number');
+            expect(typeof stats.ingestion.avgLatency).toBe('number');
+        });
+
+        it('should return storage stats with compression ratio', async () => {
+            const stats = await adminService.getPerformanceStats();
+
+            expect(stats.storage).toHaveProperty('logsSize');
+            expect(stats.storage).toHaveProperty('compressionRatio');
+            expect(typeof stats.storage.compressionRatio).toBe('number');
+        });
+    });
+
+    describe('getAlertsStats with notifications', () => {
+        it('should return notification success/failed counts', async () => {
+            const stats = await adminService.getAlertsStats();
+
+            expect(stats.notifications).toHaveProperty('success');
+            expect(stats.notifications).toHaveProperty('failed');
+            expect(typeof stats.notifications.success).toBe('number');
+            expect(typeof stats.notifications.failed).toBe('number');
+        });
+    });
 });

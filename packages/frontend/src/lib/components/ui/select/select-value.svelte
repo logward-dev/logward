@@ -1,18 +1,32 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from "bits-ui";
 	import { cn } from "$lib/utils.js";
+	import type { Snippet } from "svelte";
+	import type { HTMLAttributes } from "svelte/elements";
+
+	interface Props extends HTMLAttributes<HTMLSpanElement> {
+		ref?: HTMLSpanElement | null;
+		class?: string;
+		placeholder?: string;
+		children?: Snippet;
+	}
 
 	let {
 		ref = $bindable(null),
 		class: className,
 		placeholder,
+		children,
 		...restProps
-	}: SelectPrimitive.ValueProps & { placeholder?: string } = $props();
+	}: Props = $props();
 </script>
 
-<SelectPrimitive.Value
-	bind:ref
+<span
+	bind:this={ref}
 	class={cn("line-clamp-1", className)}
-	{placeholder}
 	{...restProps}
-/>
+>
+	{#if children}
+		{@render children()}
+	{:else if placeholder}
+		<span class="text-muted-foreground">{placeholder}</span>
+	{/if}
+</span>

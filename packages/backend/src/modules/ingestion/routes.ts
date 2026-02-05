@@ -48,6 +48,22 @@ const priorityToLevel = (priority: number | string): string => {
   return 'debug';
 };
 
+// Extract hostname from various log formats
+const extractHostname = (data: any): string | undefined => {
+  // Direct hostname field (most explicit)
+  if (data.hostname) return data.hostname;
+  // Journald format
+  if (data._HOSTNAME) return data._HOSTNAME;
+  // Syslog/Fluent Bit format
+  if (data.host) return data.host;
+  // Kubernetes metadata
+  if (data.kubernetes?.host) return data.kubernetes.host;
+  // Nested metadata
+  if (data.metadata?.hostname) return data.metadata.hostname;
+  if (data.metadata?.host) return data.metadata.host;
+  return undefined;
+};
+
 // Extract journald metadata fields
 const extractJournaldMetadata = (data: any): Record<string, unknown> => {
   const metadata: Record<string, unknown> = {};
@@ -126,6 +142,7 @@ const normalizeLogData = (logData: any) => {
     const time = journaldTime
       || logData.time
       || (logData.date ? new Date(logData.date * 1000).toISOString() : new Date().toISOString());
+    const hostname = extractHostname(logData);
 
     return {
       time,
@@ -135,6 +152,7 @@ const normalizeLogData = (logData: any) => {
       metadata: {
         ...logData.metadata,
         ...journaldMetadata,
+        ...(hostname && { hostname }),
         container_id: logData.container_id,
         container_short_id: logData.container_short_id,
         source: 'journald',
@@ -143,15 +161,37 @@ const normalizeLogData = (logData: any) => {
   }
 
   // Standard Fluent Bit format
+  // Extract service from various sources (top-level or nested kubernetes metadata)
+  const k8s = logData.kubernetes || {};
+  const service = logData.service
+    || logData.container_name
+    || k8s.container_name
+    || k8s.labels?.app
+    || k8s.labels?.['app.kubernetes.io/name']
+    || 'unknown';
+  const hostname = extractHostname(logData);
+
   return {
     time: logData.time || (logData.date ? new Date(logData.date * 1000).toISOString() : new Date().toISOString()),
-    service: logData.service || logData.container_name || 'unknown',
+    service,
     level: normalizeLevel(logData.level),
     message: logData.message || logData.log || '',
     metadata: {
       ...logData.metadata,
-      container_id: logData.container_id,
+      ...(hostname && { hostname }),
+      container_id: logData.container_id || k8s.container_id,
       container_short_id: logData.container_short_id,
+      // Include k8s metadata if present
+      ...(Object.keys(k8s).length > 0 && {
+        kubernetes: {
+          pod_name: k8s.pod_name,
+          namespace_name: k8s.namespace_name,
+          container_name: k8s.container_name,
+          pod_id: k8s.pod_id,
+          host: k8s.host,
+          labels: k8s.labels,
+        },
+      }),
     },
   };
 };

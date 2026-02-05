@@ -5,6 +5,7 @@ export type {
   ExceptionLanguage,
   ErrorGroupStatus,
   StackFrameRecord,
+  StackFrameRecord as StackFrame,
   ExceptionRecord,
   ErrorGroup,
   ExceptionWithFrames,

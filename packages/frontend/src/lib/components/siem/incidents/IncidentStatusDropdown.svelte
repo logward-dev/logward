@@ -9,7 +9,7 @@
 	import XCircle from '@lucide/svelte/icons/x-circle';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Loader2 from '@lucide/svelte/icons/loader-2';
-	import type { ComponentType } from 'svelte';
+	import type { Component } from 'svelte';
 
 	interface Props {
 		incident: Incident;
@@ -22,7 +22,7 @@
 	interface StatusOption {
 		value: IncidentStatus;
 		label: string;
-		icon: ComponentType;
+		icon: Component<{ class?: string }>;
 		color: string;
 	}
 

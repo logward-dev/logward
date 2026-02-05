@@ -565,4 +565,184 @@ describe('CorrelationService', () => {
             expect(result.get(log2.id)).toBeUndefined();
         });
     });
+
+    describe('extractIdentifiers - edge cases', () => {
+        it('should exclude specified values from extraction', () => {
+            const log = {
+                message: 'Request 123e4567-e89b-12d3-a456-426614174000 processed',
+                service: 'api',
+                level: 'info' as const,
+            };
+
+            // Exclude the UUID
+            const excludeValues = new Set(['123e4567-e89b-12d3-a456-426614174000']);
+            const matches = service.extractIdentifiers(log, excludeValues);
+
+            // The UUID should be excluded
+            const uuidMatch = matches.find(m => m.value === '123e4567-e89b-12d3-a456-426614174000');
+            expect(uuidMatch).toBeUndefined();
+        });
+
+        it('should handle arrays in metadata (skip non-object values)', () => {
+            const log = {
+                message: 'Test',
+                service: 'api',
+                level: 'info' as const,
+                metadata: {
+                    tags: ['tag1', 'tag2'], // Array - should be skipped
+                    user_id: 'usr_123',
+                },
+            };
+
+            const matches = service.extractIdentifiers(log);
+
+            // Should still extract user_id
+            const userMatch = matches.find(m => m.value === 'usr_123');
+            expect(userMatch).toBeDefined();
+        });
+
+        it('should handle deeply nested metadata', () => {
+            const log = {
+                message: 'Test',
+                service: 'api',
+                level: 'info' as const,
+                metadata: {
+                    level1: {
+                        level2: {
+                            level3: {
+                                user_id: 'usr_deep_nested',
+                            },
+                        },
+                    },
+                },
+            };
+
+            const matches = service.extractIdentifiers(log);
+
+            const deepMatch = matches.find(m => m.value === 'usr_deep_nested');
+            expect(deepMatch).toBeDefined();
+            expect(deepMatch?.sourceField).toContain('level3');
+        });
+
+        it('should handle empty string values in metadata', () => {
+            const log = {
+                message: 'Test',
+                service: 'api',
+                level: 'info' as const,
+                metadata: {
+                    user_id: '', // Empty string
+                },
+            };
+
+            const matches = service.extractIdentifiers(log);
+
+            // Empty string should not be extracted as a valid identifier
+            expect(matches.length).toBe(0);
+        });
+
+        it('should handle number values in metadata', () => {
+            const log = {
+                message: 'Test',
+                service: 'api',
+                level: 'info' as const,
+                metadata: {
+                    count: 42, // Number - should be skipped
+                    user_id: 'usr_123',
+                },
+            };
+
+            const matches = service.extractIdentifiers(log);
+
+            // Should still extract user_id but not the number
+            const userMatch = matches.find(m => m.value === 'usr_123');
+            expect(userMatch).toBeDefined();
+        });
+    });
+
+    describe('extractIdentifiersAsync - edge cases', () => {
+        it('should exclude org_id and project_id from extraction', async () => {
+            const { organization, project } = await createTestContext();
+
+            const log = {
+                message: `Request for org ${organization.id} and project ${project.id}`,
+                service: 'api',
+                level: 'info' as const,
+            };
+
+            const matches = await service.extractIdentifiersAsync(log, organization.id, project.id);
+
+            // Org and project IDs should be excluded
+            const orgMatch = matches.find(m => m.value.toLowerCase() === organization.id.toLowerCase());
+            const projMatch = matches.find(m => m.value.toLowerCase() === project.id.toLowerCase());
+            expect(orgMatch).toBeUndefined();
+            expect(projMatch).toBeUndefined();
+        });
+    });
+
+    describe('findCorrelatedLogs - edge cases', () => {
+        it('should use default reference time when not provided', async () => {
+            const { project } = await createTestContext();
+
+            const result = await service.findCorrelatedLogs({
+                projectId: project.id,
+                identifierValue: 'test-value',
+                // No referenceTime provided
+            });
+
+            // Should use current time as reference
+            expect(result.timeWindow.from).toBeInstanceOf(Date);
+            expect(result.timeWindow.to).toBeInstanceOf(Date);
+        });
+
+        it('should use default time window of 15 minutes', async () => {
+            const { project } = await createTestContext();
+
+            const referenceTime = new Date();
+            const result = await service.findCorrelatedLogs({
+                projectId: project.id,
+                identifierValue: 'test-value',
+                referenceTime,
+                // No timeWindowMinutes provided
+            });
+
+            // Default window is 15 minutes
+            const expectedFrom = new Date(referenceTime.getTime() - 15 * 60 * 1000);
+            const expectedTo = new Date(referenceTime.getTime() + 15 * 60 * 1000);
+            expect(result.timeWindow.from.getTime()).toBe(expectedFrom.getTime());
+            expect(result.timeWindow.to.getTime()).toBe(expectedTo.getTime());
+        });
+
+        it('should use default limit of 100', async () => {
+            const { organization, project } = await createTestContext();
+
+            // Create more than 100 logs (we'll create fewer for test performance)
+            const logs = [];
+            for (let i = 0; i < 5; i++) {
+                const log = await createTestLog({ projectId: project.id });
+                logs.push(log);
+            }
+
+            // Store identifiers
+            await db.insertInto('log_identifiers').values(
+                logs.map(log => ({
+                    log_id: log.id,
+                    log_time: log.time,
+                    project_id: project.id,
+                    organization_id: organization.id,
+                    identifier_type: 'test',
+                    identifier_value: 'shared-value',
+                    source_field: 'message',
+                }))
+            ).execute();
+
+            const result = await service.findCorrelatedLogs({
+                projectId: project.id,
+                identifierValue: 'shared-value',
+                // No limit provided - should default to 100
+            });
+
+            // Should return up to limit
+            expect(result.logs.length).toBeLessThanOrEqual(100);
+        });
+    });
 });

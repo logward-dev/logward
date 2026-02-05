@@ -20,10 +20,11 @@ import { randomUUID } from 'crypto';
  */
 const websocketRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/v1/logs/ws', { websocket: true }, async (socket, req: any) => {
-    const { projectId, service, level, token } = req.query as {
+    const { projectId, service, level, hostname, token } = req.query as {
       projectId: string;
       service?: string | string[];
       level?: LogLevel | LogLevel[];
+      hostname?: string | string[];
       token?: string;
     };
 
@@ -68,6 +69,11 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
         : [service]
       : undefined;
     const levelFilter = level ? (Array.isArray(level) ? level : [level]) : undefined;
+    const hostnameFilter = hostname
+      ? Array.isArray(hostname)
+        ? hostname
+        : [hostname]
+      : undefined;
 
     // Track socket state for safe sending
     let isSocketOpen = true;
@@ -116,7 +122,7 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
             return;
           }
 
-          // Apply client-side filters (service, level)
+          // Apply client-side filters (service, level, hostname)
           const filteredLogs = logs.filter((log) => {
             // Service filter
             if (serviceFilter && !serviceFilter.includes(log.service)) {
@@ -126,6 +132,14 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
             // Level filter
             if (levelFilter && !levelFilter.includes(log.level)) {
               return false;
+            }
+
+            // Hostname filter (from metadata.hostname)
+            if (hostnameFilter) {
+              const logHostname = (log.metadata as any)?.hostname;
+              if (!logHostname || !hostnameFilter.includes(logHostname)) {
+                return false;
+              }
             }
 
             return true;

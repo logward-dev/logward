@@ -10,6 +10,7 @@ export interface LogQueryParams {
   projectId: string | string[]; // Support single or multiple projects
   service?: string | string[]; // Support single or multiple services
   level?: LogLevel | LogLevel[]; // Support single or multiple levels
+  hostname?: string | string[]; // Filter by hostname (from metadata.hostname)
   traceId?: string; // Filter by trace ID
   from?: Date;
   to?: Date;
@@ -24,12 +25,16 @@ export class QueryService {
   /**
    * Query logs with filters
    * Cached for performance - common queries are frequently repeated
+   *
+   * PERFORMANCE: Always uses a time filter (defaults to last 24h)
+   * to prevent full table scans on large datasets.
    */
   async queryLogs(params: LogQueryParams) {
     const {
       projectId,
       service,
       level,
+      hostname,
       traceId,
       from,
       to,
@@ -40,12 +45,17 @@ export class QueryService {
       cursor,
     } = params;
 
+    // PERFORMANCE: Default to last 24h if no time filter provided
+    // This prevents full table scans on datasets with millions of logs
+    const effectiveFrom = from || new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     // Generate deterministic cache key
     const cacheParams = {
       service: service || null,
       level: level || null,
+      hostname: hostname || null,
       traceId: traceId || null,
-      from: from?.toISOString() || null,
+      from: effectiveFrom.toISOString(),
       to: to?.toISOString() || null,
       q: q || null,
       searchMode: searchMode || 'fulltext',
@@ -83,14 +93,19 @@ export class QueryService {
         const [cursorTimeStr, cursorId] = decoded.split(',');
         const cursorTime = new Date(cursorTimeStr);
 
-        // WHERE (time, id) < (cursorTime, cursorId) for DESC order
-        query = query.where((eb) => eb.or([
-          eb('time', '<', cursorTime),
-          eb.and([
-            eb('time', '=', cursorTime),
-            eb('id', '<', cursorId)
-          ])
-        ]));
+        // Validate cursor components - skip if invalid
+        if (!cursorId || isNaN(cursorTime.getTime())) {
+          console.warn('Invalid cursor format', cursor);
+        } else {
+          // WHERE (time, id) < (cursorTime, cursorId) for DESC order
+          query = query.where((eb) => eb.or([
+            eb('time', '<', cursorTime),
+            eb.and([
+              eb('time', '=', cursorTime),
+              eb('id', '<', cursorId)
+            ])
+          ]));
+        }
       } catch (e) {
         console.warn('Invalid cursor format', cursor);
       }
@@ -117,13 +132,23 @@ export class QueryService {
       }
     }
 
+    // Filter by hostname (stored in metadata JSONB)
+    if (hostname) {
+      if (Array.isArray(hostname)) {
+        // Multiple hostnames - use IN clause with JSONB operator
+        query = query.where(sql`metadata->>'hostname'`, 'in', hostname);
+      } else {
+        // Single hostname
+        query = query.where(sql`metadata->>'hostname'`, '=', hostname);
+      }
+    }
+
     if (traceId) {
       query = query.where('trace_id', '=', traceId);
     }
 
-    if (from) {
-      query = query.where('time', '>=', from);
-    }
+    // PERFORMANCE: Always apply time filter (effectiveFrom has default of 24h)
+    query = query.where('time', '>=', effectiveFrom);
 
     if (to) {
       query = query.where('time', '<=', to);
@@ -394,12 +419,18 @@ export class QueryService {
   /**
    * Get top services by log count
    * Cached for performance - aggregation queries are expensive
+   *
+   * PERFORMANCE: Always uses time filter (defaults to last 7 days)
+   * to avoid full table scan on millions of logs.
    */
   async getTopServices(projectId: string, limit: number = 5, from?: Date, to?: Date) {
+    // PERFORMANCE: Default to last 7 days if no time filter provided
+    const effectiveFrom = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     // Try cache first
     const cacheKey = CacheManager.statsKey(projectId, 'top-services', {
       limit,
-      from: from?.toISOString() || null,
+      from: effectiveFrom.toISOString(),
       to: to?.toISOString() || null,
     });
     const cached = await CacheManager.get<any[]>(cacheKey);
@@ -415,13 +446,10 @@ export class QueryService {
         db.fn.count('time').as('count'),
       ])
       .where('project_id', '=', projectId)
+      .where('time', '>=', effectiveFrom)
       .groupBy('service')
       .orderBy('count', 'desc')
       .limit(limit);
-
-    if (from) {
-      query = query.where('time', '>=', from);
-    }
 
     if (to) {
       query = query.where('time', '<=', to);
@@ -438,18 +466,24 @@ export class QueryService {
   /**
    * Get all distinct services for given projects
    * Cached for performance - used for filter dropdowns
+   *
+   * PERFORMANCE: Defaults to last 30 days if no time filter provided
+   * to avoid full table scan on millions of logs.
    */
   async getDistinctServices(
     projectId: string | string[],
     from?: Date,
     to?: Date
   ): Promise<string[]> {
+    // PERFORMANCE: Default to last 30 days if no time filter provided
+    const effectiveFrom = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
     // Try cache first
     const cacheKey = CacheManager.statsKey(
       Array.isArray(projectId) ? projectId.join(',') : projectId,
       'distinct-services',
       {
-        from: from?.toISOString() || null,
+        from: effectiveFrom.toISOString(),
         to: to?.toISOString() || null,
       }
     );
@@ -465,6 +499,7 @@ export class QueryService {
       .distinct()
       .where('service', 'is not', null)
       .where('service', '!=', '')
+      .where('time', '>=', effectiveFrom)
       .orderBy('service', 'asc');
 
     // Project filter - support single or multiple projects
@@ -472,10 +507,6 @@ export class QueryService {
       query = query.where('project_id', 'in', projectId);
     } else {
       query = query.where('project_id', '=', projectId);
-    }
-
-    if (from) {
-      query = query.where('time', '>=', from);
     }
 
     if (to) {
@@ -492,14 +523,83 @@ export class QueryService {
   }
 
   /**
+   * Get all distinct hostnames from logs within a time range.
+   * Hostnames are extracted from metadata.hostname field.
+   * Cached for performance - used for filter dropdowns.
+   *
+   * PERFORMANCE: Defaults to last 30 days if no time filter provided
+   * to avoid full table scan on millions of logs.
+   */
+  async getDistinctHostnames(
+    projectId: string | string[],
+    from?: Date,
+    to?: Date
+  ): Promise<string[]> {
+    // PERFORMANCE: Default to last 30 days if no time filter provided
+    const effectiveFrom = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(
+      Array.isArray(projectId) ? projectId.join(',') : projectId,
+      'distinct-hostnames',
+      {
+        from: effectiveFrom.toISOString(),
+        to: to?.toISOString() || null,
+      }
+    );
+    const cached = await CacheManager.get<string[]>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    // Query distinct hostnames from metadata JSONB field
+    let query = db
+      .selectFrom('logs')
+      .select(sql<string>`metadata->>'hostname'`.as('hostname'))
+      .distinct()
+      .where(sql`metadata->>'hostname'`, 'is not', null)
+      .where(sql`metadata->>'hostname'`, '!=', '')
+      .where('time', '>=', effectiveFrom)
+      .orderBy(sql`metadata->>'hostname'`, 'asc');
+
+    // Project filter - support single or multiple projects
+    if (Array.isArray(projectId)) {
+      query = query.where('project_id', 'in', projectId);
+    } else {
+      query = query.where('project_id', '=', projectId);
+    }
+
+    if (to) {
+      query = query.where('time', '<=', to);
+    }
+
+    const results = await query.execute();
+    const hostnames = results
+      .map((r) => r.hostname)
+      .filter((h): h is string => h !== null && h !== undefined);
+
+    // Cache for 5 minutes
+    await CacheManager.set(cacheKey, hostnames, CACHE_TTL.STATS);
+
+    return hostnames;
+  }
+
+  /**
    * Get top error messages
    * Cached for performance - aggregation queries are expensive
+   *
+   * PERFORMANCE: Defaults to last 7 days if no time filter provided
+   * to avoid full table scan on millions of logs.
    */
   async getTopErrors(projectId: string, limit: number = 10, from?: Date, to?: Date) {
+    // PERFORMANCE: Default to last 7 days if no time filter provided
+    const effectiveFrom = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     // Try cache first
     const cacheKey = CacheManager.statsKey(projectId, 'top-errors', {
       limit,
-      from: from?.toISOString() || null,
+      from: effectiveFrom.toISOString(),
       to: to?.toISOString() || null,
     });
     const cached = await CacheManager.get<any[]>(cacheKey);
@@ -516,13 +616,10 @@ export class QueryService {
       ])
       .where('project_id', '=', projectId)
       .where('level', 'in', ['error', 'critical'])
+      .where('time', '>=', effectiveFrom)
       .groupBy('message')
       .orderBy('count', 'desc')
       .limit(limit);
-
-    if (from) {
-      query = query.where('time', '>=', from);
-    }
 
     if (to) {
       query = query.where('time', '<=', to);

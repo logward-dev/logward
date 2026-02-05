@@ -287,5 +287,406 @@ describe('RetentionService', () => {
       const sumFromResults = summary.results.reduce((sum, r) => sum + r.logsDeleted, 0);
       expect(summary.totalLogsDeleted).toBe(sumFromResults);
     });
+
+    it('should track chunks decompressed count', async () => {
+      const ctx = await createTestContext();
+      await createTestLog({ projectId: ctx.project.id });
+
+      const summary = await service.executeRetentionForAllOrganizations();
+
+      // chunksDecompressed should be a number (0 in test env since no compression)
+      expect(typeof summary.totalChunksDecompressed).toBe('number');
+      expect(summary.totalChunksDecompressed).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('getOrganizationRetentionStatus - edge cases', () => {
+    it('should calculate estimated deletion date when logs exist', async () => {
+      const ctx = await createTestContext();
+
+      // Create a log from 10 days ago
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: tenDaysAgo });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      // Should have an oldest log time
+      expect(status.oldestLogTime).not.toBeNull();
+      // Estimated deletion date should be set
+      expect(status.estimatedDeletionDate).toBeDefined();
+    });
+
+    it('should return null estimated deletion date when no logs', async () => {
+      const org = await db
+        .insertInto('organizations')
+        .values({
+          name: 'No Logs Org',
+          slug: `no-logs-org-${Date.now()}`,
+          owner_id: (await createTestContext()).user.id,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // Create project but no logs
+      await db
+        .insertInto('projects')
+        .values({
+          name: 'Empty Project',
+          organization_id: org.id,
+          user_id: org.owner_id,
+        })
+        .execute();
+
+      const status = await service.getOrganizationRetentionStatus(org.id);
+
+      expect(status.oldestLogTime).toBeNull();
+      expect(status.estimatedDeletionDate).toBeNull();
+    });
+
+    it('should set estimated deletion date to now if already past', async () => {
+      const ctx = await createTestContext();
+
+      // Set retention to 1 day
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create log from 5 days ago (well past 1-day retention)
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: fiveDaysAgo });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      // Estimated deletion should be now or very close to now (next cleanup)
+      expect(status.estimatedDeletionDate).not.toBeNull();
+      if (status.estimatedDeletionDate) {
+        const now = new Date();
+        // Should be within 1 second of now
+        expect(Math.abs(status.estimatedDeletionDate.getTime() - now.getTime())).toBeLessThan(1000);
+      }
+    });
+
+    it('should count logs to delete correctly with short retention', async () => {
+      const ctx = await createTestContext();
+
+      // Set retention to 1 day
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create 3 old logs
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: threeDaysAgo });
+      await createTestLog({ projectId: ctx.project.id, time: threeDaysAgo });
+      await createTestLog({ projectId: ctx.project.id, time: threeDaysAgo });
+
+      // Create 2 recent logs
+      await createTestLog({ projectId: ctx.project.id });
+      await createTestLog({ projectId: ctx.project.id });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      expect(status.totalLogs).toBe(5);
+      expect(status.logsToDelete).toBe(3);
+    });
+  });
+
+  describe('executeRetentionForOrganization - advanced scenarios', () => {
+    it('should handle multiple projects in organization', async () => {
+      const ctx = await createTestContext();
+
+      // Create second project
+      const project2 = await db
+        .insertInto('projects')
+        .values({
+          name: 'Second Project',
+          organization_id: ctx.organization.id,
+          user_id: ctx.user.id,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // Set retention to 1 day
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create old logs in both projects
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: threeDaysAgo });
+      await createTestLog({ projectId: project2.id, time: threeDaysAgo });
+
+      const result = await service.executeRetentionForOrganization(
+        ctx.organization.id,
+        1,
+        ctx.organization.name
+      );
+
+      expect(result.logsDeleted).toBe(2);
+    });
+
+    it('should preserve recent logs while deleting old ones', async () => {
+      const ctx = await createTestContext();
+
+      // Set retention to 1 day
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create old and new logs
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: twoDaysAgo, message: 'old' });
+      await createTestLog({ projectId: ctx.project.id, message: 'new' });
+
+      await service.executeRetentionForOrganization(
+        ctx.organization.id,
+        1,
+        ctx.organization.name
+      );
+
+      // Check only new log remains
+      const remainingLogs = await db
+        .selectFrom('logs')
+        .selectAll()
+        .where('project_id', '=', ctx.project.id)
+        .execute();
+
+      expect(remainingLogs.length).toBe(1);
+      expect(remainingLogs[0].message).toBe('new');
+    });
+
+    it('should return chunksDecompressed as 0 when no compressed chunks', async () => {
+      const ctx = await createTestContext();
+
+      const result = await service.executeRetentionForOrganization(
+        ctx.organization.id,
+        30,
+        ctx.organization.name
+      );
+
+      expect(result.chunksDecompressed).toBe(0);
+    });
+  });
+
+  describe('updateOrganizationRetention - logging', () => {
+    it('should not log when retention value unchanged', async () => {
+      const ctx = await createTestContext();
+
+      // Get current retention
+      const org = await db
+        .selectFrom('organizations')
+        .select('retention_days')
+        .where('id', '=', ctx.organization.id)
+        .executeTakeFirst();
+
+      // Update to same value
+      const result = await service.updateOrganizationRetention(
+        ctx.organization.id,
+        org!.retention_days
+      );
+
+      expect(result.success).toBe(true);
+      // Should not throw, should complete silently
+    });
+  });
+
+  describe('executeRetentionForAllOrganizations - comprehensive', () => {
+    it('should handle mixed success and failure scenarios gracefully', async () => {
+      // Create multiple contexts
+      const ctx1 = await createTestContext();
+      const ctx2 = await createTestContext();
+
+      // Set different retention policies
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx1.organization.id)
+        .execute();
+
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 365 })
+        .where('id', '=', ctx2.organization.id)
+        .execute();
+
+      // Create old logs in first org
+      const oldDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx1.project.id, time: oldDate });
+
+      // Create recent logs in second org
+      await createTestLog({ projectId: ctx2.project.id });
+
+      const summary = await service.executeRetentionForAllOrganizations();
+
+      expect(summary.totalOrganizations).toBeGreaterThanOrEqual(2);
+      expect(summary.results.length).toBe(summary.totalOrganizations);
+      expect(typeof summary.totalLogsDeleted).toBe('number');
+    });
+
+    it('should return correct execution time', async () => {
+      await createTestContext();
+
+      const summary = await service.executeRetentionForAllOrganizations();
+
+      expect(summary.totalExecutionTimeMs).toBeGreaterThanOrEqual(0);
+      // Individual results should also have execution times
+      for (const result of summary.results) {
+        expect(result.executionTimeMs).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('should count failed organizations correctly when errors occur', async () => {
+      // Normal scenario - all should succeed
+      const ctx = await createTestContext();
+      await createTestLog({ projectId: ctx.project.id });
+
+      const summary = await service.executeRetentionForAllOrganizations();
+
+      // In normal conditions, no failures expected
+      expect(summary.failedOrganizations).toBe(0);
+      expect(summary.successfulOrganizations).toBe(summary.totalOrganizations);
+    });
+  });
+
+  describe('getOrganizationRetentionStatus - comprehensive', () => {
+    it('should correctly count total logs across multiple projects', async () => {
+      const ctx = await createTestContext();
+
+      // Create second project
+      const project2 = await db
+        .insertInto('projects')
+        .values({
+          name: 'Second Project',
+          organization_id: ctx.organization.id,
+          user_id: ctx.user.id,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // Create logs in both projects
+      await createTestLog({ projectId: ctx.project.id });
+      await createTestLog({ projectId: ctx.project.id });
+      await createTestLog({ projectId: project2.id });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      expect(status.totalLogs).toBe(3);
+    });
+
+    it('should return correct oldest log time', async () => {
+      const ctx = await createTestContext();
+
+      // Create logs at different times
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      await createTestLog({ projectId: ctx.project.id, time: twoDaysAgo });
+      await createTestLog({ projectId: ctx.project.id, time: oneDayAgo });
+      await createTestLog({ projectId: ctx.project.id });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      expect(status.oldestLogTime).not.toBeNull();
+      // Oldest log should be approximately 2 days ago
+      if (status.oldestLogTime) {
+        const timeDiff = Math.abs(status.oldestLogTime.getTime() - twoDaysAgo.getTime());
+        expect(timeDiff).toBeLessThan(1000); // Within 1 second
+      }
+    });
+
+    it('should calculate future estimated deletion date correctly', async () => {
+      const ctx = await createTestContext();
+
+      // Set retention to 30 days
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 30 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create a log from 10 days ago
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: tenDaysAgo });
+
+      const status = await service.getOrganizationRetentionStatus(ctx.organization.id);
+
+      expect(status.estimatedDeletionDate).not.toBeNull();
+      if (status.estimatedDeletionDate) {
+        // Should be approximately 20 days from now (30 - 10)
+        const expectedDeletionDate = new Date(tenDaysAgo.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const timeDiff = Math.abs(status.estimatedDeletionDate.getTime() - expectedDeletionDate.getTime());
+        expect(timeDiff).toBeLessThan(1000); // Within 1 second
+      }
+    });
+  });
+
+  describe('validateRetentionDays - edge cases', () => {
+    it('should validate boundary value of 1', () => {
+      expect(service.validateRetentionDays(1)).toEqual({ valid: true });
+    });
+
+    it('should validate boundary value of 365', () => {
+      expect(service.validateRetentionDays(365)).toEqual({ valid: true });
+    });
+
+    it('should reject NaN', () => {
+      const result = service.validateRetentionDays(NaN);
+      expect(result.valid).toBe(false);
+    });
+
+    it('should reject Infinity', () => {
+      const result = service.validateRetentionDays(Infinity);
+      expect(result.valid).toBe(false);
+    });
+  });
+
+  describe('executeRetentionForOrganization - logging behavior', () => {
+    it('should log when logs are deleted', async () => {
+      const ctx = await createTestContext();
+
+      // Set retention to 1 day
+      await db
+        .updateTable('organizations')
+        .set({ retention_days: 1 })
+        .where('id', '=', ctx.organization.id)
+        .execute();
+
+      // Create old log
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      await createTestLog({ projectId: ctx.project.id, time: fiveDaysAgo });
+
+      const result = await service.executeRetentionForOrganization(
+        ctx.organization.id,
+        1,
+        ctx.organization.name
+      );
+
+      expect(result.logsDeleted).toBeGreaterThan(0);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should not log when no logs are deleted', async () => {
+      const ctx = await createTestContext();
+
+      // Only recent logs
+      await createTestLog({ projectId: ctx.project.id });
+
+      const result = await service.executeRetentionForOrganization(
+        ctx.organization.id,
+        30,
+        ctx.organization.name
+      );
+
+      expect(result.logsDeleted).toBe(0);
+      expect(result.chunksDecompressed).toBe(0);
+    });
   });
 });

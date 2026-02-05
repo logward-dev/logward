@@ -68,8 +68,14 @@
 
 		// Add time range based on incident time window or creation time
 		if (incident.timeWindowStart && incident.timeWindowEnd) {
-			params.append('from', incident.timeWindowStart);
-			params.append('to', incident.timeWindowEnd);
+			const fromStr = typeof incident.timeWindowStart === 'string'
+				? incident.timeWindowStart
+				: incident.timeWindowStart.toISOString();
+			const toStr = typeof incident.timeWindowEnd === 'string'
+				? incident.timeWindowEnd
+				: incident.timeWindowEnd.toISOString();
+			params.append('from', fromStr);
+			params.append('to', toStr);
 		} else if (incident.createdAt) {
 			// Use a 1-hour window around creation time
 			const created = new Date(incident.createdAt);

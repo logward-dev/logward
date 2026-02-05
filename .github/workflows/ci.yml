@@ -111,11 +111,11 @@ jobs:
         run: |
           COVERAGE=$(cat coverage/coverage-summary.json | jq '.total.lines.pct')
           echo "Line coverage: $COVERAGE%"
-          if (( $(echo "$COVERAGE < 70" | bc -l) )); then
-            echo "::error::Coverage $COVERAGE% is below 70% threshold"
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::error::Coverage $COVERAGE% is below 80% threshold"
             exit 1
           fi
-          echo "::notice::Coverage $COVERAGE% meets the 70% threshold"
+          echo "::notice::Coverage $COVERAGE% meets the 80% threshold"
 
   # ====================
   # Typecheck

@@ -80,7 +80,8 @@
           name: orgName.trim(),
           description: orgDescription.trim() || undefined,
         });
-        return response.organization;
+        // When creating an org, the user becomes the owner
+        return { ...response.organization, role: 'owner' as const };
       });
 
       onboardingStore.setOrganizationId(newOrg.id);

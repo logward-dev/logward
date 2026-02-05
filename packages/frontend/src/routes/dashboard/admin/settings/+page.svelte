@@ -270,13 +270,10 @@
                             <Label>Authentication Mode</Label>
                             <Select.Root
                                 type="single"
-                                value={{ value: authMode, label: getAuthModeLabel(authMode) }}
+                                value={authMode}
                                 onValueChange={(v) => {
-                                    if (v) {
-                                        const newValue = typeof v === 'string' ? v : v.value;
-                                        if (newValue === 'standard' || newValue === 'none') {
-                                            authMode = newValue;
-                                        }
+                                    if (v && (v === 'standard' || v === 'none')) {
+                                        authMode = v;
                                     }
                                 }}
                             >
@@ -336,11 +333,10 @@
                                 {:else}
                                     <Select.Root
                                         type="single"
-                                        value={defaultUserId ? { value: defaultUserId, label: getDefaultUserLabel(defaultUserId) } : undefined}
+                                        value={defaultUserId || undefined}
                                         onValueChange={(v) => {
                                             if (v) {
-                                                const newValue = typeof v === 'string' ? v : v.value;
-                                                defaultUserId = newValue;
+                                                defaultUserId = v;
                                             }
                                         }}
                                     >
@@ -403,13 +399,10 @@
                                 <Label>Default Search Mode</Label>
                                 <Select.Root
                                     type="single"
-                                    value={{ value: searchDefaultMode, label: searchDefaultMode === "fulltext" ? "Full-text (Word-based)" : "Substring (Anywhere)" }}
+                                    value={searchDefaultMode}
                                     onValueChange={(v) => {
-                                        if (v) {
-                                            const newValue = typeof v === 'string' ? v : v.value;
-                                            if (newValue === 'fulltext' || newValue === 'substring') {
-                                                searchDefaultMode = newValue;
-                                            }
+                                        if (v && (v === 'fulltext' || v === 'substring')) {
+                                            searchDefaultMode = v;
                                         }
                                     }}
                                 >

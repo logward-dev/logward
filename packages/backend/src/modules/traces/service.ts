@@ -286,11 +286,20 @@ export class TracesService {
     return spans as SpanRecord[];
   }
 
-  async getServices(projectId: string): Promise<string[]> {
+  /**
+   * Get unique services for a project
+   *
+   * PERFORMANCE: Uses default 30-day time filter to avoid full table scan
+   */
+  async getServices(projectId: string, from?: Date): Promise<string[]> {
+    // Default to last 30 days to avoid full table scan
+    const effectiveFrom = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
     const result = await db
       .selectFrom('traces')
       .select('service_name')
       .where('project_id', '=', projectId)
+      .where('start_time', '>=', effectiveFrom)
       .groupBy('service_name')
       .orderBy('service_name', 'asc')
       .execute();

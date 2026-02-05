@@ -71,8 +71,8 @@
   // Search/filter
   let searchQuery = $state("");
 
-  function formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
+  function formatDate(dateStr: string | Date): string {
+    const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
@@ -309,8 +309,8 @@
                     View Project
                   </a>
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      {#snippet trigger(props)}
+                    <AlertDialogTrigger>
+                      {#snippet child({ props })}
                         <Button
                           {...props}
                           variant="destructive"

@@ -5,6 +5,60 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3]  - 2026-02-04
+
+### Added
+
+- **Hostname Filter for Syslog Sources**: See which machine each log comes from (#80)
+  - Hostname automatically extracted from `hostname`, `host`, `_HOSTNAME` (journald), or `kubernetes.host`
+  - New **Hostnames** filter dropdown in log search page
+  - Hostname displayed in log table under service badge (e.g., `nginx @proxmox-node-1`)
+  - Click hostname to filter logs from that specific machine
+  - New `/api/v1/logs/hostnames` endpoint for distinct hostnames
+
+### Fixed
+
+- **Log Retention on Compressed Chunks**: Fixed retention cleanup not deleting logs from TimescaleDB compressed chunks
+  - Retention service now automatically decompresses chunks before deleting old logs
+  - Identifies only chunks containing data for the specific organization (not all chunks)
+  - Compressed chunks are re-compressed automatically by TimescaleDB's compression policy
+  - Fixes issue where per-org retention settings were ignored for data older than `compress_after` interval
+
+- **Fluent Bit Kubernetes Metadata**: Fixed service showing as "unknown" when using Fluent Bit DaemonSet in Kubernetes (#118)
+  - Service name now correctly extracted from nested `kubernetes.container_name`
+  - Falls back to `kubernetes.labels.app` or `kubernetes.labels['app.kubernetes.io/name']`
+  - Full Kubernetes metadata (pod_name, namespace_name, labels) preserved in log metadata
+  - No Fluent Bit config changes required - works out of the box
+
+### Performance
+
+- **Database Performance Monitoring**: Major optimizations for large-scale deployments (30M+ logs)
+  - **log_identifiers table optimization** (Migration 018):
+    - Converted to TimescaleDB hypertable with daily partitioning
+    - Enabled automatic compression (80%+ space reduction)
+    - Removed 5+ GB of unused indexes (0 scans in production)
+    - Filtered out redundant org_id/project_id identifiers (~31% space savings)
+    - Expected: 10 GB → 1-2 GB storage, 2-5x faster queries
+  - **Continuous aggregates for spans and detection events** (Migration 019):
+    - `spans_hourly_stats` / `spans_daily_stats`: Pre-computed P50/P95/P99 latency, error rates per service
+    - `detection_events_hourly_stats` / `detection_events_daily_stats`: SIEM dashboard metrics
+    - `detection_events_rule_stats`: Top threats query optimization
+    - 15 new indexes for aggregate tables
+    - Dashboard queries: 10-50x faster (seconds → milliseconds)
+  - **Hybrid query architecture**:
+    - Uses aggregates for historical data (>1 hour old)
+    - Queries raw tables for recent data (real-time accuracy)
+    - Parallel query execution with `Promise.all()`
+  - **Admin monitoring endpoints**:
+    - `getCompressionStats()`: Per-hypertable compression metrics
+    - `getAggregateStats()`: Continuous aggregate health monitoring
+  - **Massive data seeding script** (`npm run seed:massive`):
+    - Generates 30M logs, 1M spans, 100K detection events
+    - Uses PostgreSQL `generate_series` for maximum performance
+    - Useful for performance testing and benchmarking
+
+---
+
 ## [0.5.2] - 2026-02-03
 
 ### Security

@@ -215,6 +215,251 @@ describe('Ingestion API', () => {
                 .expect(200);
         });
 
+        it('should extract service from nested kubernetes.container_name', async () => {
+            const uniqueMsg = `k8s-nested-container-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    container_name: 'my-k8s-container',
+                    pod_name: 'my-pod-abc123',
+                    namespace_name: 'production',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-k8s-container');
+            expect(dbLog?.metadata).toHaveProperty('kubernetes');
+            expect((dbLog?.metadata as any).kubernetes.pod_name).toBe('my-pod-abc123');
+            expect((dbLog?.metadata as any).kubernetes.namespace_name).toBe('production');
+        });
+
+        it('should extract service from kubernetes labels app', async () => {
+            const uniqueMsg = `k8s-label-app-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    pod_name: 'my-pod-abc123',
+                    labels: {
+                        app: 'my-labeled-app',
+                    },
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-labeled-app');
+        });
+
+        it('should extract service from kubernetes labels app.kubernetes.io/name', async () => {
+            const uniqueMsg = `k8s-label-app-k8s-name-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    pod_name: 'my-pod-abc123',
+                    labels: {
+                        'app.kubernetes.io/name': 'my-k8s-app-name',
+                    },
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('my-k8s-app-name');
+        });
+
+        it('should prefer top-level service over kubernetes.container_name', async () => {
+            const uniqueMsg = `k8s-service-priority-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'explicit-service',
+                kubernetes: {
+                    container_name: 'k8s-container',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.service).toBe('explicit-service');
+        });
+
+        // ======================================================================
+        // Hostname extraction tests
+        // ======================================================================
+        it('should extract hostname from top-level hostname field', async () => {
+            const uniqueMsg = `hostname-toplevel-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'test-service',
+                hostname: 'server-01.example.com',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'server-01.example.com');
+        });
+
+        it('should extract hostname from host field (syslog style)', async () => {
+            const uniqueMsg = `hostname-host-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                service: 'test-service',
+                host: 'proxmox-node-1',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'proxmox-node-1');
+        });
+
+        it('should extract hostname from kubernetes.host', async () => {
+            const uniqueMsg = `hostname-k8s-host-${Date.now()}`;
+            const log = {
+                date: Math.floor(Date.now() / 1000),
+                log: uniqueMsg,
+                level: 'info',
+                kubernetes: {
+                    container_name: 'my-app',
+                    host: 'k8s-worker-01',
+                },
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'k8s-worker-01');
+        });
+
+        it('should extract hostname from journald _HOSTNAME', async () => {
+            const uniqueMsg = `hostname-journald-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'test-daemon',
+                PRIORITY: '6',
+                _HOSTNAME: 'ubuntu-server',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'ubuntu-server');
+        });
+
+        it('should prefer top-level hostname over _HOSTNAME', async () => {
+            const uniqueMsg = `hostname-priority-${Date.now()}`;
+            const log = {
+                MESSAGE: uniqueMsg,
+                SYSLOG_IDENTIFIER: 'test',
+                PRIORITY: '6',
+                _HOSTNAME: 'journald-host',
+                hostname: 'explicit-host',
+            };
+
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .send(log)
+                .expect(200);
+
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('message', '=', uniqueMsg)
+                .executeTakeFirst();
+
+            expect(dbLog?.metadata).toHaveProperty('hostname', 'explicit-host');
+        });
+
         it('should normalize numeric log levels (Pino format)', async () => {
             const testCases = [
                 { level: 60, expected: 'critical' },
@@ -877,6 +1122,109 @@ describe('Ingestion API', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
+        });
+
+        it('should handle malformed NDJSON content type', async () => {
+            await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/x-ndjson')
+                .send('invalid json {not valid')
+                .expect(400);
+        });
+
+        it('should handle empty body for single ingestion', async () => {
+            const response = await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/json')
+                .send('')
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+        });
+
+        it('should handle valid NDJSON with multiple logs', async () => {
+            const ndjsonLogs = [
+                { time: new Date().toISOString(), service: 'test1', level: 'info', message: 'Log 1' },
+                { time: new Date().toISOString(), service: 'test2', level: 'warn', message: 'Log 2' },
+            ]
+                .map((l) => JSON.stringify(l))
+                .join('\n');
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest/single')
+                .set('x-api-key', apiKey)
+                .set('Content-Type', 'application/json')
+                .send(ndjsonLogs)
+                .expect(200);
+
+            expect(response.body.received).toBe(2);
+        });
+    });
+
+    describe('Ingestion Service Edge Cases', () => {
+        it('should handle logs with null characters (PostgreSQL sanitization)', async () => {
+            const uniqueMsg = `Test with null\u0000char ${Date.now()}`;
+            const logs = [
+                {
+                    time: new Date().toISOString(),
+                    service: 'test\u0000service',
+                    level: 'info',
+                    message: uniqueMsg,
+                    metadata: { key: 'value\u0000test' },
+                },
+            ];
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs })
+                .expect(200);
+
+            expect(response.body.received).toBe(1);
+
+            // Verify null chars were removed
+            const dbLog = await db
+                .selectFrom('logs')
+                .selectAll()
+                .where('service', '=', 'testservice')
+                .executeTakeFirst();
+
+            expect(dbLog?.service).not.toContain('\u0000');
+        });
+
+        it('should handle logs with span_id', async () => {
+            const logs = [
+                {
+                    time: new Date().toISOString(),
+                    service: 'test-span',
+                    level: 'info',
+                    message: 'Log with span',
+                    trace_id: '550e8400-e29b-41d4-a716-446655440000',
+                    span_id: 'abc123def4567890', // Must be exactly 16 hex characters
+                },
+            ];
+
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs })
+                .expect(200);
+
+            expect(response.body.received).toBe(1);
+        });
+
+        it('should return 0 when ingesting empty logs array via service', async () => {
+            // This tests the early return in ingestLogs when logs.length === 0
+            // The API validates and rejects empty arrays, but let's verify behavior
+            const response = await request(app.server)
+                .post('/api/v1/ingest')
+                .set('x-api-key', apiKey)
+                .send({ logs: [] })
+                .expect(400);
+
+            expect(response.body.error).toBeDefined();
         });
     });
 });

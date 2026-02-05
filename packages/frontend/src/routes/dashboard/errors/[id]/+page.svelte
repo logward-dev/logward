@@ -163,8 +163,9 @@
 		}
 	}
 
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
+	function formatDate(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+		return date.toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
 			year: 'numeric',
@@ -173,8 +174,8 @@
 		});
 	}
 
-	function formatTimeAgo(dateStr: string): string {
-		const date = new Date(dateStr);
+	function formatTimeAgo(dateStr: string | Date): string {
+		const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
 		const now = new Date();
 		const diffMs = now.getTime() - date.getTime();
 		const diffMins = Math.floor(diffMs / 60000);
@@ -240,11 +241,10 @@
 				<!-- Status dropdown -->
 				<Select.Root
 					type="single"
-					value={{ value: group.status, label: statusOptions.find(o => o.value === group.status)?.label || '' }}
+					value={group.status}
 					onValueChange={(v) => {
-						const newStatus = typeof v === 'string' ? v : v?.value;
-						if (newStatus && newStatus !== group.status) {
-							handleStatusChange(newStatus as ErrorGroupStatus);
+						if (v && v !== group.status) {
+							handleStatusChange(v as ErrorGroupStatus);
 						}
 					}}
 					disabled={updating}

@@ -187,11 +187,9 @@
     {#if $authStore.user?.is_admin}
         <div class="grid gap-4 md:grid-cols-3">
             <Card
-                class={healthStats?.overall === "healthy"
+                class={healthStats?.overall === "up"
                     ? "border-green-500/50 bg-green-500/5"
-                    : healthStats?.overall === "degraded"
-                      ? "border-yellow-500/50 bg-yellow-500/5"
-                      : "border-red-500/50 bg-red-500/5"}
+                    : "border-red-500/50 bg-red-500/5"}
             >
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 pb-2"
@@ -337,6 +335,24 @@
                                           1,
                                       )
                                     : "-"} logs/sec</span
+                            >
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground"
+                                >Compression Ratio</span
+                            >
+                            <span class="font-bold text-green-500"
+                                >{performanceStats?.storage.compressionRatio
+                                    ? `${performanceStats.storage.compressionRatio.toFixed(1)}x`
+                                    : "-"}</span
+                            >
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground"
+                                >Logs Storage</span
+                            >
+                            <span class="font-bold"
+                                >{performanceStats?.storage.logsSize || "-"}</span
                             >
                         </div>
                         <div class="flex justify-between items-center">
