@@ -93,14 +93,19 @@ export class QueryService {
         const [cursorTimeStr, cursorId] = decoded.split(',');
         const cursorTime = new Date(cursorTimeStr);
 
-        // WHERE (time, id) < (cursorTime, cursorId) for DESC order
-        query = query.where((eb) => eb.or([
-          eb('time', '<', cursorTime),
-          eb.and([
-            eb('time', '=', cursorTime),
-            eb('id', '<', cursorId)
-          ])
-        ]));
+        // Validate cursor components - skip if invalid
+        if (!cursorId || isNaN(cursorTime.getTime())) {
+          console.warn('Invalid cursor format', cursor);
+        } else {
+          // WHERE (time, id) < (cursorTime, cursorId) for DESC order
+          query = query.where((eb) => eb.or([
+            eb('time', '<', cursorTime),
+            eb.and([
+              eb('time', '=', cursorTime),
+              eb('id', '<', cursorId)
+            ])
+          ]));
+        }
       } catch (e) {
         console.warn('Invalid cursor format', cursor);
       }

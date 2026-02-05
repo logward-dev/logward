@@ -251,7 +251,7 @@ export class IngestionService {
    * Get log statistics
    */
   async getStats(projectId: string, from?: Date, to?: Date) {
-    const query = db
+    let query = db
       .selectFrom('logs')
       .select([
         db.fn.count('time').as('total'),
@@ -261,11 +261,11 @@ export class IngestionService {
       .groupBy('level');
 
     if (from) {
-      query.where('time', '>=', from);
+      query = query.where('time', '>=', from);
     }
 
     if (to) {
-      query.where('time', '<=', to);
+      query = query.where('time', '<=', to);
     }
 
     const results = await query.execute();

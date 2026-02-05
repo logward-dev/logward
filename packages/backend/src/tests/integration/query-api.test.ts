@@ -1315,16 +1315,16 @@ describe('Query API Integration Tests', () => {
             expect(firstIds).not.toEqual(secondIds);
         });
 
-        it('should handle invalid cursor format as server error', async () => {
-            // Note: Invalid cursor causes unhandled parsing error (500) instead of validation error (400)
-            // This is a known limitation - cursor validation could be improved
+        it('should handle invalid cursor format gracefully', async () => {
+            // Invalid cursors are now handled gracefully - they are silently ignored
+            // and the query proceeds without the cursor filter, returning results from the start
             const response = await request(app.server)
                 .get('/api/v1/logs')
                 .query({ projectId, cursor: 'invalid-cursor-format' })
                 .set('x-api-key', apiKey)
-                .expect(500);
+                .expect(200);
 
-            expect(response.body.error).toBeDefined();
+            expect(response.body.logs).toBeDefined();
         });
     });
 
