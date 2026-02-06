@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.4] - 2026-02-06
 
+### Added
+
+- **Detection Pack Category Routing**: Detection pack results now appear in the correct UI section based on category
+  - `security` packs → Security/SIEM dashboard (unchanged)
+  - `reliability` / `database` packs → Errors page, new "Detections" tab
+  - `business` packs → Alerts page, new "Detections" tab
+  - Manual/SigmaHQ Sigma rules default to `security` category
+  - Added `category` column to `sigma_rules` and `detection_events` tables (migration 020)
+  - Security dashboard and incident auto-grouping now scoped to `category = 'security'` only
+  - API supports filtering detection events by category
+
 ### Fixed
 
 - **Exception Detection for `metadata.error`**: Errors serialized as `{ name, message, stack }` in log metadata are now detected and parsed

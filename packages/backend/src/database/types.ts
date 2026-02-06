@@ -14,6 +14,7 @@ import type {
   NotificationChannelType,
   NotificationEventType,
   ChannelConfig,
+  PackCategory,
 } from '@logtide/shared';
 
 // Re-export types for backward compatibility (modules importing from database/types)
@@ -32,6 +33,7 @@ export type {
   NotificationChannelType,
   NotificationEventType,
   ChannelConfig,
+  PackCategory,
 } from '@logtide/shared';
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
@@ -201,6 +203,8 @@ export interface SigmaRulesTable {
   sigmahq_path: string | null;
   sigmahq_commit: string | null;
   last_synced_at: Timestamp | null;
+  // Detection routing category
+  category: Generated<PackCategory>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -372,6 +376,7 @@ export interface DetectionEventsTable {
   trace_id: string | null;
   matched_fields: ColumnType<Record<string, unknown> | null, Record<string, unknown> | null, Record<string, unknown> | null>;
   incident_id: string | null;
+  category: Generated<PackCategory>;
 }
 
 export interface IncidentsTable {

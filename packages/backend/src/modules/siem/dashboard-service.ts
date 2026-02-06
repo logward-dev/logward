@@ -64,6 +64,7 @@ export class SiemDashboardService {
         sql<number>`count(*)::int`.as('count'),
       ])
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime);
 
@@ -111,6 +112,7 @@ export class SiemDashboardService {
         sql<number>`count(*)::int`.as('count'),
       ])
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime);
 
@@ -152,6 +154,7 @@ export class SiemDashboardService {
         ),
       ])
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime);
 
@@ -191,6 +194,7 @@ export class SiemDashboardService {
         sql<number>`count(*)::int`.as('count'),
       ])
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime);
 
@@ -229,6 +233,7 @@ export class SiemDashboardService {
         sql<number>`count(*)::int`.as('count'),
       ])
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime)
       .where('mitre_techniques', 'is not', null)
@@ -269,6 +274,7 @@ export class SiemDashboardService {
       .selectFrom('detection_events')
       .select(sql<number>`count(*)::int`.as('count'))
       .where('organization_id', '=', filters.organizationId)
+      .where('category', '=', 'security')
       .where('time', '>=', startTime)
       .where('time', '<=', endTime);
 

@@ -9,14 +9,17 @@
 		type ErrorGroupStatus,
 		type ExceptionLanguage,
 	} from '$lib/api/exceptions';
+	import { getRecentDetections, type DetectionEvent } from '$lib/api/siem';
 	import { toastStore } from '$lib/stores/toast';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import * as Select from '$lib/components/ui/select';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { ErrorGroupCard } from '$lib/components/exceptions';
+	import DetectionEventsList from '$lib/components/siem/incidents/DetectionEventsList.svelte';
 	import Bug from '@lucide/svelte/icons/bug';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -24,6 +27,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import Filter from '@lucide/svelte/icons/filter';
 	import X from '@lucide/svelte/icons/x';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import { layoutStore } from '$lib/stores/layout';
 
 	// State
@@ -59,8 +63,17 @@
 	let currentPage = $state(1);
 	let pageSize = $state(20);
 
+	// Detection events state
+	let detections = $state<DetectionEvent[]>([]);
+	let detectionsTotal = $state(0);
+	let detectionsLoading = $state(false);
+	let detectionsPage = $state(1);
+	let detectionsPageSize = $state(20);
+	let activeTab = $state('exceptions');
+
 	// Derived
 	let totalPages = $derived(Math.ceil(total / pageSize));
+	let detectionsTotalPages = $derived(Math.ceil(detectionsTotal / detectionsPageSize));
 	let hasActiveFilters = $derived(statusFilter !== '' || languageFilter !== '' || searchQuery !== '');
 
 	// Initialize filters from URL params
@@ -89,6 +102,7 @@
 		if ($currentOrganization.id === lastLoadedOrg) return;
 
 		loadErrorGroups();
+		loadDetections();
 		lastLoadedOrg = $currentOrganization.id;
 	});
 
@@ -118,11 +132,43 @@
 		}
 	}
 
+	async function loadDetections() {
+		if (!$currentOrganization) return;
+
+		detectionsLoading = true;
+
+		try {
+			const response = await getRecentDetections({
+				organizationId: $currentOrganization.id,
+				category: ['reliability', 'database'],
+				limit: detectionsPageSize,
+				offset: (detectionsPage - 1) * detectionsPageSize,
+			});
+
+			detections = response.detections;
+			// Estimate total from response length for pagination
+			detectionsTotal = response.detections.length < detectionsPageSize
+				? (detectionsPage - 1) * detectionsPageSize + response.detections.length
+				: (detectionsPage + 1) * detectionsPageSize;
+		} catch (e) {
+			toastStore.error(e instanceof Error ? e.message : 'Failed to load detections');
+		} finally {
+			detectionsLoading = false;
+		}
+	}
+
 	async function handleRefresh() {
 		refreshing = true;
-		await loadErrorGroups();
+		await Promise.all([loadErrorGroups(), loadDetections()]);
 		refreshing = false;
-		toastStore.success('Error groups refreshed');
+		toastStore.success('Refreshed');
+	}
+
+	function goToDetectionsPage(page: number) {
+		if (page >= 1 && page <= detectionsTotalPages && page !== detectionsPage) {
+			detectionsPage = page;
+			loadDetections();
+		}
 	}
 
 	function handleSearch() {
@@ -216,6 +262,25 @@
 			Refresh
 		</Button>
 	</div>
+
+	<!-- Tabs -->
+	<Tabs bind:value={activeTab} class="space-y-4">
+		<TabsList>
+			<TabsTrigger value="exceptions">
+				Exceptions
+				{#if total > 0}
+					<Badge variant="secondary" class="ml-1.5 text-xs">{total}</Badge>
+				{/if}
+			</TabsTrigger>
+			<TabsTrigger value="detections">
+				Detections
+				{#if detections.length > 0}
+					<Badge variant="secondary" class="ml-1.5 text-xs">{detections.length}+</Badge>
+				{/if}
+			</TabsTrigger>
+		</TabsList>
+
+		<TabsContent value="exceptions" class="space-y-6">
 
 	<!-- Filters -->
 	<Card class="mb-6">
@@ -392,4 +457,60 @@
 			{/if}
 		</CardContent>
 	</Card>
+
+		</TabsContent>
+
+		<TabsContent value="detections" class="space-y-4">
+			{#if detectionsLoading && detections.length === 0}
+				<div class="flex items-center justify-center py-12">
+					<Spinner />
+					<span class="ml-3 text-muted-foreground">Loading detections...</span>
+				</div>
+			{:else if detections.length === 0}
+				<Card class="border-2 border-dashed">
+					<CardContent class="py-16 text-center">
+						<AlertTriangle class="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
+						<h3 class="text-lg font-semibold mb-2">No Detections Found</h3>
+						<p class="text-muted-foreground">
+							Reliability and database detection events will appear here when detection packs are active.
+						</p>
+					</CardContent>
+				</Card>
+			{:else}
+				<DetectionEventsList {detections} />
+
+				<!-- Pagination -->
+				{#if detectionsTotalPages > 1}
+					<div class="flex items-center justify-between px-2">
+						<div class="text-sm text-muted-foreground">
+							Page {detectionsPage}
+						</div>
+						<div class="flex items-center gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => goToDetectionsPage(detectionsPage - 1)}
+								disabled={detectionsPage === 1 || detectionsLoading}
+							>
+								<ChevronLeft class="w-4 h-4" />
+								Previous
+							</Button>
+							<span class="text-sm text-muted-foreground px-2">
+								Page {detectionsPage}
+							</span>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => goToDetectionsPage(detectionsPage + 1)}
+								disabled={detections.length < detectionsPageSize || detectionsLoading}
+							>
+								Next
+								<ChevronRight class="w-4 h-4" />
+							</Button>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		</TabsContent>
+	</Tabs>
 </div>

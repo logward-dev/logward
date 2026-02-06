@@ -209,6 +209,7 @@ export class DetectionPacksService {
             tags: rule.tags ?? null,
             mitre_tactics: mitre.tactics.length > 0 ? mitre.tactics : null,
             mitre_techniques: mitre.techniques.length > 0 ? mitre.techniques : null,
+            category: pack.category,
           })
           .returning('id')
           .executeTakeFirstOrThrow();

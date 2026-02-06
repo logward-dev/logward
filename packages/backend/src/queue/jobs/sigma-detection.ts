@@ -86,7 +86,7 @@ export async function processSigmaDetection(job: any) {
         // Get the full Sigma rule for additional metadata
         const sigmaRule = await db
           .selectFrom('sigma_rules')
-          .select(['id', 'title', 'description', 'level', 'mitre_tactics', 'mitre_techniques'])
+          .select(['id', 'title', 'description', 'level', 'mitre_tactics', 'mitre_techniques', 'category'])
           .where('sigma_id', '=', match.sigmaRuleId)
           .where('organization_id', '=', data.organizationId)
           .executeTakeFirst();
@@ -109,6 +109,7 @@ export async function processSigmaDetection(job: any) {
           logMessage: log.message || '',
           traceId: log.trace_id || null,
           matchedFields: match.matchedFields || null,
+          category: (sigmaRule.category as any) || 'security',
         });
       }
 

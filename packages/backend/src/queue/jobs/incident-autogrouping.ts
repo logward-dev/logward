@@ -46,7 +46,7 @@ async function groupByTraceId(organizationId: string): Promise<void> {
   console.log(`[IncidentAutoGrouping] Grouping by trace_id for org ${organizationId}`);
 
   try {
-    // Find detection events with same trace_id (ungrouped)
+    // Find detection events with same trace_id (ungrouped, security only)
     const traceGroups = await db
       .selectFrom('detection_events')
       .select([
@@ -62,6 +62,7 @@ async function groupByTraceId(organizationId: string): Promise<void> {
       .where('organization_id', '=', organizationId)
       .where('incident_id', 'is', null)
       .where('trace_id', 'is not', null)
+      .where('category', '=', 'security')
       .groupBy(['trace_id', 'project_id'])
       .having(db.fn.count('id'), '>', 1) // At least 2 events to warrant an incident
       .execute();
@@ -126,13 +127,14 @@ async function groupByTimeWindow(organizationId: string): Promise<void> {
   const TIME_WINDOW_MINUTES = 5; // Group events within 5 minutes
 
   try {
-    // Find ungrouped detection events from last hour
+    // Find ungrouped detection events from last hour (security only)
     const recentEvents = await db
       .selectFrom('detection_events')
       .selectAll()
       .where('organization_id', '=', organizationId)
       .where('incident_id', 'is', null)
       .where('trace_id', 'is', null) // Skip events with trace_id (already handled)
+      .where('category', '=', 'security')
       .where('time', '>', new Date(Date.now() - 60 * 60 * 1000)) // Last hour
       .orderBy('time', 'asc')
       .execute();

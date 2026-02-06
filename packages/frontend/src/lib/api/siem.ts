@@ -18,6 +18,7 @@ export type {
   IncidentFilters,
   IpReputationData,
   GeoIpData,
+  PackCategory,
 } from '@logtide/shared';
 
 import type {
@@ -31,6 +32,7 @@ import type {
   IncidentFilters,
   IpReputationData,
   GeoIpData,
+  PackCategory,
 } from '@logtide/shared';
 
 export interface CreateIncidentParams {
@@ -321,6 +323,7 @@ export async function getEnrichmentStatus(): Promise<{
 export async function getRecentDetections(params: {
   organizationId: string;
   projectId?: string;
+  category?: PackCategory | PackCategory[];
   limit?: number;
   offset?: number;
 }): Promise<{ detections: DetectionEvent[] }> {
@@ -331,6 +334,10 @@ export async function getRecentDetections(params: {
 
   if (params.projectId) {
     searchParams.append('projectId', params.projectId);
+  }
+  if (params.category) {
+    const categories = Array.isArray(params.category) ? params.category : [params.category];
+    categories.forEach((c) => searchParams.append('category', c));
   }
   if (params.limit) {
     searchParams.append('limit', params.limit.toString());

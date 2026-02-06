@@ -8,6 +8,7 @@
 		type AlertHistory,
 	} from "$lib/api/alerts";
 	import { sigmaAPI, type SigmaRule } from "$lib/api/sigma";
+	import { getRecentDetections, type DetectionEvent } from "$lib/api/siem";
 	import { toastStore } from "$lib/stores/toast";
 	import Button from "$lib/components/ui/button/button.svelte";
 	import Label from "$lib/components/ui/label/label.svelte";
@@ -40,6 +41,7 @@
 	import CreateAlertDialog from "$lib/components/CreateAlertDialog.svelte";
 	import EditAlertDialog from "$lib/components/EditAlertDialog.svelte";
 	import SigmaRulesList from "$lib/components/SigmaRulesList.svelte";
+	import DetectionEventsList from "$lib/components/siem/incidents/DetectionEventsList.svelte";
 	import SigmaRuleDetailsDialog from "$lib/components/SigmaRuleDetailsDialog.svelte";
 	import SigmaSyncDialog from "$lib/components/SigmaSyncDialog.svelte";
 	import DetectionPacksGalleryDialog from "$lib/components/DetectionPacksGalleryDialog.svelte";
@@ -56,6 +58,9 @@
 	import Download from "@lucide/svelte/icons/download";
 	import ChevronDown from "@lucide/svelte/icons/chevron-down";
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
+	import ChevronLeft from "@lucide/svelte/icons/chevron-left";
+	import ChevronRight from "@lucide/svelte/icons/chevron-right";
+	import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
 	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
 	import { checklistStore } from "$lib/stores/checklist";
 	import { layoutStore } from "$lib/stores/layout";
@@ -95,6 +100,12 @@
 	let alertToEdit = $state<AlertRule | null>(null);
 	let expandedHistoryLogs = $state<Map<string, any[]>>(new Map());
 	let loadingHistoryLogs = $state<Set<string>>(new Set());
+
+	// Business detections state
+	let businessDetections = $state<DetectionEvent[]>([]);
+	let businessDetectionsLoading = $state(false);
+	let businessDetectionsPage = $state(1);
+	let businessDetectionsPageSize = $state(20);
 
 	async function loadAlertRules() {
 		if (!$currentOrganization) return;
@@ -141,11 +152,40 @@
 		}
 	}
 
+	async function loadBusinessDetections() {
+		if (!$currentOrganization) return;
+
+		businessDetectionsLoading = true;
+
+		try {
+			const response = await getRecentDetections({
+				organizationId: $currentOrganization.id,
+				category: ['business'],
+				limit: businessDetectionsPageSize,
+				offset: (businessDetectionsPage - 1) * businessDetectionsPageSize,
+			});
+
+			businessDetections = response.detections;
+		} catch (e) {
+			toastStore.error(e instanceof Error ? e.message : 'Failed to load detections');
+		} finally {
+			businessDetectionsLoading = false;
+		}
+	}
+
+	function goToBusinessDetectionsPage(page: number) {
+		if (page !== businessDetectionsPage) {
+			businessDetectionsPage = page;
+			loadBusinessDetections();
+		}
+	}
+
 	$effect(() => {
 		if (!browser || !$currentOrganization) {
 			alertRules = [];
 			alertHistory = [];
 			sigmaRules = [];
+			businessDetections = [];
 			lastLoadedOrgId = null;
 			return;
 		}
@@ -154,6 +194,7 @@
 
 		loadAlertRules();
 		loadAlertHistory();
+		loadBusinessDetections();
 	});
 
 	async function toggleAlert(alert: AlertRule) {
@@ -365,6 +406,7 @@
 						/>
 					</TabsTrigger>
 					<TabsTrigger value="history">Alert History</TabsTrigger>
+					<TabsTrigger value="detections">Detections</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="rules" class="space-y-4">
@@ -1016,6 +1058,53 @@
 								</Card>
 							{/each}
 						</div>
+					{/if}
+				</TabsContent>
+
+				<TabsContent value="detections" class="space-y-4">
+					{#if businessDetectionsLoading && businessDetections.length === 0}
+						<div class="flex items-center justify-center py-12">
+							<Spinner />
+							<span class="ml-3 text-muted-foreground">Loading detections...</span>
+						</div>
+					{:else if businessDetections.length === 0}
+						<Card class="border-2 border-dashed">
+							<CardContent class="py-16 text-center">
+								<AlertTriangle class="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
+								<h3 class="text-xl font-semibold mb-2">No Business Detections</h3>
+								<p class="text-muted-foreground">
+									Business detection events will appear here when business detection packs are active.
+								</p>
+							</CardContent>
+						</Card>
+					{:else}
+						<DetectionEventsList detections={businessDetections} />
+
+						{#if businessDetections.length >= businessDetectionsPageSize}
+							<div class="flex items-center justify-end gap-2 px-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => goToBusinessDetectionsPage(businessDetectionsPage - 1)}
+									disabled={businessDetectionsPage === 1 || businessDetectionsLoading}
+								>
+									<ChevronLeft class="w-4 h-4" />
+									Previous
+								</Button>
+								<span class="text-sm text-muted-foreground px-2">
+									Page {businessDetectionsPage}
+								</span>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => goToBusinessDetectionsPage(businessDetectionsPage + 1)}
+									disabled={businessDetections.length < businessDetectionsPageSize || businessDetectionsLoading}
+								>
+									Next
+									<ChevronRight class="w-4 h-4" />
+								</Button>
+							</div>
+						{/if}
 					{/if}
 				</TabsContent>
 			</Tabs>

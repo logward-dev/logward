@@ -1,4 +1,5 @@
 import type { Severity, IncidentStatus } from '../constants/siem-constants.js';
+import type { PackCategory } from '../constants/sigma-constants.js';
 
 export interface DetectionEvent {
   id: string;
@@ -18,6 +19,7 @@ export interface DetectionEvent {
   traceId: string | null;
   matchedFields: Record<string, unknown> | null;
   incidentId: string | null;
+  category: PackCategory;
 }
 
 export interface CreateDetectionEventInput {
@@ -35,6 +37,7 @@ export interface CreateDetectionEventInput {
   logMessage: string;
   traceId?: string | null;
   matchedFields?: Record<string, unknown> | null;
+  category?: PackCategory;
 }
 
 export interface Incident {
