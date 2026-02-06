@@ -87,13 +87,8 @@ export async function processAlertNotification(job: any) {
     // STEP 2: Load notification channels for this alert rule
     const channels = await notificationChannelsService.getAlertRuleChannels(data.rule_id);
 
-    // STEP 3: Collect all email recipients (from channels + legacy field)
+    // STEP 3: Collect email recipients from notification channels
     const emailRecipients = new Set<string>();
-
-    // Add legacy email recipients
-    if (data.email_recipients && data.email_recipients.length > 0) {
-      data.email_recipients.forEach((email: string) => emailRecipients.add(email));
-    }
 
     // Add email recipients from channels
     channels
@@ -122,13 +117,8 @@ export async function processAlertNotification(job: any) {
       console.log(`⚠️  No email recipients configured for: ${data.rule_name}`);
     }
 
-    // STEP 5: Collect all webhook URLs (from channels + legacy field)
+    // STEP 5: Collect webhook URLs from notification channels
     const webhookUrls = new Set<string>();
-
-    // Add legacy webhook URL
-    if (data.webhook_url) {
-      webhookUrls.add(data.webhook_url);
-    }
 
     // Add webhook URLs from channels
     channels
