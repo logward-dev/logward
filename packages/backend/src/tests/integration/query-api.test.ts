@@ -376,7 +376,7 @@ describe('Query API Integration Tests', () => {
                 .set('x-api-key', apiKey)
                 .expect(400);
 
-            expect(response.body).toHaveProperty('message');
+            expect(response.body).toHaveProperty('error');
         });
 
         it('should return different results for fulltext vs substring mode', async () => {
@@ -1018,7 +1018,7 @@ describe('Query API Integration Tests', () => {
                 .set('x-api-key', apiKey)
                 .expect(400);
 
-            expect(response.body).toHaveProperty('message');
+            expect(response.body).toHaveProperty('error');
         });
 
         it('should require authentication for top-services endpoint', async () => {
