@@ -57,19 +57,19 @@ export async function migrateToLatest() {
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`✅ Migration "${it.migrationName}" was executed successfully`);
+      console.log(`Migration "${it.migrationName}" was executed successfully`);
     } else if (it.status === 'Error') {
-      console.error(`❌ Failed to execute migration "${it.migrationName}"`);
+      console.error(`Failed to execute migration "${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('❌ Migration failed');
+    console.error('Migration failed');
     console.error(error);
     process.exit(1);
   }
 
-  console.log('✅ All migrations completed');
+  console.log('All migrations completed');
 }
 
 export async function migrateDown() {
@@ -84,14 +84,14 @@ export async function migrateDown() {
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`✅ Migration "${it.migrationName}" was reverted successfully`);
+      console.log(`Migration "${it.migrationName}" was reverted successfully`);
     } else if (it.status === 'Error') {
-      console.error(`❌ Failed to revert migration "${it.migrationName}"`);
+      console.error(`Failed to revert migration "${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('❌ Migration rollback failed');
+    console.error('Migration rollback failed');
     console.error(error);
     process.exit(1);
   }

@@ -78,6 +78,36 @@ export async function bootstrapInternalLogging(): Promise<string | null> {
         })
         .returningAll()
         .executeTakeFirstOrThrow();
+
+      // Add owner as organization member
+      await db
+        .insertInto('organization_members')
+        .values({
+          organization_id: organization.id,
+          user_id: ownerUser.id,
+          role: 'owner',
+        })
+        .onConflict((oc) => oc.columns(['organization_id', 'user_id']).doNothing())
+        .execute();
+    }
+
+    // Ensure all admin users are members of the internal org
+    const adminUsers = await db
+      .selectFrom('users')
+      .select('id')
+      .where('is_admin', '=', true)
+      .execute();
+
+    for (const admin of adminUsers) {
+      await db
+        .insertInto('organization_members')
+        .values({
+          organization_id: organization.id,
+          user_id: admin.id,
+          role: 'owner',
+        })
+        .onConflict((oc) => oc.columns(['organization_id', 'user_id']).doNothing())
+        .execute();
     }
 
     // 2. Check if internal project exists
@@ -135,7 +165,7 @@ export async function bootstrapInternalLogging(): Promise<string | null> {
       return null;
     }
   } catch (error) {
-    console.error('[Internal Logging] ❌ Failed to bootstrap internal logging:', error);
+    console.error('[Internal Logging] Failed to bootstrap internal logging:', error);
     return null;
   }
 }
@@ -155,10 +185,10 @@ export async function getInternalApiKey(): Promise<string | null> {
 
   if (!bootstrappedKey) {
     console.warn(
-      '[Internal Logging] ⚠️  No API key found. Please set INTERNAL_API_KEY environment variable.',
+      '[Internal Logging] No API key found. Please set INTERNAL_API_KEY environment variable.',
     );
     console.warn(
-      '[Internal Logging] ⚠️  You can find the key in the database or create a new one via the dashboard.',
+      '[Internal Logging] You can find the key in the database or create a new one via the dashboard.',
     );
   }
 

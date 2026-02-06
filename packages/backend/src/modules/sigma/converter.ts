@@ -221,32 +221,32 @@ export class SigmaConverter {
     const notes: string[] = [];
 
     notes.push(
-      `✅ Successfully converted Sigma rule "${rule.title}" (level: ${rule.level}).`
+      `Successfully converted Sigma rule "${rule.title}" (level: ${rule.level}).`
     );
 
     notes.push(
-      '\n🚀 Sigma Detection Engine Active:\n' +
+      '\nSigma Detection Engine Active:\n' +
         `The Detection Engine provides FULL REAL-TIME support for:\n` +
-        `  ✓ Complex boolean conditions (AND/OR/NOT)\n` +
-        `  ✓ Quantifiers (1 of, all of)\n` +
-        `  ✓ Field modifiers (contains, startswith, endswith, regex)\n` +
-        `  ✓ Wildcards (* and ?)\n` +
-        `  ✓ All log levels (debug, info, warn, error, critical)\n\n` +
+        `  - Complex boolean conditions (AND/OR/NOT)\n` +
+        `  - Quantifiers (1 of, all of)\n` +
+        `  - Field modifiers (contains, startswith, endswith, regex)\n` +
+        `  - Wildcards (* and ?)\n` +
+        `  - All log levels (debug, info, warn, error, critical)\n\n` +
         `Email and webhook notifications will be sent when the Sigma rule matches.`
     );
 
     if (advancedFeatures.length > 0) {
       notes.push(
-        `\n📋 Advanced features detected: ${advancedFeatures.join(', ')}`
+        `\nAdvanced features detected: ${advancedFeatures.join(', ')}`
       );
     }
 
     if (warnings.length > 0) {
-      notes.push('\n⚠️  Notes:\n' + warnings.map((w) => `- ${w}`).join('\n'));
+      notes.push('\nNotes:\n' + warnings.map((w) => `- ${w}`).join('\n'));
     }
 
     notes.push(
-      '\n✅ Status: ACTIVE - This Sigma rule is being evaluated against all incoming logs.'
+      '\nStatus: ACTIVE - This Sigma rule is being evaluated against all incoming logs.'
     );
 
     return notes.join('\n');

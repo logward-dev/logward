@@ -8,7 +8,9 @@ describe('Alert Notifications', () => {
     beforeEach(async () => {
         // Clean up before each test
         await db.deleteFrom('alert_history').execute();
+        await db.deleteFrom('alert_rule_channels').execute();
         await db.deleteFrom('alert_rules').execute();
+        await db.deleteFrom('notification_channels').execute();
         await db.deleteFrom('notifications').execute();
 
         // Clear MailHog messages
@@ -32,11 +34,26 @@ describe('Alert Notifications', () => {
             timeWindow: 5, // 5 minutes
         });
 
-        // Update rule to have email recipient
+        // Create a notification channel with email config
+        const [channel] = await db
+            .insertInto('notification_channels')
+            .values({
+                organization_id: organization.id,
+                name: 'Test Email Channel',
+                type: 'email',
+                config: { recipients: [recipientEmail] },
+                enabled: true,
+            })
+            .returningAll()
+            .execute();
+
+        // Link channel to the alert rule
         await db
-            .updateTable('alert_rules')
-            .set({ email_recipients: [recipientEmail] })
-            .where('id', '=', rule.id)
+            .insertInto('alert_rule_channels')
+            .values({
+                alert_rule_id: rule.id,
+                channel_id: channel.id,
+            })
             .execute();
 
         // 2. Create a log that triggers the alert

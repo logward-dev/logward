@@ -11,14 +11,14 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env.test') });
  * Global setup - runs once before all tests
  */
 beforeAll(async () => {
-    console.log('🧪 Setting up test environment...');
+    console.log('Setting up test environment...');
 
     try {
         // Verify database connection
         await db.selectFrom('users').selectAll().execute();
-        console.log('✅ Database connection established');
+        console.log('Database connection established');
     } catch (error) {
-        console.error('❌ Failed to connect to test database:', error);
+        console.error('Failed to connect to test database:', error);
         console.error('Make sure the test database is running (docker-compose.test.yml)');
         throw error;
     }
@@ -60,7 +60,7 @@ beforeEach(async () => {
  * Global teardown - runs once after all tests
  */
 afterAll(async () => {
-    console.log('🧹 Cleaning up test environment...');
+    console.log('Cleaning up test environment...');
 
     // Close Redis connection
     await connection.quit();
@@ -68,5 +68,5 @@ afterAll(async () => {
     // Close database connection
     await db.destroy();
 
-    console.log('✅ Test environment cleaned up');
+    console.log('Test environment cleaned up');
 });

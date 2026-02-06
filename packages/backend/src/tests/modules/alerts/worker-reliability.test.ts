@@ -16,7 +16,9 @@ describe('Alert Worker Reliability', () => {
 
         await db.deleteFrom('logs').execute();
         await db.deleteFrom('alert_history').execute();
+        await db.deleteFrom('alert_rule_channels').execute();
         await db.deleteFrom('alert_rules').execute();
+        await db.deleteFrom('notification_channels').execute();
         await db.deleteFrom('notifications').execute();
 
         // Clear MailHog messages
@@ -96,7 +98,7 @@ describe('Alert Worker Reliability', () => {
         it('should handle webhook failure gracefully', async () => {
             const { organization, project } = await createTestContext();
 
-            // Create rule with invalid webhook URL (only webhook, no email to simplify)
+            // Create rule
             const rule = await db
                 .insertInto('alert_rules')
                 .values({
@@ -109,11 +111,33 @@ describe('Alert Worker Reliability', () => {
                     threshold: 1,
                     enabled: true,
                     email_recipients: [],
-                    webhook_url: 'http://localhost:99999/nonexistent', // Invalid port
+                    webhook_url: null,
                     metadata: null,
                 })
                 .returningAll()
                 .executeTakeFirstOrThrow();
+
+            // Create a webhook notification channel with invalid URL
+            const [channel] = await db
+                .insertInto('notification_channels')
+                .values({
+                    organization_id: organization.id,
+                    name: 'Failed Webhook Channel',
+                    type: 'webhook',
+                    config: { url: 'http://localhost:99999/nonexistent' },
+                    enabled: true,
+                })
+                .returningAll()
+                .execute();
+
+            // Link channel to alert rule
+            await db
+                .insertInto('alert_rule_channels')
+                .values({
+                    alert_rule_id: rule.id,
+                    channel_id: channel.id,
+                })
+                .execute();
 
             // Create error log
             await createTestLog({

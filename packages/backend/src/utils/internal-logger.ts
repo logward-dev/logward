@@ -54,14 +54,14 @@ export async function initializeInternalLogging(): Promise<void> {
       globalMetadata: {
         service: process.env.SERVICE_NAME || 'logtide-backend',
         env: process.env.NODE_ENV || 'development',
-        version: process.env.npm_package_version || '0.5.3',
+        version: process.env.npm_package_version || '0.5.4',
         hostname: process.env.HOSTNAME || 'unknown',
       },
     });
 
     isEnabled = true;
   } catch (error) {
-    console.error('[Internal Logging] ❌ Failed to initialize internal logging:', error);
+    console.error('[Internal Logging] Failed to initialize internal logging:', error);
   }
 }
 

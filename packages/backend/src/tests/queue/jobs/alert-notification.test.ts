@@ -23,6 +23,14 @@ vi.mock('../../../modules/alerts/index.js', () => ({
     },
 }));
 
+// Mock notificationChannelsService
+const mockGetAlertRuleChannels = vi.fn().mockResolvedValue([]);
+vi.mock('../../../modules/notification-channels/index.js', () => ({
+    notificationChannelsService: {
+        getAlertRuleChannels: (...args: unknown[]) => mockGetAlertRuleChannels(...args),
+    },
+}));
+
 // Mock config
 vi.mock('../../../config/index.js', () => ({
     config: {
@@ -57,6 +65,8 @@ describe('Alert Notification Job', () => {
 
         vi.clearAllMocks();
         mockFetch.mockReset();
+        mockGetAlertRuleChannels.mockReset();
+        mockGetAlertRuleChannels.mockResolvedValue([]);
     });
 
     afterEach(() => {
@@ -93,8 +103,16 @@ describe('Alert Notification Job', () => {
             expect(notifications[0].title).toContain('Test Alert Rule');
         });
 
-        it('should send email notification when recipients are configured', async () => {
+        it('should send email notification when email channel is configured', async () => {
             const { organization, project } = await createTestContext();
+
+            // Mock notification channel with email recipients
+            mockGetAlertRuleChannels.mockResolvedValueOnce([{
+                id: '00000000-0000-0000-0000-000000000010',
+                type: 'email',
+                enabled: true,
+                config: { recipients: ['admin@example.com', 'ops@example.com'] },
+            }]);
 
             const jobData: AlertNotificationData = {
                 historyId: '00000000-0000-0000-0000-000000000001',
@@ -105,7 +123,7 @@ describe('Alert Notification Job', () => {
                 log_count: 100,
                 threshold: 50,
                 time_window: 5,
-                email_recipients: ['admin@example.com', 'ops@example.com'],
+                email_recipients: [],
                 webhook_url: undefined,
             };
 
@@ -118,13 +136,21 @@ describe('Alert Notification Job', () => {
             );
         });
 
-        it('should send webhook notification when URL is configured', async () => {
+        it('should send webhook notification when webhook channel is configured', async () => {
             const { organization, project } = await createTestContext();
 
             mockFetch.mockResolvedValueOnce({
                 ok: true,
                 statusText: 'OK',
             });
+
+            // Mock notification channel with webhook
+            mockGetAlertRuleChannels.mockResolvedValueOnce([{
+                id: '00000000-0000-0000-0000-000000000010',
+                type: 'webhook',
+                enabled: true,
+                config: { url: 'https://hooks.example.com/alert' },
+            }]);
 
             const jobData: AlertNotificationData = {
                 historyId: '00000000-0000-0000-0000-000000000001',
@@ -136,7 +162,7 @@ describe('Alert Notification Job', () => {
                 threshold: 50,
                 time_window: 5,
                 email_recipients: [],
-                webhook_url: 'https://hooks.example.com/alert',
+                webhook_url: undefined,
             };
 
             await processAlertNotification({ data: jobData });
@@ -159,6 +185,14 @@ describe('Alert Notification Job', () => {
                 statusText: 'Internal Server Error',
             });
 
+            // Mock notification channel with webhook
+            mockGetAlertRuleChannels.mockResolvedValueOnce([{
+                id: '00000000-0000-0000-0000-000000000010',
+                type: 'webhook',
+                enabled: true,
+                config: { url: 'https://hooks.example.com/failing' },
+            }]);
+
             const jobData: AlertNotificationData = {
                 historyId: '00000000-0000-0000-0000-000000000001',
                 rule_id: '00000000-0000-0000-0000-000000000002',
@@ -169,7 +203,7 @@ describe('Alert Notification Job', () => {
                 threshold: 50,
                 time_window: 5,
                 email_recipients: [],
-                webhook_url: 'https://hooks.example.com/failing',
+                webhook_url: undefined,
             };
 
             await processAlertNotification({ data: jobData });
@@ -302,6 +336,22 @@ describe('Alert Notification Job', () => {
                 statusText: 'OK',
             });
 
+            // Mock notification channels with both email and webhook
+            mockGetAlertRuleChannels.mockResolvedValueOnce([
+                {
+                    id: '00000000-0000-0000-0000-000000000010',
+                    type: 'email',
+                    enabled: true,
+                    config: { recipients: ['admin@example.com'] },
+                },
+                {
+                    id: '00000000-0000-0000-0000-000000000011',
+                    type: 'webhook',
+                    enabled: true,
+                    config: { url: 'https://hooks.example.com/alert' },
+                },
+            ]);
+
             const consoleSpy = vi.spyOn(console, 'log');
 
             const jobData: AlertNotificationData = {
@@ -313,8 +363,8 @@ describe('Alert Notification Job', () => {
                 log_count: 100,
                 threshold: 50,
                 time_window: 5,
-                email_recipients: ['admin@example.com'],
-                webhook_url: 'https://hooks.example.com/alert',
+                email_recipients: [],
+                webhook_url: undefined,
             };
 
             await processAlertNotification({ data: jobData });
@@ -336,6 +386,14 @@ describe('Alert Notification Job', () => {
                 statusText: 'OK',
             });
 
+            // Mock notification channel with webhook
+            mockGetAlertRuleChannels.mockResolvedValueOnce([{
+                id: '00000000-0000-0000-0000-000000000010',
+                type: 'webhook',
+                enabled: true,
+                config: { url: 'https://hooks.example.com/alert' },
+            }]);
+
             const jobData: AlertNotificationData = {
                 historyId: '00000000-0000-0000-0000-000000000001',
                 rule_id: '00000000-0000-0000-0000-000000000002',
@@ -346,7 +404,7 @@ describe('Alert Notification Job', () => {
                 threshold: 100,
                 time_window: 10,
                 email_recipients: [],
-                webhook_url: 'https://hooks.example.com/alert',
+                webhook_url: undefined,
             };
 
             await processAlertNotification({ data: jobData });
@@ -359,6 +417,41 @@ describe('Alert Notification Job', () => {
             expect(body.threshold).toBe(100);
             expect(body.time_window).toBe(10);
             expect(body.timestamp).toBeDefined();
+        });
+
+        it('should ignore legacy email_recipients field and only use channels', async () => {
+            const { organization, project } = await createTestContext();
+
+            // No channels configured
+            mockGetAlertRuleChannels.mockResolvedValueOnce([]);
+
+            const consoleSpy = vi.spyOn(console, 'log');
+
+            const jobData: AlertNotificationData = {
+                historyId: '00000000-0000-0000-0000-000000000001',
+                rule_id: '00000000-0000-0000-0000-000000000002',
+                rule_name: 'Legacy Fields Ignored',
+                organization_id: organization.id,
+                project_id: project.id,
+                log_count: 100,
+                threshold: 50,
+                time_window: 5,
+                // Legacy fields populated but should be ignored
+                email_recipients: ['old@example.com'],
+                webhook_url: 'https://hooks.example.com/old',
+            };
+
+            await processAlertNotification({ data: jobData });
+
+            // Should NOT send email despite legacy field
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('No email recipients configured')
+            );
+            // Should NOT send webhook despite legacy field
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('No webhook configured')
+            );
+            expect(mockFetch).not.toHaveBeenCalled();
         });
 
         it('should mark notification as complete after successful processing', async () => {

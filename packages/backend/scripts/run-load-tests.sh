@@ -27,7 +27,7 @@ SKIP_BUILD="${2:-}"
 cd "$ROOT_DIR"
 
 # Step 1: Start infrastructure
-echo -e "${YELLOW}📦 Step 1: Starting test infrastructure...${NC}"
+echo -e "${YELLOW}Step 1: Starting test infrastructure...${NC}"
 
 if [ "$SKIP_BUILD" != "--skip-build" ]; then
     docker compose -f docker-compose.test.yml build backend-test
@@ -36,20 +36,20 @@ fi
 docker compose -f docker-compose.test.yml up -d postgres-test redis-test mailhog-test
 
 # Wait for dependencies
-echo -e "${YELLOW}⏳ Waiting for PostgreSQL and Redis...${NC}"
+echo -e "${YELLOW}Waiting for PostgreSQL and Redis...${NC}"
 sleep 5
 
 # Start backend
 docker compose -f docker-compose.test.yml up -d backend-test
 
 # Step 2: Wait for backend to be healthy
-echo -e "${YELLOW}⏳ Step 2: Waiting for backend to be healthy...${NC}"
+echo -e "${YELLOW}Step 2: Waiting for backend to be healthy...${NC}"
 MAX_RETRIES=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if curl -s "$BASE_URL/health" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Backend is healthy!${NC}"
+        echo -e "${GREEN}Backend is healthy!${NC}"
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -58,27 +58,27 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo -e "${RED}❌ Backend failed to start${NC}"
+    echo -e "${RED}Backend failed to start${NC}"
     docker compose -f docker-compose.test.yml logs backend-test
     exit 1
 fi
 
 # Step 3: Seed test data and get API key
-echo -e "${YELLOW}🌱 Step 3: Seeding test data...${NC}"
+echo -e "${YELLOW}Step 3: Seeding test data...${NC}"
 
 # Run seed script inside the backend container
 API_KEY=$(docker compose -f docker-compose.test.yml exec -T backend-test node dist/scripts/seed-load-test.js 2>/dev/null | tail -1)
 
 if [ -z "$API_KEY" ] || [[ ! "$API_KEY" =~ ^lp_load_ ]]; then
-    echo -e "${RED}❌ Failed to get API key from seed script${NC}"
+    echo -e "${RED}Failed to get API key from seed script${NC}"
     echo "Output was: $API_KEY"
     exit 1
 fi
 
-echo -e "${GREEN}✅ API Key obtained: ${API_KEY:0:20}...${NC}"
+echo -e "${GREEN}API Key obtained: ${API_KEY:0:20}...${NC}"
 
 # Step 4: Run k6 tests
-echo -e "${YELLOW}🚀 Step 4: Running k6 load tests ($TEST_TYPE)...${NC}"
+echo -e "${YELLOW}Step 4: Running k6 load tests ($TEST_TYPE)...${NC}"
 echo ""
 
 cd "$BACKEND_DIR"
@@ -120,7 +120,7 @@ esac
 
 # Step 5: Cleanup (optional)
 echo ""
-echo -e "${YELLOW}🧹 Cleanup options:${NC}"
+echo -e "${YELLOW}Cleanup options:${NC}"
 echo "   To stop containers: docker compose -f docker-compose.test.yml down"
 echo "   To stop and remove volumes: docker compose -f docker-compose.test.yml down -v"
 

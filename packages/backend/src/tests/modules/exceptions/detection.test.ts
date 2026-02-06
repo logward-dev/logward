@@ -245,6 +245,71 @@ describe('ExceptionDetectionService', () => {
             });
         });
 
+        describe('metadata.error (Node.js error serialization)', () => {
+            it('should parse error from metadata.error with stack', () => {
+                const metadata = {
+                    error: {
+                        name: 'Error',
+                        message: 'Invalid JSON: Expected \',\' or \'}\' after property value in JSON at position 154',
+                        stack: 'Error: Invalid JSON: Expected \',\' or \'}\' after property value in JSON at position 154\n    at Parser.fn (file:///app/packages/backend/dist/modules/ingestion/routes.js:251:27)\n    at IncomingMessage.onEnd (/app/node_modules/.pnpm/fastify@5.7.4/node_modules/fastify/lib/content-type-parser.js:299:27)',
+                    },
+                };
+
+                const result = ExceptionDetectionService.detectException('Invalid JSON error', metadata);
+
+                expect(result).not.toBeNull();
+                expect(result?.exceptionType).toBe('Error');
+                expect(result?.exceptionMessage).toContain('Invalid JSON');
+                expect(result?.frames.length).toBeGreaterThan(0);
+            });
+
+            it('should ignore metadata.error without stack', () => {
+                const metadata = {
+                    error: {
+                        name: 'Error',
+                        message: 'Something failed',
+                    },
+                };
+
+                const result = ExceptionDetectionService.detectException('Regular log', metadata);
+
+                expect(result).toBeNull();
+            });
+
+            it('should ignore metadata.error when it is a string', () => {
+                const metadata = {
+                    error: 'some error string',
+                };
+
+                const result = ExceptionDetectionService.detectException('Regular log', metadata);
+
+                expect(result).toBeNull();
+            });
+
+            it('should prefer metadata.exception over metadata.error', () => {
+                const metadata = {
+                    exception: {
+                        type: 'TypeError',
+                        message: 'From structured exception',
+                        stacktrace: [
+                            { file: '/app/src/index.js', function: 'main', line: 1 },
+                        ],
+                    },
+                    error: {
+                        name: 'Error',
+                        message: 'From error field',
+                        stack: 'Error: From error field\n    at other (/app/other.js:1:1)',
+                    },
+                };
+
+                const result = ExceptionDetectionService.detectException('Error', metadata);
+
+                expect(result).not.toBeNull();
+                expect(result?.exceptionType).toBe('TypeError');
+                expect(result?.exceptionMessage).toBe('From structured exception');
+            });
+        });
+
         describe('text parsing fallback', () => {
             it('should fallback to text parsing when no metadata.exception', () => {
                 const message = 'Error: Something went wrong\n    at main (/app/index.js:10:5)';

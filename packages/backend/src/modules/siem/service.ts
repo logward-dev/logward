@@ -1,5 +1,6 @@
 import { Kysely, sql, Expression, SqlBool } from 'kysely';
 import type { Database, Severity } from '../../database/types';
+import type { PackCategory } from '@logtide/shared';
 import type {
   DetectionEvent,
   CreateDetectionEventInput,
@@ -46,6 +47,7 @@ export class SiemService {
         log_message: input.logMessage,
         trace_id: input.traceId ?? null,
         matched_fields: input.matchedFields ?? null,
+        category: input.category ?? 'security',
         time: new Date(),
       })
       .returningAll()
@@ -64,6 +66,7 @@ export class SiemService {
     organizationId: string;
     projectId?: string | null;
     severity?: string[];
+    category?: string | string[];
     startTime?: Date;
     endTime?: Date;
     limit?: number;
@@ -92,9 +95,18 @@ export class SiemService {
         'trace_id',
         'matched_fields',
         'incident_id',
+        'category',
       ])
       .where('organization_id', '=', filters.organizationId)
       .where('time', '>=', effectiveStartTime);
+
+    if (filters.category) {
+      if (Array.isArray(filters.category)) {
+        query = query.where('category', 'in', filters.category as PackCategory[]);
+      } else {
+        query = query.where('category', '=', filters.category as PackCategory);
+      }
+    }
 
     if (filters.projectId) {
       query = query.where('project_id', '=', filters.projectId);
@@ -547,6 +559,7 @@ export class SiemService {
       traceId: row.trace_id,
       matchedFields: row.matched_fields,
       incidentId: row.incident_id,
+      category: row.category ?? 'security',
     };
   }
 

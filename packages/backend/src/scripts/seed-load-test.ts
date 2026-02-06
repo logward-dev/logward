@@ -12,7 +12,7 @@ const LOAD_TEST_EMAIL = 'loadtest@logtide.dev';
 const LOAD_TEST_ORG_SLUG = 'load-test-org';
 
 async function seedLoadTestData() {
-    console.error('🌱 Seeding load test data...');
+    console.error('Seeding load test data...');
 
     // Check if load test user already exists
     const existingUser = await db
@@ -22,7 +22,7 @@ async function seedLoadTestData() {
         .executeTakeFirst();
 
     if (existingUser) {
-        console.error('⚠️  Load test data already exists, fetching existing API key...');
+        console.error('Load test data already exists, fetching existing API key...');
 
         // Get existing project and API key
         const org = await db
@@ -54,7 +54,7 @@ async function seedLoadTestData() {
 
             // Output only the API key to stdout (for scripts to capture)
             console.log(key);
-            console.error('✅ New API key created for existing load test setup');
+            console.error('New API key created for existing load test setup');
             return;
         }
     }
@@ -128,13 +128,13 @@ async function seedLoadTestData() {
     // Output only the API key to stdout (for scripts to capture)
     console.log(key);
 
-    console.error('✅ Load test data seeded successfully!');
+    console.error('Load test data seeded successfully!');
 }
 
 // Run if called directly
 seedLoadTestData()
     .then(() => process.exit(0))
     .catch((err) => {
-        console.error('❌ Failed to seed load test data:', err);
+        console.error('Failed to seed load test data:', err);
         process.exit(1);
     });

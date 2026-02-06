@@ -5,6 +5,54 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-02-06
+
+### Added
+
+- **Detection Pack Category Routing**: Detection pack results now appear in the correct UI section based on category
+  - `security` packs → Security/SIEM dashboard (unchanged)
+  - `reliability` / `database` packs → Errors page, new "Detections" tab
+  - `business` packs → Alerts page, new "Detections" tab
+  - Manual/SigmaHQ Sigma rules default to `security` category
+  - Added `category` column to `sigma_rules` and `detection_events` tables (migration 020)
+  - Security dashboard and incident auto-grouping now scoped to `category = 'security'` only
+  - API supports filtering detection events by category
+
+### Fixed
+
+- **Exception Detection for `metadata.error`**: Errors serialized as `{ name, message, stack }` in log metadata are now detected and parsed
+  - Previously only `metadata.exception` (structured format) was checked
+  - Common Node.js error serialization pattern (`metadata.error.stack`) was being missed entirely
+  - Falls back through: `metadata.exception` → `metadata.error.stack` → message text parsing
+
+- **Exception Details Dialog `[object Object]`**: Fixed fallback view rendering `[object Object]` instead of error message
+  - When `metadata.error` is a nested object (e.g. `{ name, message, stack }`), the dialog now flattens it
+  - Correctly extracts and displays `message`, `stack`, and `name` from nested error objects
+
+- **Onboarding Race Condition**: Fixed `duplicate key` crash when two concurrent requests create onboarding state
+  - `getOnboardingState` now uses `INSERT ... ON CONFLICT DO NOTHING` to handle concurrent inserts
+  - Re-fetches state after conflict to return the existing record
+
+- **Internal Org Missing Members**: Fixed `@logtide-internal` organization not assigning admin users as members
+  - `bootstrapInternalLogging` now inserts owner into `organization_members` when creating the org
+  - On every startup, ensures all admin users are members of the internal org
+
+- **Unwanted Email/Webhook Notifications**: Fixed notifications being sent even when no notification channels are configured
+  - Legacy `email_recipients` and `webhook_url` fields on alert rules were still being used at dispatch time
+  - Notification job now only uses the notification channels system (`notification_channels` table) to determine recipients
+  - Legacy fields remain in the database schema but are no longer read during notification processing
+
+- **Email Logo Not Rendering**: Replaced broken base64-encoded logo with hosted SVG URLs
+  - Email clients were not displaying the embedded base64 image
+  - Logo now served from `https://logtide.dev/logo/dark.svg` (light backgrounds)
+  - Removed `logo-base64.txt` and simplified logo module
+
+- **Ingestion JSON Parse Errors Returning 500**: Malformed JSON in ingestion requests now correctly returns 400 Bad Request
+  - Added global error handler to propagate `statusCode` from content type parser errors
+  - Invalid JSON/NDJSON payloads no longer cause Internal Server Error responses
+
+---
+
 ## [0.5.3]  - 2026-02-04
 
 ### Added

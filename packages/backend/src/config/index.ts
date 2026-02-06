@@ -75,7 +75,7 @@ export function formatConfigError(error: z.ZodError): string {
   const lines: string[] = [
     '',
     '═══════════════════════════════════════════════════════════════',
-    '❌ CONFIGURATION ERROR - Backend cannot start',
+    'CONFIGURATION ERROR - Backend cannot start',
     '═══════════════════════════════════════════════════════════════',
     '',
     'Please check your .env file for the following issues:',

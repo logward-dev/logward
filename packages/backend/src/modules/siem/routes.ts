@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SEVERITIES, INCIDENT_STATUSES } from '@logtide/shared';
+import { SEVERITIES, INCIDENT_STATUSES, PACK_CATEGORIES } from '@logtide/shared';
 import { SiemService } from './service.js';
 import { SiemDashboardService } from './dashboard-service.js';
 import { enrichmentService } from './enrichment-service.js';
@@ -127,6 +127,16 @@ export async function siemRoutes(fastify: FastifyInstance) {
           properties: {
             organizationId: { type: 'string', format: 'uuid' },
             projectId: { type: 'string', format: 'uuid' },
+            category: {
+              oneOf: [
+                { type: 'string', enum: [...PACK_CATEGORIES] },
+                { type: 'array', items: { type: 'string', enum: [...PACK_CATEGORIES] } },
+              ],
+            },
+            severity: {
+              type: 'array',
+              items: { type: 'string', enum: [...SEVERITIES] },
+            },
             limit: { type: 'integer', minimum: 1, maximum: 100 },
             offset: { type: 'integer', minimum: 0 },
           },
@@ -138,6 +148,11 @@ export async function siemRoutes(fastify: FastifyInstance) {
         const schema = z.object({
           organizationId: z.string().uuid(),
           projectId: z.string().uuid().optional(),
+          category: z.union([
+            z.enum(PACK_CATEGORIES),
+            z.array(z.enum(PACK_CATEGORIES)),
+          ]).optional(),
+          severity: z.array(z.enum(SEVERITIES)).optional(),
           limit: z.coerce.number().min(1).max(100).optional().default(10),
           offset: z.coerce.number().min(0).optional().default(0),
         });
@@ -159,6 +174,8 @@ export async function siemRoutes(fastify: FastifyInstance) {
         const detections = await siemService.getDetectionEvents({
           organizationId: query.organizationId,
           projectId: query.projectId,
+          category: query.category,
+          severity: query.severity,
           limit: query.limit,
           offset: query.offset,
         });
