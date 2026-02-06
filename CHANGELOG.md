@@ -5,6 +5,17 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-02-06
+
+### Fixed
+
+- **Unwanted Email/Webhook Notifications**: Fixed notifications being sent even when no notification channels are configured
+  - Legacy `email_recipients` and `webhook_url` fields on alert rules were still being used at dispatch time
+  - Notification job now only uses the notification channels system (`notification_channels` table) to determine recipients
+  - Legacy fields remain in the database schema but are no longer read during notification processing
+
+---
+
 ## [0.5.3]  - 2026-02-04
 
 ### Added
