@@ -694,6 +694,7 @@ describe('ExceptionService', () => {
 
   describe('getLogsForErrorGroup', () => {
     it('should return empty when no matching logs', async () => {
+      const ctx = await createTestContext();
       const result = await service.getLogsForErrorGroup({
         groupId: '00000000-0000-0000-0000-000000000000',
         fingerprint: 'nonexistent',

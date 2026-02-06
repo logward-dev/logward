@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { sql } from 'kysely';
 import { db } from '../../../database/index.js';
 import { AdminService } from '../../../modules/admin/service.js';
 import { createTestContext, createTestUser, createTestOrganization, createTestProject, createTestLog } from '../../helpers/factories.js';
@@ -299,6 +300,9 @@ describe('AdminService', () => {
             const { project } = await createTestContext();
             await createTestLog({ projectId: project.id });
             await createTestLog({ projectId: project.id });
+
+            // Update pg statistics so approximate_row_count returns correct value
+            await sql`ANALYZE logs`.execute(db);
 
             const stats = await adminService.getLogsStats();
 

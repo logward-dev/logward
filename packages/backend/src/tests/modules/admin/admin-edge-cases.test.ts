@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { sql } from 'kysely';
 import { db, getPoolStats } from '../../../database/index.js';
 import { AdminService } from '../../../modules/admin/service.js';
 import { createTestContext, createTestUser, createTestOrganization, createTestProject, createTestLog, createTestAlertRule } from '../../helpers/factories.js';
@@ -24,6 +25,11 @@ describe('AdminService - Edge Cases', () => {
         await db.deleteFrom('organizations').execute();
         await db.deleteFrom('sessions').execute();
         await db.deleteFrom('users').execute();
+
+        // Update pg statistics after cleanup so approximate_row_count is accurate
+        await sql`ANALYZE logs`.execute(db);
+        // Refresh continuous aggregate so it reflects the empty logs table
+        await sql`CALL refresh_continuous_aggregate('logs_daily_stats', NULL, NULL)`.execute(db);
     });
 
     describe('getSystemStats - edge cases', () => {
@@ -104,6 +110,11 @@ describe('AdminService - Edge Cases', () => {
             for (let i = 0; i < 2; i++) {
                 await createTestLog({ projectId: project2.id });
             }
+
+            // Update pg statistics so approximate_row_count returns correct value
+            await sql`ANALYZE logs`.execute(db);
+            // Refresh continuous aggregate so topOrganizations query has data
+            await sql`CALL refresh_continuous_aggregate('logs_daily_stats', NULL, NULL)`.execute(db);
 
             const stats = await adminService.getLogsStats();
 
