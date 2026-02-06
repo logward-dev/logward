@@ -9,7 +9,7 @@ import { sql } from 'kysely';
  */
 
 async function cleanupOldMigrations() {
-  console.log('🧹 Cleaning up old migration records...');
+  console.log('Cleaning up old migration records...');
 
   try {
     // Check if kysely_migration table exists
@@ -48,7 +48,7 @@ async function cleanupOldMigrations() {
     const deletedCount = Number(result.numAffectedRows || 0);
 
     if (deletedCount > 0) {
-      console.log(`✅ Removed ${deletedCount} obsolete migration record(s)`);
+      console.log(`Removed ${deletedCount} obsolete migration record(s)`);
       console.log('   Removed:', obsoleteMigrations.filter(m =>
         currentMigrations.rows.some(cm => cm.name === m)
       ));
@@ -62,10 +62,10 @@ async function cleanupOldMigrations() {
     `.execute(db);
 
     console.log('\nRemaining migrations:', remainingMigrations.rows.map(m => m.name));
-    console.log('\n✅ Cleanup complete!');
+    console.log('\nCleanup complete!');
 
   } catch (error) {
-    console.error('❌ Error during cleanup:', error);
+    console.error('Error during cleanup:', error);
     throw error;
   } finally {
     await db.destroy();

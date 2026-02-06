@@ -165,7 +165,7 @@ export async function bootstrapInternalLogging(): Promise<string | null> {
       return null;
     }
   } catch (error) {
-    console.error('[Internal Logging] ❌ Failed to bootstrap internal logging:', error);
+    console.error('[Internal Logging] Failed to bootstrap internal logging:', error);
     return null;
   }
 }
@@ -185,10 +185,10 @@ export async function getInternalApiKey(): Promise<string | null> {
 
   if (!bootstrappedKey) {
     console.warn(
-      '[Internal Logging] ⚠️  No API key found. Please set INTERNAL_API_KEY environment variable.',
+      '[Internal Logging] No API key found. Please set INTERNAL_API_KEY environment variable.',
     );
     console.warn(
-      '[Internal Logging] ⚠️  You can find the key in the database or create a new one via the dashboard.',
+      '[Internal Logging] You can find the key in the database or create a new one via the dashboard.',
     );
   }
 

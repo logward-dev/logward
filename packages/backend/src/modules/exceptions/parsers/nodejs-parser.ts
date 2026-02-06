@@ -13,12 +13,12 @@ import type { ExceptionLanguage, ParsedException, StackFrame } from '../types.js
 export class NodeJSExceptionParser extends BaseExceptionParser {
   readonly language: ExceptionLanguage = 'nodejs';
 
-  private readonly EXCEPTION_PATTERN = /^([A-Z][a-zA-Z]*(?:Error|Exception)):\s*(.+?)$/m;
+  private readonly EXCEPTION_PATTERN = /^([A-Z][a-zA-Z]*(?:Error|Exception)|Error|Exception):\s*(.+?)$/m;
 
   private readonly STACK_FRAME_WITH_PARENS =
-    /^\s*at\s+(.+?)\s+\((.+?):(\d+):(\d+)\)$/;
+    /^\s*at\s+(.+?)\s+\((.+):(\d+):(\d+)\)$/;
 
-  private readonly STACK_FRAME_WITHOUT_PARENS = /^\s*at\s+(.+?):(\d+):(\d+)$/;
+  private readonly STACK_FRAME_WITHOUT_PARENS = /^\s*at\s+(.+):(\d+):(\d+)$/;
 
   private readonly ANONYMOUS_FRAME = /^\s*at\s+<anonymous>$/;
 

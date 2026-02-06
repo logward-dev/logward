@@ -14,7 +14,7 @@ console.log('DATABASE_URL loaded');
 // Now dynamically import the migrator
 const { migrateToLatest } = await import('./dist/database/migrator.js');
 
-console.log('🗄️  Database Migration Tool');
+console.log('Database Migration Tool');
 console.log('==========================\n');
 console.log('Running migrations...\n');
 

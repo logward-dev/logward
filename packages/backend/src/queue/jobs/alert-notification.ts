@@ -28,7 +28,7 @@ function getEmailTransporter() {
   if (!emailTransporter) {
     // Check if SMTP is configured
     if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
-      console.warn('⚠️  SMTP not configured - email notifications disabled');
+      console.warn('SMTP not configured - email notifications disabled');
       return null;
     }
 
@@ -42,7 +42,7 @@ function getEmailTransporter() {
       },
     });
 
-    console.log(`📧 Email transporter configured: ${config.SMTP_HOST}:${config.SMTP_PORT}`);
+    console.log(`Email transporter configured: ${config.SMTP_HOST}:${config.SMTP_PORT}`);
   }
 
   return emailTransporter;
@@ -77,10 +77,10 @@ export async function processAlertNotification(job: any) {
     // STEP 1: Create in-app notifications for organization members
     try {
       await createInAppNotifications(data, projectName);
-      console.log(`✅ In-app notifications created: ${data.rule_name}`);
+      console.log(`In-app notifications created: ${data.rule_name}`);
     } catch (error) {
       const errMsg = `In-app notification failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      console.error(`❌ ${errMsg}`);
+      console.error(errMsg);
       errors.push(errMsg);
     }
 
@@ -107,14 +107,14 @@ export async function processAlertNotification(job: any) {
           organizationName: org?.name,
           projectName,
         });
-        console.log(`✅ Email notifications sent: ${data.rule_name} (${emailRecipients.size} recipients)`);
+        console.log(`Email notifications sent: ${data.rule_name} (${emailRecipients.size} recipients)`);
       } catch (error) {
         const errMsg = `Email failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error(`❌ ${errMsg}`);
+        console.error(errMsg);
         errors.push(errMsg);
       }
     } else {
-      console.log(`⚠️  No email recipients configured for: ${data.rule_name}`);
+      console.log(`No email recipients configured for: ${data.rule_name}`);
     }
 
     // STEP 5: Collect webhook URLs from notification channels
@@ -132,16 +132,16 @@ export async function processAlertNotification(job: any) {
     for (const url of webhookUrls) {
       try {
         await sendWebhookNotification({ ...data, webhook_url: url });
-        console.log(`✅ Webhook notification sent: ${data.rule_name} → ${url}`);
+        console.log(`Webhook notification sent: ${data.rule_name} -> ${url}`);
       } catch (error) {
         const errMsg = `Webhook failed (${url}): ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error(`❌ ${errMsg}`);
+        console.error(errMsg);
         errors.push(errMsg);
       }
     }
 
     if (webhookUrls.size === 0) {
-      console.log(`⚠️  No webhook configured for: ${data.rule_name}`);
+      console.log(`No webhook configured for: ${data.rule_name}`);
     }
 
     // Mark as notified (with errors if any)
@@ -233,13 +233,13 @@ async function createInAppNotifications(data: AlertNotificationData, projectName
     .execute();
 
   if (members.length === 0) {
-    console.log(`⚠️  No members found for organization: ${data.organization_id}`);
+    console.log(`No members found for organization: ${data.organization_id}`);
     return;
   }
 
   // Create notification for each member
   const notificationPromises = members.map((member) => {
-    const title = `🚨 Alert Triggered: ${data.rule_name}`;
+    const title = `Alert Triggered: ${data.rule_name}`;
     const message = projectName
       ? `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes for project ${projectName}.`
       : `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes.`;
@@ -263,5 +263,5 @@ async function createInAppNotifications(data: AlertNotificationData, projectName
 
   await Promise.all(notificationPromises);
 
-  console.log(`📢 Created ${members.length} in-app notification(s) for alert: ${data.rule_name}`);
+  console.log(`Created ${members.length} in-app notification(s) for alert: ${data.rule_name}`);
 }

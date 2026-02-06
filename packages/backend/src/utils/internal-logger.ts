@@ -61,7 +61,7 @@ export async function initializeInternalLogging(): Promise<void> {
 
     isEnabled = true;
   } catch (error) {
-    console.error('[Internal Logging] ❌ Failed to initialize internal logging:', error);
+    console.error('[Internal Logging] Failed to initialize internal logging:', error);
   }
 }
 

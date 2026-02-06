@@ -11,7 +11,7 @@ console.log('DATABASE_URL after dotenv.config:', process.env.DATABASE_URL);
 const command = process.argv[2];
 
 async function main() {
-    console.log('🗄️  Database Migration Tool');
+    console.log('Database Migration Tool');
     console.log('==========================\n');
 
     // Dynamic import AFTER dotenv.config to ensure env vars are loaded

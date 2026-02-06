@@ -55,7 +55,7 @@ async function getTestProjectId(): Promise<{ projectId: string; organizationId: 
 }
 
 async function seedLogs(projectId: string, totalLogs: number) {
-  console.log(`\n📝 Seeding ${totalLogs.toLocaleString()} logs...`);
+  console.log(`\nSeeding ${totalLogs.toLocaleString()} logs...`);
 
   // Disable statement timeout for bulk inserts
   await sql`SET statement_timeout = 0`.execute(db);
@@ -102,11 +102,11 @@ async function seedLogs(projectId: string, totalLogs: number) {
   }
 
   const totalTime = (Date.now() - startTime) / 1000;
-  console.log(`✅ Logs seeded in ${totalTime.toFixed(1)}s (${(totalLogs/totalTime).toFixed(0)} logs/sec)`);
+  console.log(`Logs seeded in ${totalTime.toFixed(1)}s (${(totalLogs/totalTime).toFixed(0)} logs/sec)`);
 }
 
 async function seedSpans(projectId: string, organizationId: string, totalSpans: number) {
-  console.log(`\n🔗 Seeding ${totalSpans.toLocaleString()} spans...`);
+  console.log(`\nSeeding ${totalSpans.toLocaleString()} spans...`);
 
   const startTime = Date.now();
   let inserted = 0;
@@ -147,11 +147,11 @@ async function seedSpans(projectId: string, organizationId: string, totalSpans: 
   }
 
   const totalTime = (Date.now() - startTime) / 1000;
-  console.log(`✅ Spans seeded in ${totalTime.toFixed(1)}s`);
+  console.log(`Spans seeded in ${totalTime.toFixed(1)}s`);
 }
 
 async function seedDetectionEvents(projectId: string, organizationId: string, totalEvents: number) {
-  console.log(`\n🛡️ Seeding ${totalEvents.toLocaleString()} detection events...`);
+  console.log(`\nSeeding ${totalEvents.toLocaleString()} detection events...`);
 
   const startTime = Date.now();
 
@@ -206,7 +206,7 @@ async function seedDetectionEvents(projectId: string, organizationId: string, to
     .execute();
 
   if (sampleLogs.length === 0) {
-    console.log('  ⚠️ No error/critical logs found, skipping detection events');
+    console.log('  No error/critical logs found, skipping detection events');
     return;
   }
 
@@ -232,11 +232,11 @@ async function seedDetectionEvents(projectId: string, organizationId: string, to
   `.execute(db);
 
   const totalTime = (Date.now() - startTime) / 1000;
-  console.log(`✅ Detection events seeded in ${totalTime.toFixed(1)}s`);
+  console.log(`Detection events seeded in ${totalTime.toFixed(1)}s`);
 }
 
 async function refreshAggregates() {
-  console.log('\n🔄 Refreshing continuous aggregates...');
+  console.log('\nRefreshing continuous aggregates...');
 
   const aggregates = [
     'logs_hourly_stats',
@@ -249,13 +249,13 @@ async function refreshAggregates() {
       await sql`CALL refresh_continuous_aggregate(${agg}::regclass, NULL, NOW())`.execute(db);
       console.log(`  ✓ ${agg} refreshed`);
     } catch (e) {
-      console.log(`  ⚠️ ${agg} refresh skipped (may not exist yet)`);
+      console.log(`  ${agg} refresh skipped (may not exist yet)`);
     }
   }
 }
 
 async function showStats() {
-  console.log('\n📊 Final statistics:');
+  console.log('\nFinal statistics:');
 
   const logsCount = await db
     .selectFrom('logs')
@@ -278,12 +278,12 @@ async function showStats() {
 }
 
 async function main() {
-  console.log('🚀 Starting massive data seed...');
+  console.log('Starting massive data seed...');
   console.log(`   Target: ${TOTAL_LOGS.toLocaleString()} logs, ${TOTAL_SPANS.toLocaleString()} spans, ${TOTAL_DETECTION_EVENTS.toLocaleString()} detection events`);
 
   try {
     const { projectId, organizationId } = await getTestProjectId();
-    console.log(`\n📁 Using project: ${projectId}`);
+    console.log(`\nUsing project: ${projectId}`);
     console.log(`   Organization: ${organizationId}`);
 
     await seedLogs(projectId, TOTAL_LOGS);
@@ -292,9 +292,9 @@ async function main() {
     await refreshAggregates();
     await showStats();
 
-    console.log('\n✅ Massive data seed complete!');
+    console.log('\nMassive data seed complete!');
   } catch (error) {
-    console.error('\n❌ Error:', error);
+    console.error('\nError:', error);
     process.exit(1);
   }
 
