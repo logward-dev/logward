@@ -41,7 +41,7 @@
 	import CreateAlertDialog from "$lib/components/CreateAlertDialog.svelte";
 	import EditAlertDialog from "$lib/components/EditAlertDialog.svelte";
 	import SigmaRulesList from "$lib/components/SigmaRulesList.svelte";
-	import DetectionEventsList from "$lib/components/siem/incidents/DetectionEventsList.svelte";
+	import SeverityBadge from "$lib/components/siem/shared/SeverityBadge.svelte";
 	import SigmaRuleDetailsDialog from "$lib/components/SigmaRuleDetailsDialog.svelte";
 	import SigmaSyncDialog from "$lib/components/SigmaSyncDialog.svelte";
 	import DetectionPacksGalleryDialog from "$lib/components/DetectionPacksGalleryDialog.svelte";
@@ -58,8 +58,6 @@
 	import Download from "@lucide/svelte/icons/download";
 	import ChevronDown from "@lucide/svelte/icons/chevron-down";
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
-	import ChevronLeft from "@lucide/svelte/icons/chevron-left";
-	import ChevronRight from "@lucide/svelte/icons/chevron-right";
 	import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
 	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
 	import { checklistStore } from "$lib/stores/checklist";
@@ -101,11 +99,22 @@
 	let expandedHistoryLogs = $state<Map<string, any[]>>(new Map());
 	let loadingHistoryLogs = $state<Set<string>>(new Set());
 
-	// Business detections state
-	let businessDetections = $state<DetectionEvent[]>([]);
-	let businessDetectionsLoading = $state(false);
-	let businessDetectionsPage = $state(1);
-	let businessDetectionsPageSize = $state(20);
+	// Non-security detections state
+	let detections = $state<DetectionEvent[]>([]);
+	let detectionsLoading = $state(false);
+
+	// Unified history: merge alert history + detections, sorted by time desc
+	type HistoryItem =
+		| { type: 'alert'; data: AlertHistory; time: Date }
+		| { type: 'detection'; data: DetectionEvent; time: Date };
+
+	let historyItems = $derived<HistoryItem[]>((() => {
+		const items: HistoryItem[] = [
+			...alertHistory.map(h => ({ type: 'alert' as const, data: h, time: new Date(h.triggeredAt) })),
+			...detections.map(d => ({ type: 'detection' as const, data: d, time: new Date(d.time) })),
+		];
+		return items.sort((a, b) => b.time.getTime() - a.time.getTime());
+	})());
 
 	async function loadAlertRules() {
 		if (!$currentOrganization) return;
@@ -152,31 +161,23 @@
 		}
 	}
 
-	async function loadBusinessDetections() {
+	async function loadDetections() {
 		if (!$currentOrganization) return;
 
-		businessDetectionsLoading = true;
+		detectionsLoading = true;
 
 		try {
 			const response = await getRecentDetections({
 				organizationId: $currentOrganization.id,
-				category: ['business'],
-				limit: businessDetectionsPageSize,
-				offset: (businessDetectionsPage - 1) * businessDetectionsPageSize,
+				category: ['reliability', 'database', 'business'],
+				limit: 50,
 			});
 
-			businessDetections = response.detections;
+			detections = response.detections;
 		} catch (e) {
 			toastStore.error(e instanceof Error ? e.message : 'Failed to load detections');
 		} finally {
-			businessDetectionsLoading = false;
-		}
-	}
-
-	function goToBusinessDetectionsPage(page: number) {
-		if (page !== businessDetectionsPage) {
-			businessDetectionsPage = page;
-			loadBusinessDetections();
+			detectionsLoading = false;
 		}
 	}
 
@@ -185,7 +186,7 @@
 			alertRules = [];
 			alertHistory = [];
 			sigmaRules = [];
-			businessDetections = [];
+			detections = [];
 			lastLoadedOrgId = null;
 			return;
 		}
@@ -194,7 +195,7 @@
 
 		loadAlertRules();
 		loadAlertHistory();
-		loadBusinessDetections();
+		loadDetections();
 	});
 
 	async function toggleAlert(alert: AlertRule) {

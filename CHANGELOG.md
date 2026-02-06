@@ -5,6 +5,29 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-02-06
+
+### Fixed
+
+- **Detection Category Filter Validation Error**: Fixed `querystring/category must match exactly one schema in oneOf` on `/api/v1/siem/detections`
+  - Replaced `oneOf` schema (string | array) with simple `type: array` — Fastify auto-coerces single values to arrays
+  - Aligned Zod validation schema to match
+
+### Performance
+
+- **Admin Dashboard 31s → ~1s**: Fixed all admin stats endpoints causing dashboard timeout on 50M+ logs
+  - `/api/v1/admin/stats/logs`: Switched to `logs_daily_stats` continuous aggregate for top orgs/projects/per-day (37s → 31ms), `approximate_row_count()` for total (677ms → 56ms)
+  - `/api/v1/admin/stats/database`: Replaced 2x `COUNT(*)` full scans with `approximate_row_count()` + `pg_class.reltuples`, single parallel batch (1.4s → 180ms)
+  - `/api/v1/admin/stats/performance`: Changed `created_at` filter to `time` for chunk pruning (793ms → 160ms), parallelized all queries
+  - All 6 queries per endpoint now run via `Promise.all()` instead of sequentially
+
+- **Error Group Logs Timeout**: Fixed `/api/v1/error-groups/:id/logs` statement timeout on large datasets
+  - Added `logs.time` bounds (`firstSeen`/`lastSeen`) to enable TimescaleDB chunk pruning on the hypertable JOIN
+  - Removed expensive `COUNT(*)` query — uses `error_groups.occurrence_count` (maintained by trigger) instead
+  - Eliminated redundant group fetch (reuses data already loaded for authorization check)
+
+---
+
 ## [0.5.4] - 2026-02-06
 
 ### Added

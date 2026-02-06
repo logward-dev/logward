@@ -435,30 +435,19 @@ export class ExceptionService {
    */
   async getLogsForErrorGroup(params: {
     groupId: string;
+    fingerprint: string;
+    organizationId: string;
+    projectId: string | null;
+    firstSeen: Date;
+    lastSeen: Date;
+    occurrenceCount: number;
     limit?: number;
     offset?: number;
   }): Promise<{ logs: Array<{ id: string; time: Date; service: string; message: string }>; total: number }> {
-    const group = await this.db
-      .selectFrom('error_groups')
-      .select(['fingerprint', 'organization_id', 'project_id'])
-      .where('id', '=', params.groupId)
-      .executeTakeFirst();
-
-    if (!group) return { logs: [], total: 0 };
-
-    let countQuery = this.db
-      .selectFrom('exceptions')
-      .innerJoin('logs', 'exceptions.log_id', 'logs.id')
-      .select(sql<number>`count(*)::int`.as('count'))
-      .where('exceptions.fingerprint', '=', group.fingerprint)
-      .where('exceptions.organization_id', '=', group.organization_id);
-
-    if (group.project_id) {
-      countQuery = countQuery.where('exceptions.project_id', '=', group.project_id);
-    }
-
-    const countResult = await countQuery.executeTakeFirst();
-    const total = countResult?.count || 0;
+    // Add 1-day buffer to time bounds: logs.time may differ from exceptions.created_at
+    // (e.g. batch ingestion, clock skew). Still enables TimescaleDB chunk pruning.
+    const timeLower = new Date(params.firstSeen.getTime() - 24 * 60 * 60 * 1000);
+    const timeUpper = new Date(params.lastSeen.getTime() + 24 * 60 * 60 * 1000);
 
     let query = this.db
       .selectFrom('exceptions')
@@ -469,13 +458,15 @@ export class ExceptionService {
         'logs.service',
         'logs.message',
       ])
-      .where('exceptions.fingerprint', '=', group.fingerprint)
-      .where('exceptions.organization_id', '=', group.organization_id)
+      .where('exceptions.fingerprint', '=', params.fingerprint)
+      .where('exceptions.organization_id', '=', params.organizationId)
+      .where('logs.time', '>=', timeLower)
+      .where('logs.time', '<=', timeUpper)
       .orderBy('logs.time', 'desc')
       .limit(params.limit || 10);
 
-    if (group.project_id) {
-      query = query.where('exceptions.project_id', '=', group.project_id);
+    if (params.projectId) {
+      query = query.where('exceptions.project_id', '=', params.projectId);
     }
 
     if (params.offset) {
@@ -491,7 +482,7 @@ export class ExceptionService {
         service: r.service,
         message: r.message,
       })),
-      total,
+      total: params.occurrenceCount,
     };
   }
 }

@@ -693,9 +693,15 @@ describe('ExceptionService', () => {
   });
 
   describe('getLogsForErrorGroup', () => {
-    it('should return empty when group not found', async () => {
+    it('should return empty when no matching logs', async () => {
       const result = await service.getLogsForErrorGroup({
         groupId: '00000000-0000-0000-0000-000000000000',
+        fingerprint: 'nonexistent',
+        organizationId: ctx.organization.id,
+        projectId: null,
+        firstSeen: new Date('2020-01-01'),
+        lastSeen: new Date('2020-01-02'),
+        occurrenceCount: 0,
       });
 
       expect(result.logs).toEqual([]);

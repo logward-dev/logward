@@ -48,6 +48,7 @@
 	let error = $state('');
 	let updating = $state(false);
 	let copied = $state(false);
+	let loadingMore = $state(false);
 	let maxWidthClass = $state("max-w-7xl");
 	let containerPadding = $state("px-6 py-8");
 
@@ -120,8 +121,9 @@
 	}
 
 	async function loadMoreLogs() {
-		if (!group) return;
+		if (!group || loadingMore) return;
 
+		loadingMore = true;
 		try {
 			const logsData = await getErrorGroupLogs({
 				groupId,
@@ -134,6 +136,8 @@
 			logsPage++;
 		} catch (e) {
 			toastStore.error('Failed to load more logs');
+		} finally {
+			loadingMore = false;
 		}
 	}
 
@@ -412,8 +416,13 @@
 
 							{#if logs.length < logsTotal}
 								<div class="flex justify-center mt-4">
-									<Button variant="outline" onclick={loadMoreLogs}>
-										Load More ({logsTotal - logs.length} remaining)
+									<Button variant="outline" onclick={loadMoreLogs} disabled={loadingMore}>
+										{#if loadingMore}
+											<Spinner class="w-4 h-4 mr-2" />
+											Loading...
+										{:else}
+											Load More ({logsTotal - logs.length} remaining)
+										{/if}
 									</Button>
 								</div>
 							{/if}
