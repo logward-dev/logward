@@ -68,6 +68,29 @@ export async function build(opts = {}) {
     }
   });
 
+  // Global error handler: ensure parse errors return 400, not 500
+  fastify.setErrorHandler((error, request, reply) => {
+    const statusCode = (error as any).statusCode && (error as any).statusCode >= 400
+      ? (error as any).statusCode
+      : undefined;
+
+    if (statusCode) {
+      reply.code(statusCode).send({
+        statusCode,
+        error: error.message,
+      });
+      return;
+    }
+
+    // Default: 500
+    request.log.error(error);
+    reply.code(500).send({
+      statusCode: 500,
+      error: 'Internal Server Error',
+      message: error.message,
+    });
+  });
+
   await fastify.register(cors, {
     origin: true,
     credentials: true,

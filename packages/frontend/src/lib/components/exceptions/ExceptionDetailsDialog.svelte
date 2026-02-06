@@ -36,7 +36,15 @@
 		for (const [key, value] of Object.entries(metadata)) {
 			const lowerKey = key.toLowerCase();
 			if (ERROR_FIELDS.some(f => lowerKey.includes(f.toLowerCase()))) {
-				errorFields[key] = value;
+				// Flatten nested error objects (e.g. { name, message, stack })
+				if (value && typeof value === 'object' && !Array.isArray(value)) {
+					const obj = value as Record<string, unknown>;
+					if (obj.message) errorFields['message'] = obj.message;
+					if (obj.stack) errorFields['stack'] = obj.stack;
+					if (obj.name) errorFields['errorName'] = obj.name;
+				} else {
+					errorFields[key] = value;
+				}
 			} else if (CONTEXT_FIELDS.some(f => lowerKey === f.toLowerCase())) {
 				contextFields[key] = value;
 			}

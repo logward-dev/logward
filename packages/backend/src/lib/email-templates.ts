@@ -6,7 +6,7 @@
  */
 
 import { config } from '../config/index.js';
-import { getLogoDataUri } from './logo.js';
+import { getLogoUrl } from './logo.js';
 
 // ============================================================================
 // HELPERS
@@ -102,7 +102,7 @@ interface BaseEmailOptions {
 function baseTemplate(content: string, options: BaseEmailOptions = {}): string {
   const { preheader } = options;
   const frontendUrl = getFrontendUrl();
-  const logoUrl = getLogoDataUri();
+  const logoUrl = getLogoUrl();
 
   return `<!DOCTYPE html>
 <html lang="en">

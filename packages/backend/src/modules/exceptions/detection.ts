@@ -56,6 +56,17 @@ export class ExceptionDetectionService {
       }
     }
 
+    // Try metadata.error (common Node.js serialization: { name, message, stack })
+    if (metadata?.error && typeof metadata.error === 'object') {
+      const errObj = metadata.error as Record<string, unknown>;
+      if (typeof errObj.stack === 'string' && errObj.stack.length > 0) {
+        const parsed = ParserFactory.parse(errObj.stack);
+        if (parsed) {
+          return parsed;
+        }
+      }
+    }
+
     // Fallback to text parsing
     return ParserFactory.parse(message);
   }

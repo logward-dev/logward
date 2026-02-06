@@ -50,7 +50,7 @@ class OnboardingService {
       };
     }
 
-    // Create new record with defaults
+    // Create new record with defaults (onConflict handles race conditions)
     await db
       .insertInto('user_onboarding')
       .values({
@@ -62,7 +62,33 @@ class OnboardingService {
         tutorial_step: 0,
         tutorial_skipped: false,
       })
+      .onConflict((oc) => oc.column('user_id').doNothing())
       .execute();
+
+    // Re-fetch in case of conflict (another request created it first)
+    const created = await db
+      .selectFrom('user_onboarding')
+      .select([
+        'checklist_items',
+        'checklist_collapsed',
+        'checklist_dismissed',
+        'tutorial_completed',
+        'tutorial_step',
+        'tutorial_skipped',
+      ])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    if (created) {
+      return {
+        checklistItems: created.checklist_items,
+        checklistCollapsed: created.checklist_collapsed,
+        checklistDismissed: created.checklist_dismissed,
+        tutorialCompleted: created.tutorial_completed,
+        tutorialStep: created.tutorial_step,
+        tutorialSkipped: created.tutorial_skipped,
+      };
+    }
 
     return DEFAULT_STATE;
   }
