@@ -674,6 +674,36 @@ export interface OrganizationDefaultChannelsTable {
   created_at: Generated<Timestamp>;
 }
 
+// ============================================================================
+// PII MASKING TABLES
+// ============================================================================
+
+export type PiiPatternType = 'builtin' | 'field_name' | 'custom';
+export type PiiAction = 'mask' | 'redact' | 'hash';
+
+export interface PiiMaskingRulesTable {
+  id: Generated<string>;
+  organization_id: string;
+  project_id: string | null;
+  name: string;
+  display_name: string;
+  description: string | null;
+  pattern_type: PiiPatternType;
+  regex_pattern: string | null;
+  field_names: string[];
+  action: PiiAction;
+  enabled: Generated<boolean>;
+  priority: Generated<number>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OrganizationPiiSaltsTable {
+  organization_id: string;
+  salt: string;
+  created_at: Generated<Timestamp>;
+}
+
 export interface Database {
   logs: LogsTable;
   users: UsersTable;
@@ -726,4 +756,7 @@ export interface Database {
   incident_channels: IncidentChannelsTable;
   error_group_channels: ErrorGroupChannelsTable;
   organization_default_channels: OrganizationDefaultChannelsTable;
+  // PII masking
+  pii_masking_rules: PiiMaskingRulesTable;
+  organization_pii_salts: OrganizationPiiSaltsTable;
 }

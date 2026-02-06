@@ -5,6 +5,7 @@ import type { LogEntry } from '../sigma/detection-engine.js';
 import { CacheManager } from '../../utils/cache.js';
 import { notificationPublisher } from '../streaming/index.js';
 import { correlationService, type IdentifierMatch } from '../correlation/service.js';
+import { piiMaskingService } from '../pii-masking/service.js';
 
 /**
  * Remove null characters (\u0000) that PostgreSQL doesn't support in text fields.
@@ -59,6 +60,16 @@ export class IngestionService {
       } catch (err) {
         // Don't fail ingestion if identifier extraction fails
         console.warn('[Ingestion] Failed to extract identifiers from log:', err);
+      }
+    }
+
+    // PII masking: apply before DB insert so sensitive data never touches disk
+    if (organizationId) {
+      try {
+        await piiMaskingService.maskLogBatch(logs, organizationId, projectId);
+      } catch (err) {
+        // Don't fail ingestion if PII masking fails
+        console.warn('[Ingestion] PII masking failed, proceeding with unmasked data:', err);
       }
     }
 
