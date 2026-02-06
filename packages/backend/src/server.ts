@@ -29,6 +29,7 @@ import { exceptionsRoutes } from './modules/exceptions/index.js';
 import { settingsRoutes, publicSettingsRoutes, settingsService } from './modules/settings/index.js';
 import { retentionRoutes } from './modules/retention/index.js';
 import { correlationRoutes, patternRoutes } from './modules/correlation/index.js';
+import { piiMaskingRoutes } from './modules/pii-masking/index.js';
 import { bootstrapService } from './modules/bootstrap/index.js';
 import { notificationChannelsRoutes } from './modules/notification-channels/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
@@ -165,6 +166,7 @@ export async function build(opts = {}) {
   await fastify.register(queryRoutes);
   await fastify.register(correlationRoutes, { prefix: '/api' });
   await fastify.register(patternRoutes, { prefix: '/api' });
+  await fastify.register(piiMaskingRoutes, { prefix: '/api' });
   await fastify.register(otlpRoutes);
   await fastify.register(otlpTraceRoutes);
   await fastify.register(tracesRoutes);

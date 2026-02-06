@@ -5,6 +5,33 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0]
+
+### Added
+
+- **PII Masking at Ingestion**: Automatic detection and masking of sensitive data in log entries before storage (GDPR-compliant, data never touches disk unmasked)
+  - **Phase 1 — Content patterns**: Built-in regex rules for email, credit card, phone (US), SSN, IPv4, API keys/secrets
+  - **Phase 2 — Field name masking**: Scans metadata JSON keys (`password`, `token`, `secret`, `authorization`, etc.) and masks their values
+  - **Phase 3 — Custom rules**: Users can define org-level or project-level regex patterns and field name lists
+  - Three masking strategies: `mask` (partial — `u***@domain.com`), `redact` (full — `[REDACTED_EMAIL]`), `hash` (SHA-256 with per-org salt — `[HASH:abc123...]`)
+  - REST API: `GET/POST/PUT/DELETE /api/v1/pii-masking/rules` + `POST /api/v1/pii-masking/test`
+  - Settings UI at `/dashboard/settings/pii-masking` with rule management, enable/disable switches, action dropdowns, and live test panel (before/after preview)
+  - Built-in rules disabled by default — users opt-in per rule from the UI
+  - Project-level rules override org-level rules with the same name
+  - Database migration `021_add_pii_masking` (`pii_masking_rules` + `organization_pii_salts` tables)
+
+### Performance
+
+- **PII masking zero-cost when disabled**: Cache hit is a single `Map.get()` + timestamp check (~0.001ms), returns immediately when no rules are enabled
+- **Compiled regex reuse**: Content rules use `lastIndex = 0` reset instead of `new RegExp()` per string — eliminates ~6000 object allocations per 1000-log batch
+- **Hot path allocation reduction**: Ingestion path skips path-tracking arrays and template string building (`trackPaths=false`), uses `Object.keys()` instead of `Object.entries()`
+- **Credit card regex rewrite**: Replaced greedy `(?:\d[ -]*?){13,19}` (backtracking-prone, false positives on any 13+ digit sequence) with specific pattern matching `XXXX-XXXX-XXXX-XXXX` format or known issuer prefixes (Visa/MC/Amex/Discover)
+- **Early exit for simple messages**: Skips all regex evaluation for strings <6 chars or containing only `[a-zA-Z0-9 _-]`
+- **In-memory rule cache**: 5-min TTL per org+project combination, invalidated on CRUD operations
+- **ReDoS protection**: Custom regex patterns validated with `safe-regex2`, lookahead/lookbehind blocked, quantifiers capped at 100
+
+---
+
 ## [0.5.5] - 2026-02-06
 
 ### Fixed
