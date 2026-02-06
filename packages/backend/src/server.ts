@@ -133,7 +133,7 @@ export async function build(opts = {}) {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.5.4',
+      version: '0.5.5',
     };
   });
 
