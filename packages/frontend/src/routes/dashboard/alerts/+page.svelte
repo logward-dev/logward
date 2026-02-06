@@ -41,7 +41,7 @@
 	import CreateAlertDialog from "$lib/components/CreateAlertDialog.svelte";
 	import EditAlertDialog from "$lib/components/EditAlertDialog.svelte";
 	import SigmaRulesList from "$lib/components/SigmaRulesList.svelte";
-	import DetectionEventsList from "$lib/components/siem/incidents/DetectionEventsList.svelte";
+	import SeverityBadge from "$lib/components/siem/shared/SeverityBadge.svelte";
 	import SigmaRuleDetailsDialog from "$lib/components/SigmaRuleDetailsDialog.svelte";
 	import SigmaSyncDialog from "$lib/components/SigmaSyncDialog.svelte";
 	import DetectionPacksGalleryDialog from "$lib/components/DetectionPacksGalleryDialog.svelte";
@@ -58,8 +58,6 @@
 	import Download from "@lucide/svelte/icons/download";
 	import ChevronDown from "@lucide/svelte/icons/chevron-down";
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
-	import ChevronLeft from "@lucide/svelte/icons/chevron-left";
-	import ChevronRight from "@lucide/svelte/icons/chevron-right";
 	import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
 	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
 	import { checklistStore } from "$lib/stores/checklist";
@@ -101,11 +99,22 @@
 	let expandedHistoryLogs = $state<Map<string, any[]>>(new Map());
 	let loadingHistoryLogs = $state<Set<string>>(new Set());
 
-	// Business detections state
-	let businessDetections = $state<DetectionEvent[]>([]);
-	let businessDetectionsLoading = $state(false);
-	let businessDetectionsPage = $state(1);
-	let businessDetectionsPageSize = $state(20);
+	// Non-security detections state
+	let detections = $state<DetectionEvent[]>([]);
+	let detectionsLoading = $state(false);
+
+	// Unified history: merge alert history + detections, sorted by time desc
+	type HistoryItem =
+		| { type: 'alert'; data: AlertHistory; time: Date }
+		| { type: 'detection'; data: DetectionEvent; time: Date };
+
+	let historyItems = $derived<HistoryItem[]>((() => {
+		const items: HistoryItem[] = [
+			...alertHistory.map(h => ({ type: 'alert' as const, data: h, time: new Date(h.triggeredAt) })),
+			...detections.map(d => ({ type: 'detection' as const, data: d, time: new Date(d.time) })),
+		];
+		return items.sort((a, b) => b.time.getTime() - a.time.getTime());
+	})());
 
 	async function loadAlertRules() {
 		if (!$currentOrganization) return;
@@ -138,9 +147,7 @@
 		try {
 			const response = await alertsAPI.getAlertHistory(
 				$currentOrganization.id,
-				{
-					limit: 50,
-				},
+				{ limit: 50 },
 			);
 			alertHistory = response.history || [];
 		} catch (e) {
@@ -152,31 +159,23 @@
 		}
 	}
 
-	async function loadBusinessDetections() {
+	async function loadDetections() {
 		if (!$currentOrganization) return;
 
-		businessDetectionsLoading = true;
+		detectionsLoading = true;
 
 		try {
 			const response = await getRecentDetections({
 				organizationId: $currentOrganization.id,
-				category: ['business'],
-				limit: businessDetectionsPageSize,
-				offset: (businessDetectionsPage - 1) * businessDetectionsPageSize,
+				category: ['reliability', 'database', 'business'],
+				limit: 50,
 			});
 
-			businessDetections = response.detections;
+			detections = response.detections;
 		} catch (e) {
 			toastStore.error(e instanceof Error ? e.message : 'Failed to load detections');
 		} finally {
-			businessDetectionsLoading = false;
-		}
-	}
-
-	function goToBusinessDetectionsPage(page: number) {
-		if (page !== businessDetectionsPage) {
-			businessDetectionsPage = page;
-			loadBusinessDetections();
+			detectionsLoading = false;
 		}
 	}
 
@@ -185,7 +184,7 @@
 			alertRules = [];
 			alertHistory = [];
 			sigmaRules = [];
-			businessDetections = [];
+			detections = [];
 			lastLoadedOrgId = null;
 			return;
 		}
@@ -194,7 +193,7 @@
 
 		loadAlertRules();
 		loadAlertHistory();
-		loadBusinessDetections();
+		loadDetections();
 	});
 
 	async function toggleAlert(alert: AlertRule) {
@@ -245,14 +244,12 @@
 		const historyId = history.id;
 
 		if (expandedHistoryLogs.has(historyId)) {
-			// Already loaded, just toggle
 			const newMap = new Map(expandedHistoryLogs);
 			newMap.delete(historyId);
 			expandedHistoryLogs = newMap;
 			return;
 		}
 
-		// Load logs
 		loadingHistoryLogs = new Set(loadingHistoryLogs).add(historyId);
 
 		try {
@@ -261,7 +258,6 @@
 				return;
 			}
 
-			// Get session token
 			let token = null;
 			try {
 				const stored = localStorage.getItem("logtide_auth");
@@ -278,13 +274,11 @@
 				return;
 			}
 
-			// Calculate time range
 			const triggeredAt = new Date(history.triggeredAt);
 			const fromTime = new Date(
 				triggeredAt.getTime() - history.timeWindow * 60000,
 			);
 
-			// Build query params
 			const params = new URLSearchParams({
 				projectId: history.projectId,
 				from: fromTime.toISOString(),
@@ -296,7 +290,6 @@
 				params.set("service", history.service);
 			}
 
-			// Add level as multiple parameters (level=error&level=warn)
 			if (history.level && history.level.length > 0) {
 				history.level.forEach((lvl) => params.append("level", lvl));
 			}
@@ -346,6 +339,24 @@
 		}
 	}
 
+	function getCategoryLabel(category: string): string {
+		switch (category) {
+			case 'reliability': return 'Reliability';
+			case 'database': return 'Database';
+			case 'business': return 'Business';
+			default: return category;
+		}
+	}
+
+	function getCategoryColor(category: string): string {
+		switch (category) {
+			case 'reliability': return 'bg-orange-100 text-orange-800';
+			case 'database': return 'bg-blue-100 text-blue-800';
+			case 'business': return 'bg-green-100 text-green-800';
+			default: return 'bg-gray-100 text-gray-800';
+		}
+	}
+
 	function handleSigmaView(event: CustomEvent<SigmaRule>) {
 		selectedSigmaRule = event.detail;
 		showSigmaDetails = true;
@@ -357,823 +368,488 @@
 </svelte:head>
 
 <div class="container mx-auto {containerPadding} {maxWidthClass}">
-			<div class="flex items-start justify-between mb-6">
-				<div>
-					<div class="flex items-center gap-3 mb-2">
-						<Bell class="w-8 h-8 text-primary" />
-						<h1 class="text-3xl font-bold tracking-tight">
-							Alerts
-						</h1>
-					</div>
-					<p class="text-muted-foreground">
-						Manage alert rules across all projects and view
-						notification history
-					</p>
+	<div class="flex items-start justify-between mb-6">
+		<div>
+			<div class="flex items-center gap-3 mb-2">
+				<Bell class="w-8 h-8 text-primary" />
+				<h1 class="text-3xl font-bold tracking-tight">Alerts</h1>
+			</div>
+			<p class="text-muted-foreground">
+				Manage alert rules across all projects and view notification history
+			</p>
+		</div>
+		<div class="flex gap-2">
+			<Button
+				onclick={() => (showPacksDialog = true)}
+				size="lg"
+				variant="outline"
+				class="gap-2"
+			>
+				<Package class="w-5 h-5" />
+				Detection Packs
+			</Button>
+			<Button
+				onclick={() => (showCreateDialog = true)}
+				size="lg"
+				class="gap-2"
+			>
+				<Plus class="w-5 h-5" />
+				Create Alert Rule
+			</Button>
+		</div>
+	</div>
+
+	<Tabs value="rules" class="space-y-4">
+		<TabsList>
+			<TabsTrigger value="rules" class="gap-1">
+				Alert Rules
+				<HelpTooltip
+					text="Alert rules trigger notifications when log volume exceeds a threshold within a time window."
+				/>
+			</TabsTrigger>
+			<TabsTrigger value="sigma" class="gap-1">
+				Sigma Rules
+				<HelpTooltip
+					text="Sigma rules are industry-standard detection rules for security threats. Import from SigmaHQ or create your own."
+				/>
+			</TabsTrigger>
+			<TabsTrigger value="history">History</TabsTrigger>
+		</TabsList>
+
+		<!-- Alert Rules Tab -->
+		<TabsContent value="rules" class="space-y-4">
+			{#if loading}
+				<div class="flex items-center justify-center py-12">
+					<Spinner />
+					<span class="ml-3 text-muted-foreground">Loading alert rules...</span>
 				</div>
-				<div class="flex gap-2">
-					<Button
-						onclick={() => (showPacksDialog = true)}
-						size="lg"
-						variant="outline"
-						class="gap-2"
-					>
-						<Package class="w-5 h-5" />
-						Detection Packs
-					</Button>
-					<Button
-						onclick={() => (showCreateDialog = true)}
-						size="lg"
-						class="gap-2"
-					>
-						<Plus class="w-5 h-5" />
-						Create Alert Rule
-					</Button>
+			{:else if error}
+				<Card>
+					<CardContent class="py-12 text-center text-destructive">
+						{error}
+					</CardContent>
+				</Card>
+			{:else if alertRules.length === 0}
+				<Card class="border-2 border-dashed">
+					<CardContent class="py-16 text-center">
+						<div class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+							<Bell class="w-8 h-8 text-primary" />
+						</div>
+						<h3 class="text-xl font-semibold mb-2">No alert rules yet</h3>
+						<p class="text-muted-foreground mb-6 max-w-md mx-auto">
+							Create your first alert rule to get notified about important events
+						</p>
+						<Button onclick={() => (showCreateDialog = true)} size="lg" class="gap-2">
+							<Plus class="w-5 h-5" />
+							Create Alert Rule
+						</Button>
+					</CardContent>
+				</Card>
+			{:else}
+				<div class="grid gap-4">
+					{#each alertRules as alert}
+						<Card>
+							<CardHeader>
+								<div class="flex items-start justify-between">
+									<div class="space-y-1">
+										<div class="flex items-center gap-3">
+											<CardTitle>{alert.name}</CardTitle>
+											<span class="px-2 py-1 text-xs font-semibold rounded-full {alert.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+												{alert.enabled ? "Enabled" : "Disabled"}
+											</span>
+										</div>
+										<CardDescription>
+											{#if alert.service}
+												Service: {alert.service}
+											{:else}
+												All services
+											{/if}
+											{#if alert.projectId}
+												&bull; Project-specific
+											{:else}
+												&bull; Organization-wide
+											{/if}
+										</CardDescription>
+									</div>
+									<div class="flex gap-2">
+										<Button variant="outline" size="sm" class="gap-2" onclick={() => { alertToEdit = alert; showEditDialog = true; }}>
+											<Pencil class="w-4 h-4" />
+											Edit
+										</Button>
+										<Button variant="destructive" size="sm" class="gap-2" onclick={() => { alertToDelete = alert.id; showDeleteDialog = true; }}>
+											<Trash2 class="w-4 h-4" />
+											Delete
+										</Button>
+									</div>
+								</div>
+							</CardHeader>
+							<CardContent>
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+									<div>
+										<span class="font-medium">Levels:</span>
+										<div class="flex gap-2 mt-1">
+											{#each alert.level as level}
+												<span class="px-2 py-1 text-xs font-semibold rounded-full {getLevelColor(level)}">
+													{level.toUpperCase()}
+												</span>
+											{/each}
+										</div>
+									</div>
+									<div>
+										<span class="font-medium">Threshold:</span>
+										<span class="ml-2">
+											{alert.threshold} logs in {alert.timeWindow} minute{alert.timeWindow > 1 ? "s" : ""}
+										</span>
+									</div>
+									<div>
+										<span class="font-medium">Notification Channels:</span>
+										<span class="ml-2">
+											{#if alert.channelIds && alert.channelIds.length > 0}
+												{alert.channelIds.length} channel{alert.channelIds.length > 1 ? 's' : ''} configured
+											{:else}
+												No channels configured
+											{/if}
+										</span>
+									</div>
+								</div>
+								<div class="flex items-center gap-2 mt-4 pt-4 border-t">
+									<Switch id="toggle-{alert.id}" checked={alert.enabled} onCheckedChange={() => toggleAlert(alert)} />
+									<Label for="toggle-{alert.id}">
+										{alert.enabled ? "Enabled" : "Disabled"}
+									</Label>
+								</div>
+							</CardContent>
+						</Card>
+					{/each}
 				</div>
+			{/if}
+		</TabsContent>
+
+		<!-- Sigma Rules Tab -->
+		<TabsContent value="sigma" class="space-y-4">
+			<div class="flex justify-end">
+				<Button onclick={() => (showSyncDialog = true)} size="sm" variant="outline" class="gap-2">
+					<Download class="w-4 h-4" />
+					Sync from SigmaHQ
+				</Button>
 			</div>
 
-			<Tabs value="rules" class="space-y-4">
-				<TabsList>
-					<TabsTrigger value="rules" class="gap-1">
-						Alert Rules
-						<HelpTooltip
-							text="Alert rules trigger notifications when log volume exceeds a threshold within a time window."
-						/>
-					</TabsTrigger>
-					<TabsTrigger value="sigma" class="gap-1">
-						Sigma Rules
-						<HelpTooltip
-							text="Sigma rules are industry-standard detection rules for security threats. Import from SigmaHQ or create your own."
-						/>
-					</TabsTrigger>
-					<TabsTrigger value="history">Alert History</TabsTrigger>
-					<TabsTrigger value="detections">Detections</TabsTrigger>
-				</TabsList>
-
-				<TabsContent value="rules" class="space-y-4">
-					{#if loading}
-						<div class="flex items-center justify-center py-12">
-							<Spinner />
-							<span class="ml-3 text-muted-foreground"
-								>Loading alert rules...</span
-							>
+			{#if loading}
+				<div class="flex items-center justify-center py-12">
+					<Spinner />
+					<span class="ml-3 text-muted-foreground">Loading Sigma rules...</span>
+				</div>
+			{:else if sigmaRules.length === 0}
+				<Card class="border-2 border-dashed">
+					<CardContent class="py-16 text-center">
+						<div class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+							<FolderKanban class="w-8 h-8 text-primary" />
 						</div>
-					{:else if error}
-						<Card>
-							<CardContent
-								class="py-12 text-center text-destructive"
-							>
-								{error}
-							</CardContent>
-						</Card>
-					{:else if alertRules.length === 0}
-						<Card class="border-2 border-dashed">
-							<CardContent class="py-16 text-center">
-								<div
-									class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center"
-								>
-									<Bell class="w-8 h-8 text-primary" />
-								</div>
-								<h3 class="text-xl font-semibold mb-2">
-									No alert rules yet
-								</h3>
-								<p
-									class="text-muted-foreground mb-6 max-w-md mx-auto"
-								>
-									Create your first alert rule to get notified
-									about important events
-								</p>
-								<Button
-									onclick={() => (showCreateDialog = true)}
-									size="lg"
-									class="gap-2"
-								>
-									<Plus class="w-5 h-5" />
-									Create Alert Rule
-								</Button>
-							</CardContent>
-						</Card>
-					{:else}
-						<div class="grid gap-4">
-							{#each alertRules as alert}
-								<Card>
-									<CardHeader>
-										<div
-											class="flex items-start justify-between"
-										>
-											<div class="space-y-1">
-												<div
-													class="flex items-center gap-3"
-												>
-													<CardTitle
-														>{alert.name}</CardTitle
-													>
-													<span
-														class="px-2 py-1 text-xs font-semibold rounded-full {alert.enabled
-															? 'bg-green-100 text-green-800'
-															: 'bg-gray-100 text-gray-800'}"
-													>
-														{alert.enabled
-															? "Enabled"
-															: "Disabled"}
-													</span>
-												</div>
-												<CardDescription>
-													{#if alert.service}
-														Service: {alert.service}
-													{:else}
-														All services
-													{/if}
-													{#if alert.projectId}
-														• Project-specific
-													{:else}
-														• Organization-wide
-													{/if}
-												</CardDescription>
+						<h3 class="text-xl font-semibold mb-2">No Sigma rules yet</h3>
+						<p class="text-muted-foreground mb-6 max-w-md mx-auto">
+							Import Sigma rules to automatically create alert rules from community standards
+						</p>
+						<Button onclick={() => (showCreateDialog = true)} size="lg" class="gap-2">
+							<Plus class="w-5 h-5" />
+							Import Sigma Rule
+						</Button>
+					</CardContent>
+				</Card>
+			{:else}
+				<SigmaRulesList
+					rules={sigmaRules}
+					organizationId={$currentOrganization.id}
+					onrefresh={loadAlertRules}
+					onview={(rule) => {
+						selectedSigmaRule = rule;
+						showSigmaDetails = true;
+					}}
+				/>
+			{/if}
+		</TabsContent>
+
+		<!-- Unified History Tab -->
+		<TabsContent value="history" class="space-y-4">
+			{#if loadingHistory || detectionsLoading}
+				<div class="flex items-center justify-center py-12">
+					<Spinner />
+					<span class="ml-3 text-muted-foreground">Loading history...</span>
+				</div>
+			{:else if historyItems.length === 0}
+				<Card class="border-2 border-dashed">
+					<CardContent class="py-16 text-center">
+						<div class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+							<Clock class="w-8 h-8 text-primary" />
+						</div>
+						<h3 class="text-xl font-semibold mb-2">No history yet</h3>
+						<p class="text-muted-foreground">Alert triggers and detection events will appear here</p>
+					</CardContent>
+				</Card>
+			{:else}
+				<div class="grid gap-4">
+					{#each historyItems as item}
+						{#if item.type === 'alert'}
+							{@const history = item.data}
+							<Card>
+								<CardContent class="py-4">
+									<div class="flex flex-col gap-4">
+										<div class="flex items-start justify-between">
+											<div class="flex items-center gap-2 flex-wrap">
+												<Badge variant="outline" class="text-xs bg-purple-100 text-purple-800">Alert</Badge>
+												<h3 class="font-semibold text-lg">{history.ruleName}</h3>
+												{#if history.notified}
+													<Badge variant="default" class="gap-1">
+														<Bell class="w-3 h-3" />
+														Notified
+													</Badge>
+												{:else}
+													<Badge variant="destructive" class="gap-1">
+														<Mail class="w-3 h-3" />
+														{history.error ? "Failed" : "Pending"}
+													</Badge>
+												{/if}
 											</div>
-											<div class="flex gap-2">
-												<Button
-													variant="outline"
-													size="sm"
-													class="gap-2"
-													onclick={() => {
-														alertToEdit = alert;
-														showEditDialog = true;
-													}}
+											{#if history.projectId}
+												<a
+													href="/dashboard/search?project={history.projectId}&from={new Date(new Date(history.triggeredAt).getTime() - history.timeWindow * 60000).toISOString()}&to={new Date(history.triggeredAt).toISOString()}{history.service ? `&service=${history.service}` : ''}{history.level?.length ? `&level=${history.level.join(',')}` : ''}"
+													class="text-sm text-primary hover:underline flex items-center gap-1"
 												>
-													<Pencil class="w-4 h-4" />
-													Edit
-												</Button>
-												<Button
-													variant="destructive"
-													size="sm"
-													class="gap-2"
-													onclick={() => {
-														alertToDelete =
-															alert.id;
-														showDeleteDialog = true;
-													}}
-												>
-													<Trash2 class="w-4 h-4" />
-													Delete
-												</Button>
-											</div>
+													<span>View Logs</span>
+													<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+												</a>
+											{/if}
 										</div>
-									</CardHeader>
-									<CardContent>
-										<div
-											class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"
-										>
-											<div>
-												<span class="font-medium"
-													>Levels:</span
-												>
-												<div class="flex gap-2 mt-1">
-													{#each alert.level as level}
-														<span
-															class="px-2 py-1 text-xs font-semibold rounded-full {getLevelColor(
-																level,
-															)}"
-														>
-															{level.toUpperCase()}
-														</span>
+
+										{#if history.projectName}
+											<div class="flex items-center gap-2 text-sm">
+												<FolderKanban class="w-4 h-4 text-muted-foreground" />
+												<span class="text-muted-foreground">Project:</span>
+												<span class="font-medium">{history.projectName}</span>
+											</div>
+										{/if}
+
+										<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+											<div class="flex flex-col gap-1">
+												<span class="text-muted-foreground text-xs">Logs Matched</span>
+												<span class="font-mono font-semibold text-orange-600 text-base">{history.logCount}</span>
+											</div>
+											<div class="flex flex-col gap-1">
+												<span class="text-muted-foreground text-xs">Threshold</span>
+												<span class="font-medium">{history.threshold} in {history.timeWindow} min</span>
+											</div>
+											{#if history.service}
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Service</span>
+													<span class="font-medium font-mono text-sm">{history.service}</span>
+												</div>
+											{/if}
+											<div class="flex flex-col gap-1">
+												<span class="text-muted-foreground text-xs">Levels</span>
+												<div class="flex gap-1 flex-wrap">
+													{#each history.level as lvl}
+														<Badge variant="outline" class={getLevelColor(lvl)}>{lvl}</Badge>
 													{/each}
 												</div>
 											</div>
-
-											<div>
-												<span class="font-medium"
-													>Threshold:</span
-												>
-												<span class="ml-2">
-													{alert.threshold} logs in {alert.timeWindow}
-													minute{alert.timeWindow > 1
-														? "s"
-														: ""}
-												</span>
-											</div>
-
-											<div>
-												<span class="font-medium"
-													>Notification Channels:</span
-												>
-												<span class="ml-2">
-													{#if alert.channelIds && alert.channelIds.length > 0}
-														{alert.channelIds.length} channel{alert.channelIds.length > 1 ? 's' : ''} configured
-													{:else}
-														No channels configured
-													{/if}
-												</span>
-											</div>
 										</div>
 
-										<div
-											class="flex items-center gap-2 mt-4 pt-4 border-t"
-										>
-											<Switch
-												id="toggle-{alert.id}"
-												checked={alert.enabled}
-												onCheckedChange={() =>
-													toggleAlert(alert)}
-											/>
-											<Label for="toggle-{alert.id}">
-												{alert.enabled
-													? "Enabled"
-													: "Disabled"}
-											</Label>
+										<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
+											<Clock class="w-4 h-4" />
+											<span>{new Date(history.triggeredAt).toISOString().slice(0, 16).replace("T", " ")}</span>
 										</div>
-									</CardContent>
-								</Card>
-							{/each}
-						</div>
-					{/if}
-				</TabsContent>
 
-				<TabsContent value="sigma" class="space-y-4">
-					<div class="flex justify-end">
-						<Button
-							onclick={() => (showSyncDialog = true)}
-							size="sm"
-							variant="outline"
-							class="gap-2"
-						>
-							<Download class="w-4 h-4" />
-							Sync from SigmaHQ
-						</Button>
-					</div>
+										{#if history.error}
+											<div class="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+												<p class="text-sm font-medium text-destructive mb-1">Notification Error:</p>
+												<p class="text-xs text-destructive/80 font-mono break-all">{history.error}</p>
+											</div>
+										{/if}
 
-					{#if loading}
-						<div class="flex items-center justify-center py-12">
-							<Spinner />
-							<span class="ml-3 text-muted-foreground"
-								>Loading Sigma rules...</span
-							>
-						</div>
-					{:else if sigmaRules.length === 0}
-						<Card class="border-2 border-dashed">
-							<CardContent class="py-16 text-center">
-								<div
-									class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center"
-								>
-									<FolderKanban
-										class="w-8 h-8 text-primary"
-									/>
-								</div>
-								<h3 class="text-xl font-semibold mb-2">
-									No Sigma rules yet
-								</h3>
-								<p
-									class="text-muted-foreground mb-6 max-w-md mx-auto"
-								>
-									Import Sigma rules to automatically create
-									alert rules from community standards
-								</p>
-								<Button
-									onclick={() => (showCreateDialog = true)}
-									size="lg"
-									class="gap-2"
-								>
-									<Plus class="w-5 h-5" />
-									Import Sigma Rule
-								</Button>
-							</CardContent>
-						</Card>
-					{:else}
-						<SigmaRulesList
-							rules={sigmaRules}
-							organizationId={$currentOrganization.id}
-							onrefresh={loadAlertRules}
-							onview={(rule) => {
-								selectedSigmaRule = rule;
-								showSigmaDetails = true;
-							}}
-						/>
-					{/if}
-				</TabsContent>
-
-				<TabsContent value="history" class="space-y-4">
-					{#if loadingHistory}
-						<div class="flex items-center justify-center py-12">
-							<Spinner />
-							<span class="ml-3 text-muted-foreground"
-								>Loading alert history...</span
-							>
-						</div>
-					{:else if alertHistory.length === 0}
-						<Card class="border-2 border-dashed">
-							<CardContent class="py-16 text-center">
-								<div
-									class="w-16 h-16 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center"
-								>
-									<Clock class="w-8 h-8 text-primary" />
-								</div>
-								<h3 class="text-xl font-semibold mb-2">
-									No alert history
-								</h3>
-								<p class="text-muted-foreground">
-									Alert triggers will appear here
-								</p>
-							</CardContent>
-						</Card>
-					{:else}
-						<div class="grid gap-4">
-							{#each alertHistory as history}
-								<Card>
-									<CardContent class="py-4">
-										<div class="flex flex-col gap-4">
-											<!-- Header with Rule Name and Status -->
-											<div
-												class="flex items-start justify-between"
-											>
-												<div
-													class="flex items-center gap-2 flex-wrap"
+										{#if history.projectId}
+											<div class="border-t pt-3">
+												<button
+													onclick={() => toggleHistoryLogs(history)}
+													class="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
 												>
-													<h3
-														class="font-semibold text-lg"
-													>
-														{history.ruleName}
-													</h3>
-													{#if history.notified}
-														<Badge
-															variant="default"
-															class="gap-1"
-														>
-															<Bell
-																class="w-3 h-3"
-															/>
-															Notified
-														</Badge>
+													{#if loadingHistoryLogs.has(history.id)}
+														<Spinner class="w-4 h-4" />
+														<span>Loading logs...</span>
+													{:else if expandedHistoryLogs.has(history.id)}
+														<ChevronUp class="w-4 h-4" />
+														<span>Hide Matched Logs ({expandedHistoryLogs.get(history.id)?.length || 0})</span>
 													{:else}
-														<Badge
-															variant="destructive"
-															class="gap-1"
-														>
-															<Mail
-																class="w-3 h-3"
-															/>
-															{history.error
-																? "Failed"
-																: "Pending"}
-														</Badge>
+														<ChevronDown class="w-4 h-4" />
+														<span>Show Matched Logs</span>
 													{/if}
-												</div>
-												{#if history.projectId}
-													<a
-														href="/dashboard/search?project={history.projectId}&from={new Date(
-															new Date(
-																history.triggeredAt,
-															).getTime() -
-																history.timeWindow *
-																	60000,
-														).toISOString()}&to={new Date(
-															history.triggeredAt,
-														).toISOString()}{history.service
-															? `&service=${history.service}`
-															: ''}{history.level
-															?.length
-															? `&level=${history.level.join(',')}`
-															: ''}"
-														class="text-sm text-primary hover:underline flex items-center gap-1"
-													>
-														<span>View Logs</span>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															width="16"
-															height="16"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															><path
-																d="M7 7h10v10"
-															/><path
-																d="M7 17 17 7"
-															/></svg
-														>
-													</a>
-												{/if}
-											</div>
+												</button>
 
-											<!-- Project Info -->
-											{#if history.projectName}
-												<div
-													class="flex items-center gap-2 text-sm"
-												>
-													<FolderKanban
-														class="w-4 h-4 text-muted-foreground"
-													/>
-													<span
-														class="text-muted-foreground"
-														>Project:</span
-													>
-													<span class="font-medium"
-														>{history.projectName}</span
-													>
-												</div>
-											{/if}
-
-											<!-- Alert Details Grid -->
-											<div
-												class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"
-											>
-												<!-- Logs Matched -->
-												<div
-													class="flex flex-col gap-1"
-												>
-													<span
-														class="text-muted-foreground text-xs"
-														>Logs Matched</span
-													>
-													<span
-														class="font-mono font-semibold text-orange-600 text-base"
-													>
-														{history.logCount}
-													</span>
-												</div>
-
-												<!-- Threshold -->
-												<div
-													class="flex flex-col gap-1"
-												>
-													<span
-														class="text-muted-foreground text-xs"
-														>Threshold</span
-													>
-													<span class="font-medium">
-														{history.threshold} in {history.timeWindow}
-														min
-													</span>
-												</div>
-
-												<!-- Service -->
-												{#if history.service}
-													<div
-														class="flex flex-col gap-1"
-													>
-														<span
-															class="text-muted-foreground text-xs"
-															>Service</span
-														>
-														<span
-															class="font-medium font-mono text-sm"
-														>
-															{history.service}
-														</span>
-													</div>
-												{/if}
-
-												<!-- Log Levels -->
-												<div
-													class="flex flex-col gap-1"
-												>
-													<span
-														class="text-muted-foreground text-xs"
-														>Levels</span
-													>
-													<div
-														class="flex gap-1 flex-wrap"
-													>
-														{#each history.level as lvl}
-															<Badge
-																variant="outline"
-																class={getLevelColor(
-																	lvl,
-																)}
-															>
-																{lvl}
-															</Badge>
-														{/each}
-													</div>
-												</div>
-											</div>
-
-											<!-- Time Info -->
-											<div
-												class="flex items-center gap-1.5 text-sm text-muted-foreground"
-											>
-												<Clock class="w-4 h-4" />
-												<span>
-													{new Date(
-														history.triggeredAt,
-													)
-														.toISOString()
-														.slice(0, 16)
-														.replace("T", " ")}
-												</span>
-											</div>
-
-											<!-- Error Message (if any) -->
-											{#if history.error}
-												<div
-													class="p-3 bg-destructive/10 border border-destructive/20 rounded-md"
-												>
-													<p
-														class="text-sm font-medium text-destructive mb-1"
-													>
-														Notification Error:
-													</p>
-													<p
-														class="text-xs text-destructive/80 font-mono break-all"
-													>
-														{history.error}
-													</p>
-												</div>
-											{/if}
-
-											<!-- Show Matched Logs Section -->
-											{#if history.projectId}
-												<div class="border-t pt-3">
-													<button
-														onclick={() =>
-															toggleHistoryLogs(
-																history,
-															)}
-														class="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-													>
-														{#if loadingHistoryLogs.has(history.id)}
-															<Spinner
-																class="w-4 h-4"
-															/>
-															<span
-																>Loading logs...</span
-															>
-														{:else if expandedHistoryLogs.has(history.id)}
-															<ChevronUp
-																class="w-4 h-4"
-															/>
-															<span
-																>Hide Matched
-																Logs ({expandedHistoryLogs.get(
-																	history.id,
-																)?.length ||
-																	0})</span
-															>
+												{#if expandedHistoryLogs.has(history.id)}
+													{@const logs = expandedHistoryLogs.get(history.id) || []}
+													<div class="mt-3 space-y-2">
+														{#if logs.length === 0}
+															<p class="text-sm text-muted-foreground text-center py-4">No logs found in the time window</p>
 														{:else}
-															<ChevronDown
-																class="w-4 h-4"
-															/>
-															<span
-																>Show Matched
-																Logs</span
-															>
-														{/if}
-													</button>
-
-													{#if expandedHistoryLogs.has(history.id)}
-														{@const logs =
-															expandedHistoryLogs.get(
-																history.id,
-															) || []}
-														<div
-															class="mt-3 space-y-2"
-														>
-															{#if logs.length === 0}
-																<p
-																	class="text-sm text-muted-foreground text-center py-4"
-																>
-																	No logs
-																	found in the
-																	time window
-																</p>
-															{:else}
-																<div
-																	class="rounded-md border overflow-hidden"
-																>
-																	<div
-																		class="max-h-96 overflow-y-auto"
-																	>
-																		<table
-																			class="w-full text-sm"
-																		>
-																			<thead
-																				class="bg-muted/50 sticky top-0"
-																			>
-																				<tr
-																					class="border-b"
-																				>
-																					<th
-																						class="px-3 py-2 text-left font-medium text-xs"
-																						>Time</th
-																					>
-																					<th
-																						class="px-3 py-2 text-left font-medium text-xs"
-																						>Level</th
-																					>
-																					<th
-																						class="px-3 py-2 text-left font-medium text-xs"
-																						>Service</th
-																					>
-																					<th
-																						class="px-3 py-2 text-left font-medium text-xs"
-																						>Message</th
-																					>
+															<div class="rounded-md border overflow-hidden">
+																<div class="max-h-96 overflow-y-auto">
+																	<table class="w-full text-sm">
+																		<thead class="bg-muted/50 sticky top-0">
+																			<tr class="border-b">
+																				<th class="px-3 py-2 text-left font-medium text-xs">Time</th>
+																				<th class="px-3 py-2 text-left font-medium text-xs">Level</th>
+																				<th class="px-3 py-2 text-left font-medium text-xs">Service</th>
+																				<th class="px-3 py-2 text-left font-medium text-xs">Message</th>
+																			</tr>
+																		</thead>
+																		<tbody>
+																			{#each logs as log}
+																				<tr class="border-b hover:bg-muted/30">
+																					<td class="px-3 py-2 font-mono text-xs whitespace-nowrap">
+																						{(() => {
+																							const d = new Date(log.time);
+																							return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+																						})()}
+																					</td>
+																					<td class="px-3 py-2">
+																						<Badge variant="outline" class={getLevelColor(log.level)}>{log.level}</Badge>
+																					</td>
+																					<td class="px-3 py-2 font-mono text-xs">{log.service || "-"}</td>
+																					<td class="px-3 py-2 text-xs max-w-md truncate">{log.message}</td>
 																				</tr>
-																			</thead>
-																			<tbody
-																			>
-																				{#each logs as log}
-																					<tr
-																						class="border-b hover:bg-muted/30"
-																					>
-																						<td
-																							class="px-3 py-2 font-mono text-xs whitespace-nowrap"
-																						>
-																							{(() => {
-																								const d =
-																									new Date(
-																										log.time,
-																									);
-																								const h =
-																									String(
-																										d.getHours(),
-																									).padStart(
-																										2,
-																										"0",
-																									);
-																								const m =
-																									String(
-																										d.getMinutes(),
-																									).padStart(
-																										2,
-																										"0",
-																									);
-																								const s =
-																									String(
-																										d.getSeconds(),
-																									).padStart(
-																										2,
-																										"0",
-																									);
-																								return `${h}:${m}:${s}`;
-																							})()}
-																						</td>
-																						<td
-																							class="px-3 py-2"
-																						>
-																							<Badge
-																								variant="outline"
-																								class={getLevelColor(
-																									log.level,
-																								)}
-																							>
-																								{log.level}
-																							</Badge>
-																						</td>
-																						<td
-																							class="px-3 py-2 font-mono text-xs"
-																						>
-																							{log.service ||
-																								"-"}
-																						</td>
-																						<td
-																							class="px-3 py-2 text-xs max-w-md truncate"
-																						>
-																							{log.message}
-																						</td>
-																					</tr>
-																				{/each}
-																			</tbody>
-																		</table>
-																	</div>
+																			{/each}
+																		</tbody>
+																	</table>
 																</div>
-																<p
-																	class="text-xs text-muted-foreground text-center"
-																>
-																	Showing {logs.length}
-																	log{logs.length !==
-																	1
-																		? "s"
-																		: ""} from
-																	the alert time
-																	window
-																</p>
-															{/if}
-														</div>
-													{/if}
+															</div>
+															<p class="text-xs text-muted-foreground text-center">
+																Showing {logs.length} log{logs.length !== 1 ? "s" : ""} from the alert time window
+															</p>
+														{/if}
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
+								</CardContent>
+							</Card>
+						{:else}
+							{@const detection = item.data}
+							<Card>
+								<CardContent class="py-4">
+									<div class="flex flex-col gap-3">
+										<div class="flex items-start justify-between">
+											<div class="flex items-center gap-2 flex-wrap">
+												<Badge variant="outline" class="text-xs {getCategoryColor(detection.category)}">
+													{getCategoryLabel(detection.category)}
+												</Badge>
+												<SeverityBadge severity={detection.severity} size="sm" />
+												<h3 class="font-semibold text-lg">{detection.ruleTitle}</h3>
+											</div>
+										</div>
+
+										{#if detection.ruleDescription}
+											<p class="text-sm text-muted-foreground">{detection.ruleDescription}</p>
+										{/if}
+
+										<div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+											<div class="flex flex-col gap-1">
+												<span class="text-muted-foreground text-xs">Service</span>
+												<span class="font-medium font-mono text-sm">{detection.service || '-'}</span>
+											</div>
+											<div class="flex flex-col gap-1">
+												<span class="text-muted-foreground text-xs">Log Level</span>
+												<Badge variant="outline" class={getLevelColor(detection.logLevel)}>{detection.logLevel}</Badge>
+											</div>
+											{#if detection.traceId}
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Trace ID</span>
+													<span class="font-mono text-xs truncate">{detection.traceId}</span>
 												</div>
 											{/if}
 										</div>
-									</CardContent>
-								</Card>
-							{/each}
-						</div>
-					{/if}
-				</TabsContent>
 
-				<TabsContent value="detections" class="space-y-4">
-					{#if businessDetectionsLoading && businessDetections.length === 0}
-						<div class="flex items-center justify-center py-12">
-							<Spinner />
-							<span class="ml-3 text-muted-foreground">Loading detections...</span>
-						</div>
-					{:else if businessDetections.length === 0}
-						<Card class="border-2 border-dashed">
-							<CardContent class="py-16 text-center">
-								<AlertTriangle class="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
-								<h3 class="text-xl font-semibold mb-2">No Business Detections</h3>
-								<p class="text-muted-foreground">
-									Business detection events will appear here when business detection packs are active.
-								</p>
-							</CardContent>
-						</Card>
-					{:else}
-						<DetectionEventsList detections={businessDetections} />
+										<div class="p-2 bg-muted/50 rounded-md">
+											<p class="text-xs font-mono truncate">{detection.logMessage}</p>
+										</div>
 
-						{#if businessDetections.length >= businessDetectionsPageSize}
-							<div class="flex items-center justify-end gap-2 px-2">
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => goToBusinessDetectionsPage(businessDetectionsPage - 1)}
-									disabled={businessDetectionsPage === 1 || businessDetectionsLoading}
-								>
-									<ChevronLeft class="w-4 h-4" />
-									Previous
-								</Button>
-								<span class="text-sm text-muted-foreground px-2">
-									Page {businessDetectionsPage}
-								</span>
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => goToBusinessDetectionsPage(businessDetectionsPage + 1)}
-									disabled={businessDetections.length < businessDetectionsPageSize || businessDetectionsLoading}
-								>
-									Next
-									<ChevronRight class="w-4 h-4" />
-								</Button>
-							</div>
+										<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
+											<Clock class="w-4 h-4" />
+											<span>{new Date(detection.time).toISOString().slice(0, 16).replace("T", " ")}</span>
+										</div>
+									</div>
+								</CardContent>
+							</Card>
 						{/if}
-					{/if}
-				</TabsContent>
-			</Tabs>
-		</div>
+					{/each}
+				</div>
+			{/if}
+		</TabsContent>
+	</Tabs>
+</div>
 
-		{#if $currentOrganization}
-			<CreateAlertDialog
-				bind:open={showCreateDialog}
-				organizationId={$currentOrganization.id}
-				onSuccess={() => {
-					loadAlertRules();
-					loadAlertHistory();
-				}}
-			/>
+{#if $currentOrganization}
+	<CreateAlertDialog
+		bind:open={showCreateDialog}
+		organizationId={$currentOrganization.id}
+		onSuccess={() => {
+			loadAlertRules();
+			loadAlertHistory();
+		}}
+	/>
 
-			<EditAlertDialog
-				bind:open={showEditDialog}
-				organizationId={$currentOrganization.id}
-				alert={alertToEdit}
-				onSuccess={() => {
-					loadAlertRules();
-					loadAlertHistory();
-				}}
-			/>
+	<EditAlertDialog
+		bind:open={showEditDialog}
+		organizationId={$currentOrganization.id}
+		alert={alertToEdit}
+		onSuccess={() => {
+			loadAlertRules();
+			loadAlertHistory();
+		}}
+	/>
 
-			<SigmaRuleDetailsDialog
-				bind:open={showSigmaDetails}
-				rule={selectedSigmaRule}
-			/>
+	<SigmaRuleDetailsDialog
+		bind:open={showSigmaDetails}
+		rule={selectedSigmaRule}
+	/>
 
-			<SigmaSyncDialog
-				bind:open={showSyncDialog}
-				organizationId={$currentOrganization.id}
-				onSuccess={() => {
-					loadAlertRules();
-				}}
-			/>
+	<SigmaSyncDialog
+		bind:open={showSyncDialog}
+		organizationId={$currentOrganization.id}
+		onSuccess={() => {
+			loadAlertRules();
+		}}
+	/>
 
-			<DetectionPacksGalleryDialog
-				bind:open={showPacksDialog}
-				organizationId={$currentOrganization.id}
-				onSuccess={() => {
-					loadAlertRules();
-				}}
-			/>
+	<DetectionPacksGalleryDialog
+		bind:open={showPacksDialog}
+		organizationId={$currentOrganization.id}
+		onSuccess={() => {
+			loadAlertRules();
+		}}
+	/>
 
-			<AlertDialog bind:open={showDeleteDialog}>
-				<AlertDialogContent onkeydown={handleDeleteKeydown}>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete Alert Rule</AlertDialogTitle>
-						<AlertDialogDescription>
-							Are you sure you want to delete this alert rule?
-							This action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onclick={() => {
-								if (alertToDelete) {
-									deleteAlert(alertToDelete);
-								}
-								showDeleteDialog = false;
-								alertToDelete = null;
-							}}
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
-	{/if}
+	<AlertDialog bind:open={showDeleteDialog}>
+		<AlertDialogContent onkeydown={handleDeleteKeydown}>
+			<AlertDialogHeader>
+				<AlertDialogTitle>Delete Alert Rule</AlertDialogTitle>
+				<AlertDialogDescription>
+					Are you sure you want to delete this alert rule?
+					This action cannot be undone.
+				</AlertDialogDescription>
+			</AlertDialogHeader>
+			<AlertDialogFooter>
+				<AlertDialogCancel>Cancel</AlertDialogCancel>
+				<AlertDialogAction
+					onclick={() => {
+						if (alertToDelete) {
+							deleteAlert(alertToDelete);
+						}
+						showDeleteDialog = false;
+						alertToDelete = null;
+					}}
+				>
+					Delete
+				</AlertDialogAction>
+			</AlertDialogFooter>
+		</AlertDialogContent>
+	</AlertDialog>
+{/if}

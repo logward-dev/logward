@@ -701,6 +701,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         const result = await exceptionService.getLogsForErrorGroup({
           groupId: params.id,
+          fingerprint: group.fingerprint,
+          organizationId: group.organizationId,
+          projectId: group.projectId,
+          firstSeen: new Date(group.firstSeen),
+          lastSeen: new Date(group.lastSeen),
+          occurrenceCount: group.occurrenceCount,
           limit: query.limit,
           offset: query.offset,
         });

@@ -128,10 +128,8 @@ export async function siemRoutes(fastify: FastifyInstance) {
             organizationId: { type: 'string', format: 'uuid' },
             projectId: { type: 'string', format: 'uuid' },
             category: {
-              oneOf: [
-                { type: 'string', enum: [...PACK_CATEGORIES] },
-                { type: 'array', items: { type: 'string', enum: [...PACK_CATEGORIES] } },
-              ],
+              type: 'array',
+              items: { type: 'string', enum: [...PACK_CATEGORIES] },
             },
             severity: {
               type: 'array',
@@ -148,10 +146,7 @@ export async function siemRoutes(fastify: FastifyInstance) {
         const schema = z.object({
           organizationId: z.string().uuid(),
           projectId: z.string().uuid().optional(),
-          category: z.union([
-            z.enum(PACK_CATEGORIES),
-            z.array(z.enum(PACK_CATEGORIES)),
-          ]).optional(),
+          category: z.array(z.enum(PACK_CATEGORIES)).optional(),
           severity: z.array(z.enum(SEVERITIES)).optional(),
           limit: z.coerce.number().min(1).max(100).optional().default(10),
           offset: z.coerce.number().min(0).optional().default(0),
