@@ -74,10 +74,12 @@ export async function build(opts = {}) {
       ? (error as any).statusCode
       : undefined;
 
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+
     if (statusCode) {
       reply.code(statusCode).send({
         statusCode,
-        error: error.message,
+        error: errMessage,
       });
       return;
     }
@@ -87,7 +89,7 @@ export async function build(opts = {}) {
     reply.code(500).send({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: error.message,
+      message: errMessage,
     });
   });
 

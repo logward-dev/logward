@@ -1,5 +1,6 @@
 import { Kysely, sql, Expression, SqlBool } from 'kysely';
 import type { Database, Severity } from '../../database/types';
+import type { PackCategory } from '@logtide/shared';
 import type {
   DetectionEvent,
   CreateDetectionEventInput,
@@ -101,9 +102,9 @@ export class SiemService {
 
     if (filters.category) {
       if (Array.isArray(filters.category)) {
-        query = query.where('category', 'in', filters.category);
+        query = query.where('category', 'in', filters.category as PackCategory[]);
       } else {
-        query = query.where('category', '=', filters.category);
+        query = query.where('category', '=', filters.category as PackCategory);
       }
     }
 
