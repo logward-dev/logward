@@ -255,6 +255,14 @@ export async function createTestAlertRule(overrides: {
     timeWindow?: number;
     threshold?: number;
     enabled?: boolean;
+    alertType?: 'threshold' | 'rate_of_change';
+    baselineType?: string | null;
+    deviationMultiplier?: number | null;
+    minBaselineValue?: number | null;
+    cooldownMinutes?: number | null;
+    sustainedMinutes?: number | null;
+    service?: string | null;
+    level?: string[];
 } = {}) {
     // Create organization if not provided
     let organizationId = overrides.organizationId;
@@ -269,11 +277,17 @@ export async function createTestAlertRule(overrides: {
             organization_id: organizationId,
             project_id: overrides.projectId || null,
             name: overrides.name || 'Test Alert Rule',
-            service: null,
-            level: ['error'],
+            service: overrides.service ?? null,
+            level: overrides.level || ['error'],
             time_window: overrides.timeWindow || 5,
             threshold: overrides.threshold || 10,
             enabled: overrides.enabled ?? true,
+            alert_type: overrides.alertType || 'threshold',
+            baseline_type: overrides.baselineType || null,
+            deviation_multiplier: overrides.deviationMultiplier ?? null,
+            min_baseline_value: overrides.minBaselineValue ?? null,
+            cooldown_minutes: overrides.cooldownMinutes ?? null,
+            sustained_minutes: overrides.sustainedMinutes ?? null,
             email_recipients: [],
             webhook_url: null,
             metadata: null,

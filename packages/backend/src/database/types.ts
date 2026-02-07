@@ -130,6 +130,17 @@ export interface ApiKeysTable {
   revoked: Generated<boolean>;
 }
 
+export type AlertType = 'threshold' | 'rate_of_change';
+export type BaselineType = 'same_time_yesterday' | 'same_day_last_week' | 'rolling_7d_avg' | 'percentile_p95';
+
+export interface BaselineMetadata {
+  baseline_value: number;
+  current_value: number;
+  deviation_ratio: number;
+  baseline_type: BaselineType;
+  evaluation_time: string;
+}
+
 export interface AlertRulesTable {
   id: Generated<string>;
   organization_id: string;
@@ -140,6 +151,12 @@ export interface AlertRulesTable {
   level: LogLevel[];
   threshold: number;
   time_window: number;
+  alert_type: Generated<AlertType>;
+  baseline_type: BaselineType | null;
+  deviation_multiplier: number | null;
+  min_baseline_value: number | null;
+  cooldown_minutes: number | null;
+  sustained_minutes: number | null;
   email_recipients: string[];
   webhook_url: string | null;
   metadata: ColumnType<
@@ -156,6 +173,7 @@ export interface AlertHistoryTable {
   rule_id: string;
   triggered_at: Timestamp;
   log_count: number;
+  baseline_metadata: ColumnType<BaselineMetadata | null, BaselineMetadata | null, BaselineMetadata | null>;
   notified: Generated<boolean>;
   error: string | null;
 }

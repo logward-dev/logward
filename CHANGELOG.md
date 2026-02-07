@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Project-level rules override org-level rules with the same name
   - Database migration `021_add_pii_masking` (`pii_masking_rules` + `organization_pii_salts` tables)
 
+- **Rate-of-Change Alerts**: Baseline-based anomaly detection that compares current log volume against historical patterns, triggering when deviation exceeds a configurable multiplier
+  - **4 baseline methods**: `same_time_yesterday`, `same_day_last_week`, `rolling_7d_avg` (default), `percentile_p95` — all computed on-the-fly from `logs_hourly_stats` continuous aggregate
+  - **Anti-spam**: Sustained check (configurable minutes before firing), cooldown period (default 60min), minimum baseline value guard (ignores low-traffic noise)
+  - **Smart defaults**: 3x deviation multiplier, 10 min baseline, 60min cooldown, 5min sustained check
+  - Frontend: Alert type toggle (Threshold / Rate of Change), baseline method picker with descriptions, deviation multiplier slider, collapsible advanced settings (min baseline, cooldown, sustained)
+  - History display: "Anomaly" badge for rate-of-change alerts, baseline metadata (current rate vs baseline, deviation ratio, method used)
+  - Email subject line: `[Anomaly] rule — Nx above baseline` (vs `[Alert]` for threshold)
+  - Webhook payload includes `baseline_metadata` and `event_type: "anomaly"` for rate-of-change alerts
+  - Zod validation: rate-of-change requires `baselineType` + `deviationMultiplier`, multiplier range 1.5–20
+  - Database migration `022_add_rate_of_change_alerts` (adds columns to `alert_rules` + `baseline_metadata` JSONB to `alert_history`)
+  - 19 new tests (routes, baseline calculator, service dispatching, validation) — 105 total alert tests passing
+
 ### Performance
 
 - **PII masking zero-cost when disabled**: Cache hit is a single `Map.get()` + timestamp check (~0.001ms), returns immediately when no rules are enabled
