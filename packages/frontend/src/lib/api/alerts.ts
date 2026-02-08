@@ -2,6 +2,9 @@ import { getApiUrl } from '$lib/config';
 import { getAuthToken } from '$lib/utils/auth';
 import type { LogLevel } from '@logtide/shared';
 
+export type AlertType = 'threshold' | 'rate_of_change';
+export type BaselineType = 'same_time_yesterday' | 'same_day_last_week' | 'rolling_7d_avg' | 'percentile_p95';
+
 export interface AlertRule {
   id: string;
   organizationId: string;
@@ -12,6 +15,12 @@ export interface AlertRule {
   level: LogLevel[];
   threshold: number;
   timeWindow: number;
+  alertType: AlertType;
+  baselineType: BaselineType | null;
+  deviationMultiplier: number | null;
+  minBaselineValue: number | null;
+  cooldownMinutes: number | null;
+  sustainedMinutes: number | null;
   emailRecipients: string[];
   webhookUrl: string | null;
   channelIds?: string[];
@@ -28,6 +37,12 @@ export interface CreateAlertRuleInput {
   level: LogLevel[];
   threshold: number;
   timeWindow: number;
+  alertType?: AlertType;
+  baselineType?: BaselineType | null;
+  deviationMultiplier?: number | null;
+  minBaselineValue?: number | null;
+  cooldownMinutes?: number | null;
+  sustainedMinutes?: number | null;
   emailRecipients?: string[];
   webhookUrl?: string | null;
   channelIds?: string[];
@@ -40,6 +55,12 @@ export interface UpdateAlertRuleInput {
   level?: LogLevel[];
   threshold?: number;
   timeWindow?: number;
+  alertType?: AlertType;
+  baselineType?: BaselineType | null;
+  deviationMultiplier?: number | null;
+  minBaselineValue?: number | null;
+  cooldownMinutes?: number | null;
+  sustainedMinutes?: number | null;
   emailRecipients?: string[];
   webhookUrl?: string | null;
   channelIds?: string[];
@@ -65,6 +86,14 @@ export interface AlertHistory {
   timeWindow: number;
   service: string | null;
   level: LogLevel[];
+  alertType: AlertType;
+  baselineMetadata: {
+    baseline_value: number;
+    current_value: number;
+    deviation_ratio: number;
+    baseline_type: BaselineType;
+    evaluation_time: string;
+  } | null;
 }
 
 export interface GetHistoryOptions {

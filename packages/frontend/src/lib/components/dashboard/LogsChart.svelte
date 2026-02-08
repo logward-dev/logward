@@ -5,6 +5,8 @@
   import { themeStore } from '$lib/stores/theme';
   import { chartColors, getEChartsTheme, getAxisStyle, getTooltipStyle, getLegendStyle } from '$lib/utils/echarts-theme';
 
+  import type { TimelineEvent } from '$lib/api/dashboard';
+
   interface ChartClickParams {
     seriesName: string;
     time: string;
@@ -19,17 +21,101 @@
       warn: number;
       info: number;
     }[];
+    events?: TimelineEvent[];
     onDataPointClick?: (params: ChartClickParams) => void;
   }
 
-  let { data, onDataPointClick }: Props = $props();
+  let { data, events = [], onDataPointClick }: Props = $props();
   let chartContainer: HTMLDivElement;
   let chart: echarts.ECharts | null = null;
+
+  function formatTimeLabel(time: string): string {
+    return new Date(time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function buildEventSeries(): echarts.SeriesOption[] {
+    if (!events || events.length === 0) return [];
+
+    // Build a map of formatted time label -> data index for matching
+    const timeLabels = data.map(d => formatTimeLabel(d.time));
+    const labelToIndex = new Map<string, number>();
+    timeLabels.forEach((label, i) => { labelToIndex.set(label, i); });
+
+    // Build scatter data: [xIndex, yValue, eventData]
+    const scatterData: any[] = [];
+
+    for (const event of events) {
+      const label = formatTimeLabel(event.time);
+      const idx = labelToIndex.get(label);
+      if (idx === undefined) continue;
+
+      const yValue = data[idx].total;
+      const hasAlerts = event.alerts > 0;
+      const hasDetections = event.detections > 0;
+
+      scatterData.push({
+        value: [idx, yValue],
+        event,
+        itemStyle: {
+          color: hasAlerts ? chartColors.series.red : chartColors.series.purple,
+          borderColor: '#fff',
+          borderWidth: 2,
+          shadowBlur: 4,
+          shadowColor: hasAlerts ? 'rgba(239, 68, 68, 0.4)' : 'rgba(168, 85, 247, 0.4)',
+        },
+        symbolSize: hasAlerts && hasDetections ? 16 : 12,
+      });
+    }
+
+    if (scatterData.length === 0) return [];
+
+    return [{
+      name: 'Events',
+      type: 'scatter',
+      data: scatterData,
+      symbol: 'circle',
+      z: 10,
+      tooltip: {
+        trigger: 'item',
+        formatter: (params: any) => {
+          const ev = params.data.event as TimelineEvent;
+          const parts: string[] = [];
+
+          if (ev.alerts > 0) {
+            parts.push(`<b style="color:${chartColors.series.red}">Alerts: ${ev.alerts}</b>`);
+            for (const detail of ev.alertDetails.slice(0, 3)) {
+              parts.push(`&nbsp;&nbsp;• ${detail.ruleName} (${detail.logCount} logs)`);
+            }
+            if (ev.alertDetails.length > 3) {
+              parts.push(`&nbsp;&nbsp;...and ${ev.alertDetails.length - 3} more`);
+            }
+          }
+
+          if (ev.detections > 0) {
+            parts.push(`<b style="color:${chartColors.series.purple}">Detections: ${ev.detections}</b>`);
+            const sev = ev.detectionsBySeverity;
+            const sevParts: string[] = [];
+            if (sev.critical > 0) sevParts.push(`${sev.critical} critical`);
+            if (sev.high > 0) sevParts.push(`${sev.high} high`);
+            if (sev.medium > 0) sevParts.push(`${sev.medium} medium`);
+            if (sev.low > 0) sevParts.push(`${sev.low} low`);
+            if (sevParts.length > 0) {
+              parts.push(`&nbsp;&nbsp;${sevParts.join(', ')}`);
+            }
+          }
+
+          return parts.join('<br/>');
+        },
+      },
+    }];
+  }
 
   function getChartOption(): echarts.EChartsOption {
     const axisStyle = getAxisStyle();
     const tooltipStyle = getTooltipStyle();
     const legendStyle = getLegendStyle();
+    const eventSeries = buildEventSeries();
+    const hasEvents = eventSeries.length > 0;
 
     return {
       tooltip: {
@@ -40,7 +126,7 @@
         ...tooltipStyle
       },
       legend: {
-        data: ['Total', 'Errors', 'Warnings', 'Info'],
+        data: hasEvents ? ['Total', 'Errors', 'Warnings', 'Info', 'Events'] : ['Total', 'Errors', 'Warnings', 'Info'],
         bottom: 0,
         ...legendStyle
       },
@@ -53,7 +139,7 @@
       xAxis: {
         type: 'category',
         boundaryGap: false,
-        data: data.map(d => new Date(d.time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', hour12: false })),
+        data: data.map(d => formatTimeLabel(d.time)),
         ...axisStyle
       },
       yAxis: {
@@ -92,7 +178,8 @@
           data: data.map(d => d.info),
           lineStyle: { color: chartColors.series.green },
           itemStyle: { color: chartColors.series.green }
-        }
+        },
+        ...eventSeries,
       ]
     };
   }
@@ -132,18 +219,10 @@
 
   $effect(() => {
     if (chart && data) {
-      // Update data only (theme changes are handled by subscription)
-      chart.setOption({
-        xAxis: {
-          data: data.map(d => new Date(d.time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', hour12: false }))
-        },
-        series: [
-          { data: data.map(d => d.total) },
-          { data: data.map(d => d.error) },
-          { data: data.map(d => d.warn) },
-          { data: data.map(d => d.info) }
-        ]
-      });
+      // Rebuild full option when data or events change
+      // (need full rebuild because event scatter series depends on both data and events)
+      void events;
+      chart.setOption(getChartOption(), true);
     }
   });
 </script>

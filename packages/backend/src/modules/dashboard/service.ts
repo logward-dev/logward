@@ -39,6 +39,14 @@ export interface RecentError {
   traceId?: string;
 }
 
+export interface TimelineEvent {
+  time: string;
+  alerts: number;
+  detections: number;
+  alertDetails: Array<{ ruleName: string; alertType: string; logCount: number }>;
+  detectionsBySeverity: { critical: number; high: number; medium: number; low: number };
+}
+
 class DashboardService {
   /**
    * Get dashboard statistics for an organization
@@ -533,6 +541,137 @@ class DashboardService {
         percentage: Math.round((count / total) * 100),
       };
     });
+  }
+
+  /**
+   * Get timeline events (alerts + detections) for last 24 hours, bucketed by hour.
+   * Used to overlay markers on the dashboard logs chart.
+   */
+  async getTimelineEvents(organizationId: string): Promise<TimelineEvent[]> {
+    const projects = await db
+      .selectFrom('projects')
+      .select('id')
+      .where('organization_id', '=', organizationId)
+      .execute();
+
+    const projectIds = projects.map((p) => p.id);
+
+    if (projectIds.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const lastHour = new Date(now.getTime() - 60 * 60 * 1000);
+
+    // Query alerts from alert_history JOIN alert_rules (last 24h)
+    const alertRows = await db
+      .selectFrom('alert_history')
+      .innerJoin('alert_rules', 'alert_rules.id', 'alert_history.rule_id')
+      .select([
+        sql<string>`time_bucket('1 hour', alert_history.triggered_at)`.as('bucket'),
+        'alert_rules.name as rule_name',
+        sql<string>`COALESCE(alert_rules.alert_type, 'threshold')`.as('alert_type'),
+        'alert_history.log_count',
+      ])
+      .where('alert_rules.organization_id', '=', organizationId)
+      .where('alert_history.triggered_at', '>=', last24Hours)
+      .execute();
+
+    // Query detections - try continuous aggregate first, fallback to raw
+    let detectionRows: Array<{ bucket: string | Date; severity: string; count: string }> = [];
+
+    try {
+      // Historical from aggregate + recent from raw
+      const [historicalDetections, recentDetections] = await Promise.all([
+        db
+          .selectFrom('detection_events_hourly_stats')
+          .select([
+            'bucket',
+            'severity',
+            sql<string>`SUM(detection_count)`.as('count'),
+          ])
+          .where('organization_id', '=', organizationId)
+          .where('bucket', '>=', last24Hours)
+          .where('bucket', '<', lastHour)
+          .groupBy(['bucket', 'severity'])
+          .execute(),
+
+        db
+          .selectFrom('detection_events')
+          .select([
+            sql<string>`time_bucket('1 hour', time)`.as('bucket'),
+            'severity',
+            sql<string>`COUNT(*)`.as('count'),
+          ])
+          .where('organization_id', '=', organizationId)
+          .where('time', '>=', lastHour)
+          .groupBy(['bucket', 'severity'])
+          .execute(),
+      ]);
+
+      detectionRows = [...historicalDetections, ...recentDetections];
+    } catch {
+      // Fallback: query raw detection_events for full 24h
+      detectionRows = await db
+        .selectFrom('detection_events')
+        .select([
+          sql<string>`time_bucket('1 hour', time)`.as('bucket'),
+          'severity',
+          sql<string>`COUNT(*)`.as('count'),
+        ])
+        .where('organization_id', '=', organizationId)
+        .where('time', '>=', last24Hours)
+        .groupBy(['bucket', 'severity'])
+        .execute();
+    }
+
+    // Merge into hourly buckets
+    const bucketMap = new Map<string, TimelineEvent>();
+
+    for (const row of alertRows) {
+      const bucketKey = new Date(row.bucket).toISOString();
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, {
+          time: bucketKey,
+          alerts: 0,
+          detections: 0,
+          alertDetails: [],
+          detectionsBySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+        });
+      }
+      const event = bucketMap.get(bucketKey)!;
+      event.alerts += 1;
+      event.alertDetails.push({
+        ruleName: row.rule_name,
+        alertType: row.alert_type,
+        logCount: row.log_count,
+      });
+    }
+
+    for (const row of detectionRows) {
+      const bucketKey = new Date(row.bucket).toISOString();
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, {
+          time: bucketKey,
+          alerts: 0,
+          detections: 0,
+          alertDetails: [],
+          detectionsBySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+        });
+      }
+      const event = bucketMap.get(bucketKey)!;
+      const count = Number(row.count ?? 0);
+      event.detections += count;
+
+      const sev = (row.severity || '').toLowerCase();
+      if (sev === 'critical') event.detectionsBySeverity.critical += count;
+      else if (sev === 'high') event.detectionsBySeverity.high += count;
+      else if (sev === 'medium') event.detectionsBySeverity.medium += count;
+      else event.detectionsBySeverity.low += count;
+    }
+
+    return Array.from(bucketMap.values());
   }
 
   /**
