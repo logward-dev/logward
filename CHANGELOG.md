@@ -40,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Database migration `022_add_rate_of_change_alerts` (adds columns to `alert_rules` + `baseline_metadata` JSONB to `alert_history`)
   - 19 new tests (routes, baseline calculator, service dispatching, validation) — 105 total alert tests passing
 
+### Fixed
+
+- **Charts not resizing on sidebar toggle**: ECharts instances (LogsChart, TimelineWidget, SeverityPieChart, MitreHeatmap, ServiceMap, PreviewTimeline) stayed at previous size when toggling the sidebar or changing content density — replaced `window.resize` listener with `ResizeObserver` on chart containers
+
+- **Notification click navigating to wrong organization**: Clicking a notification while viewing a different organization led to "not found" errors — now auto-switches to the notification's organization before navigating
+
 ### Performance
 
 - **PII masking zero-cost when disabled**: Cache hit is a single `Map.get()` + timestamp check (~0.001ms), returns immediately when no rules are enabled

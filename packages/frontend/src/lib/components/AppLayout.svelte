@@ -3,7 +3,7 @@
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth";
-  import { currentOrganization } from "$lib/stores/organization";
+  import { currentOrganization, organizationStore } from "$lib/stores/organization";
   import { toastStore } from "$lib/stores/toast";
   import { NotificationsAPI, type Notification } from "$lib/api/notifications";
   import { layoutStore, type ContentDensity } from "$lib/stores/layout";
@@ -597,11 +597,14 @@
                       if (!notification.read) {
                         markNotificationAsRead(notification.id);
                       }
+                      // Switch org if notification belongs to a different one
+                      if (notification.organizationId && notification.organizationId !== $currentOrganization?.id) {
+                        organizationStore.setCurrentOrganization(notification.organizationId);
+                      }
                       // Handle navigation based on notification type
                       if (notification.metadata?.link) {
-                        // If notification has a specific link, use it
                         goto(notification.metadata.link);
-                      } else if (notification.type === "alert" && notification.organizationSlug) {
+                      } else if (notification.type === "alert") {
                         goto(`/dashboard/alerts`);
                       }
                     }}

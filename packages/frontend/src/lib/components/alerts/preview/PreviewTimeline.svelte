@@ -178,11 +178,11 @@
 		chart = echarts.init(chartContainer);
 		chart.setOption(getChartOption());
 
-		const handleResize = () => chart?.resize();
-		window.addEventListener("resize", handleResize);
+		const resizeObserver = new ResizeObserver(() => chart?.resize());
+		resizeObserver.observe(chartContainer);
 
 		return () => {
-			window.removeEventListener("resize", handleResize);
+			resizeObserver.disconnect();
 			chart?.dispose();
 		};
 	}
