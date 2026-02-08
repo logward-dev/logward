@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Project-level rules override org-level rules with the same name
   - Database migration `021_add_pii_masking` (`pii_masking_rules` + `organization_pii_salts` tables)
 
+- **Timeline Event Markers**: Visual indicators on the Logs Timeline chart showing when alerts or security detections occurred
+  - Scatter circle markers overlaid on the existing chart at matching hourly buckets
+  - Red circles for alert triggers, purple for security detections, larger when both in same hour
+  - Hover tooltip shows alert rule names, log counts, and detection severity breakdown
+  - "Events" toggle in legend to show/hide markers
+  - Backend endpoint `GET /api/v1/dashboard/timeline-events` queries `alert_history` + `detection_events_hourly_stats` (with raw fallback)
+  - Graceful degradation: chart unchanged when no events exist
+
 - **Rate-of-Change Alerts**: Baseline-based anomaly detection that compares current log volume against historical patterns, triggering when deviation exceeds a configurable multiplier
   - **4 baseline methods**: `same_time_yesterday`, `same_day_last_week`, `rolling_7d_avg` (default), `percentile_p95` — all computed on-the-fly from `logs_hourly_stats` continuous aggregate
   - **Anti-spam**: Sustained check (configurable minutes before firing), cooldown period (default 60min), minimum baseline value guard (ignores low-traffic noise)

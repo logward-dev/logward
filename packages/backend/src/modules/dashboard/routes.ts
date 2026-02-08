@@ -130,6 +130,43 @@ const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // GET /api/v1/dashboard/timeline-events - Get alert/detection events for chart markers
+  fastify.get('/api/v1/dashboard/timeline-events', {
+    schema: {
+      description: 'Get timeline events (alerts + detections) for last 24 hours',
+      tags: ['dashboard'],
+      querystring: {
+        type: 'object',
+        properties: {
+          organizationId: { type: 'string', format: 'uuid' },
+        },
+        required: ['organizationId'],
+      },
+    },
+    handler: async (request: any, reply) => {
+      const { organizationId } = request.query as { organizationId: string };
+
+      if (!organizationId) {
+        return reply.code(400).send({
+          error: 'organizationId is required',
+        });
+      }
+
+      if (request.user?.id) {
+        const hasAccess = await verifyOrganizationAccess(organizationId, request.user.id);
+
+        if (!hasAccess) {
+          return reply.code(403).send({
+            error: 'Access denied - you are not a member of this organization',
+          });
+        }
+      }
+
+      const events = await dashboardService.getTimelineEvents(organizationId);
+      return { events };
+    },
+  });
+
   // GET /api/v1/dashboard/recent-errors - Get recent errors
   fastify.get('/api/v1/dashboard/recent-errors', {
     schema: {
