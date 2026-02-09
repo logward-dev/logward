@@ -31,6 +31,17 @@
         Clock,
         Save,
     } from "lucide-svelte";
+    import {
+        AlertDialog,
+        AlertDialogAction,
+        AlertDialogCancel,
+        AlertDialogContent,
+        AlertDialogDescription,
+        AlertDialogFooter,
+        AlertDialogHeader,
+        AlertDialogTitle,
+    } from "$lib/components/ui/alert-dialog";
+    import { goto } from "$app/navigation";
 
     const orgId = $derived(page.params.id);
     let org: OrganizationDetails | null = $state(null);
@@ -79,7 +90,7 @@
         deleting = true;
         try {
             await adminAPI.deleteOrganization(org.id);
-            window.location.href = "/dashboard/admin/organizations";
+            goto("/dashboard/admin/organizations");
         } catch (err: any) {
             error = err.message || "Failed to delete organization";
         } finally {
@@ -304,66 +315,34 @@
             </CardContent>
         </Card>
 
-        {#if showDeleteDialog}
-            <div
-                class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-            >
-                <Card class="w-full max-w-md">
-                    <CardHeader>
-                        <div class="flex items-center gap-2 text-destructive">
-                            <AlertTriangle class="h-5 w-5" />
-                            <CardTitle>Delete Organization</CardTitle>
-                        </div>
-                        <CardDescription>
-                            Are you sure you want to delete <strong
-                                >{org.name}</strong
-                            >?
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent class="space-y-4">
-                        <div
-                            class="bg-destructive/10 border border-destructive/20 rounded-md p-4"
-                        >
-                            <p class="text-sm text-destructive font-medium">
-                                Warning: This action cannot be undone!
-                            </p>
-                            <p class="text-sm text-muted-foreground mt-2">
-                                This will permanently delete:
-                            </p>
-                            <ul
-                                class="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside"
-                            >
-                                <li>
-                                    {org.members.length} member associations
-                                </li>
-                                <li>
-                                    {org.projects.length} projects and all their
-                                    data
-                                </li>
-                                <li>All logs and related data</li>
-                            </ul>
-                        </div>
-                        <div class="flex gap-2 justify-end">
-                            <Button
-                                variant="outline"
-                                onclick={() => (showDeleteDialog = false)}
-                                disabled={deleting}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="destructive"
-                                onclick={handleDelete}
-                                disabled={deleting}
-                            >
-                                {deleting
-                                    ? "Deleting..."
-                                    : "Delete Organization"}
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-        {/if}
     {/if}
 </div>
+
+<AlertDialog bind:open={showDeleteDialog}>
+    <AlertDialogContent>
+        <AlertDialogHeader>
+            <AlertDialogTitle>Delete Organization</AlertDialogTitle>
+            <AlertDialogDescription>
+                Are you sure you want to delete <strong>{org?.name}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div class="py-4">
+            <div class="bg-destructive/10 border border-destructive/20 rounded-md p-4">
+                <p class="text-sm text-destructive font-medium">
+                    This will permanently delete:
+                </p>
+                <ul class="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                    <li>{org?.members.length} member associations</li>
+                    <li>{org?.projects.length} projects and all their data</li>
+                    <li>All logs and related data</li>
+                </ul>
+            </div>
+        </div>
+        <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onclick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete Organization"}
+            </AlertDialogAction>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>

@@ -10,18 +10,56 @@
   import { Alert, AlertDescription } from '$lib/components/ui/alert';
   import Spinner from '$lib/components/Spinner.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
+  import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+  } from '$lib/components/ui/alert-dialog';
   import { Plus, Settings, Trash2, Pencil, Building2, Server, Mail, Check, X } from 'lucide-svelte';
+  import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
+  import { untrack } from 'svelte';
+  import { UsersAPI } from '$lib/api/users';
+  import { get } from 'svelte/store';
 
-  let token = $state<string | null>(null);
-  let adminAuthAPI = $derived(new AdminAuthAPI(() => token));
+  let adminAuthAPI = $derived(new AdminAuthAPI(() => $authStore.token));
 
-  authStore.subscribe((state) => {
-    token = state.token;
+  const usersAPI = new UsersAPI(() => get(authStore).token);
+
+  $effect(() => {
+    if (browser && $authStore.user) {
+      if ($authStore.user.is_admin === undefined) {
+        untrack(() => {
+          usersAPI
+            .getCurrentUser()
+            .then(({ user }) => {
+              const currentUser = get(authStore).user;
+              if (currentUser) {
+                authStore.updateUser({ ...currentUser, ...user });
+                if (user.is_admin) loadProviders();
+              }
+            })
+            .catch(() => goto('/dashboard'));
+        });
+      } else if ($authStore.user.is_admin === false) {
+        untrack(() => goto('/dashboard'));
+      }
+    }
   });
 
   let providers = $state<AuthProviderConfig[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+
+  // Delete dialog state
+  let showDeleteProviderDialog = $state(false);
+  let deleteTarget = $state<AuthProviderConfig | null>(null);
+  let deletingProvider = $state(false);
 
   // Dialog states
   let showCreateDialog = $state(false);
@@ -52,7 +90,7 @@
   let ldapSearchFilter = $state('(uid={{username}})');
 
   onMount(async () => {
-    await loadProviders();
+    if ($authStore.user?.is_admin) await loadProviders();
   });
 
   async function loadProviders() {
@@ -160,17 +198,24 @@
     }
   }
 
-  async function handleDelete(provider: AuthProviderConfig) {
-    if (!confirm(`Are you sure you want to delete the "${provider.name}" provider? This cannot be undone.`)) {
-      return;
-    }
+  function confirmDeleteProvider(provider: AuthProviderConfig) {
+    deleteTarget = provider;
+    showDeleteProviderDialog = true;
+  }
 
+  async function handleDeleteProvider() {
+    if (!deleteTarget) return;
+    deletingProvider = true;
     try {
-      await adminAuthAPI.deleteProvider(provider.id);
+      await adminAuthAPI.deleteProvider(deleteTarget.id);
       toastStore.success('Provider deleted');
+      showDeleteProviderDialog = false;
+      deleteTarget = null;
       await loadProviders();
     } catch (e) {
       toastStore.error(e instanceof Error ? e.message : 'Failed to delete provider');
+    } finally {
+      deletingProvider = false;
     }
   }
 
@@ -326,7 +371,7 @@
                   <Button
                     variant="ghost"
                     size="sm"
-                    onclick={() => handleDelete(provider)}
+                    onclick={() => confirmDeleteProvider(provider)}
                     title="Delete"
                   >
                     <Trash2 class="h-4 w-4 text-destructive" />
@@ -629,3 +674,22 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<!-- Delete Provider Dialog -->
+<AlertDialog bind:open={showDeleteProviderDialog}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Delete Provider</AlertDialogTitle>
+      <AlertDialogDescription>
+        Are you sure you want to delete the <strong>{deleteTarget?.name}</strong> provider?
+        Users who authenticate via this provider will no longer be able to log in. This action cannot be undone.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Cancel</AlertDialogCancel>
+      <AlertDialogAction onclick={handleDeleteProvider} disabled={deletingProvider}>
+        {deletingProvider ? "Deleting..." : "Delete Provider"}
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
