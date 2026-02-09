@@ -37,6 +37,12 @@ import { initializeInternalLogging, shutdownInternalLogging } from './utils/inte
 import websocketPlugin from './plugins/websocket.js';
 import websocketRoutes from './modules/query/websocket.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __serverDirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(path.resolve(__serverDirname, '../package.json'), 'utf-8'));
 
 const PORT = config.PORT;
 const HOST = config.HOST;
@@ -134,7 +140,7 @@ export async function build(opts = {}) {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.5.5',
+      version: packageJson.version,
     };
   });
 
@@ -211,8 +217,6 @@ async function start() {
 }
 
 // Start the server directly when this file is run
-import { fileURLToPath } from 'url';
-
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   start();
 }

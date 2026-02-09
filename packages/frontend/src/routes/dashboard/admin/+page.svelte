@@ -18,6 +18,7 @@
         HealthStats,
         PlatformTimeline,
         ActiveIssues,
+        VersionCheckResult,
     } from "$lib/api/admin";
     import {
         Activity,
@@ -34,6 +35,9 @@
         Cpu,
         Server,
         Bug,
+        ArrowUpCircle,
+        CheckCircle2,
+        ExternalLink,
     } from "lucide-svelte";
     import * as Table from "$lib/components/ui/table";
     import { Button } from "$lib/components/ui/button";
@@ -51,6 +55,7 @@
     let healthStats = $state<HealthStats | null>(null);
     let platformTimeline = $state<PlatformTimeline | null>(null);
     let activeIssues = $state<ActiveIssues | null>(null);
+    let versionCheck = $state<VersionCheckResult | null>(null);
 
     let loading = $state(true);
     let error = $state<string | null>(null);
@@ -95,7 +100,7 @@
         loading = true;
         error = null;
         try {
-            const [system, logs, perf, alerts, redis, health, timeline, issues] =
+            const [system, logs, perf, alerts, redis, health, timeline, issues, version] =
                 await Promise.all([
                     adminAPI.getSystemStats(),
                     adminAPI.getLogsStats(),
@@ -105,6 +110,7 @@
                     adminAPI.getHealthStats(),
                     adminAPI.getPlatformTimeline(24).catch(() => null),
                     adminAPI.getActiveIssues().catch(() => null),
+                    adminAPI.getVersionCheck().catch(() => null),
                 ]);
 
             systemStats = system;
@@ -115,6 +121,7 @@
             healthStats = health;
             platformTimeline = timeline;
             activeIssues = issues;
+            versionCheck = version;
             lastRefreshed = new Date();
         } catch (e: any) {
             console.error("Error loading admin stats:", e);
@@ -217,6 +224,74 @@
     {/if}
 
     {#if $authStore.user?.is_admin}
+        <!-- Version Check Banner -->
+        {#if versionCheck}
+            {@const targetRelease = versionCheck.channel === 'beta'
+                ? (versionCheck.latestBeta ?? versionCheck.latestStable)
+                : versionCheck.latestStable}
+            <Card class={versionCheck.updateAvailable ? 'border-blue-500/50 bg-blue-500/5' : ''}>
+                <CardContent class="py-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            {#if versionCheck.updateAvailable && targetRelease}
+                                <div class="rounded-full bg-blue-500/10 p-2">
+                                    <ArrowUpCircle class="h-5 w-5 text-blue-500" />
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium">Update available</span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono">
+                                            v{versionCheck.currentVersion}
+                                        </span>
+                                        <span class="text-muted-foreground">&rarr;</span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 font-mono font-semibold">
+                                            v{targetRelease.version}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-muted-foreground mt-0.5">
+                                        {targetRelease.name}
+                                        {#if targetRelease.prerelease}
+                                            (pre-release)
+                                        {/if}
+                                        &middot; Channel: <span class="font-medium">{versionCheck.channel}</span>
+                                    </p>
+                                </div>
+                            {:else}
+                                <div class="rounded-full bg-green-500/10 p-2">
+                                    <CheckCircle2 class="h-5 w-5 text-green-500" />
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium">Up to date</span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 font-mono">
+                                            v{versionCheck.currentVersion}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-muted-foreground mt-0.5">
+                                        Channel: <span class="font-medium">{versionCheck.channel}</span>
+                                        &middot; Checked {new Date(versionCheck.checkedAt).toLocaleTimeString()}
+                                    </p>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {#if versionCheck.updateAvailable && targetRelease}
+                                <a
+                                    href={targetRelease.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                    View release
+                                    <ExternalLink class="h-3.5 w-3.5" />
+                                </a>
+                            {/if}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        {/if}
+
         <!-- Section 1: Top Health Cards (4 columns) -->
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <!-- System Health -->

@@ -2,6 +2,14 @@ import { db, getPoolStats } from '../../database/index.js';
 import { sql } from 'kysely';
 import { connection as redis, isRedisAvailable } from '../../queue/connection.js';
 import { CacheManager, type CacheStats, isCacheEnabled } from '../../utils/cache.js';
+import { settingsService, type UpdateChannel } from '../settings/service.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, '../../../package.json'), 'utf-8'));
+const CURRENT_VERSION: string = packageJson.version;
 
 // System-wide statistics
 export interface SystemStats {
@@ -1604,6 +1612,122 @@ export class AdminService {
     }
 
     /**
+     * Check for new versions by querying GitHub Releases API.
+     * Results are cached for 6 hours.
+     */
+    async checkVersion(): Promise<VersionCheckResult> {
+        // Try cache first
+        const cacheKey = CacheManager.adminStatsKey('version-check');
+        const cached = await CacheManager.get<VersionCheckResult>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const channel = await settingsService.get('updates.channel').catch(() => 'stable' as UpdateChannel);
+
+        let latestStable: ReleaseInfo | null = null;
+        let latestBeta: ReleaseInfo | null = null;
+
+        try {
+            const headers: Record<string, string> = {
+                'Accept': 'application/vnd.github+json',
+                'User-Agent': 'LogTide',
+            };
+            const githubToken = process.env.GITHUB_TOKEN;
+            if (githubToken) {
+                headers['Authorization'] = `Bearer ${githubToken}`;
+            }
+
+            const response = await fetch(
+                'https://api.github.com/repos/logtide-dev/logtide/releases?per_page=20',
+                { headers }
+            );
+
+            if (!response.ok) {
+                console.error(`[AdminService] GitHub API returned ${response.status}`);
+                const result: VersionCheckResult = {
+                    currentVersion: CURRENT_VERSION,
+                    channel,
+                    latestStable: null,
+                    latestBeta: null,
+                    updateAvailable: false,
+                    checkedAt: new Date().toISOString(),
+                };
+                // Cache error result for 30 minutes to avoid hammering
+                await CacheManager.set(cacheKey, result, 1800);
+                return result;
+            }
+
+            const releases: GitHubRelease[] = await response.json();
+
+            for (const release of releases) {
+                if (release.draft) continue;
+
+                const info: ReleaseInfo = {
+                    version: release.tag_name.replace(/^v/, ''),
+                    tag: release.tag_name,
+                    name: release.name || release.tag_name,
+                    publishedAt: release.published_at,
+                    url: release.html_url,
+                    prerelease: release.prerelease,
+                };
+
+                if (!release.prerelease && !latestStable) {
+                    latestStable = info;
+                }
+                if (release.prerelease && !latestBeta) {
+                    latestBeta = info;
+                }
+
+                if (latestStable && latestBeta) break;
+            }
+        } catch (error) {
+            console.error('[AdminService] Error checking GitHub releases:', error);
+        }
+
+        const targetRelease = channel === 'beta' ? (latestBeta || latestStable) : latestStable;
+        const updateAvailable = targetRelease
+            ? this.isNewerVersion(CURRENT_VERSION, targetRelease.version)
+            : false;
+
+        const result: VersionCheckResult = {
+            currentVersion: CURRENT_VERSION,
+            channel,
+            latestStable,
+            latestBeta,
+            updateAvailable,
+            checkedAt: new Date().toISOString(),
+        };
+
+        // Cache for 6 hours
+        await CacheManager.set(cacheKey, result, 21600);
+
+        return result;
+    }
+
+    /**
+     * Compare semver versions. Returns true if remote is newer than current.
+     */
+    private isNewerVersion(current: string, remote: string): boolean {
+        const parseSemver = (v: string) => {
+            // Strip pre-release suffix for comparison (e.g. "0.6.0-beta.1" -> [0,6,0])
+            const clean = v.replace(/^v/, '').split('-')[0];
+            return clean.split('.').map(Number);
+        };
+
+        const c = parseSemver(current);
+        const r = parseSemver(remote);
+
+        for (let i = 0; i < Math.max(c.length, r.length); i++) {
+            const cv = c[i] || 0;
+            const rv = r[i] || 0;
+            if (rv > cv) return true;
+            if (rv < cv) return false;
+        }
+        return false;
+    }
+
+    /**
      * Get slow/long-running queries from pg_stat_activity and pg_stat_statements
      */
     async getSlowQueries(): Promise<SlowQueriesStats> {
@@ -1744,6 +1868,34 @@ export interface SlowQueriesStats {
         rows_per_call: number;
     }>;
     pgStatStatementsAvailable: boolean;
+}
+
+// GitHub Release API types (subset)
+interface GitHubRelease {
+    tag_name: string;
+    name: string | null;
+    prerelease: boolean;
+    draft: boolean;
+    published_at: string;
+    html_url: string;
+}
+
+export interface ReleaseInfo {
+    version: string;
+    tag: string;
+    name: string;
+    publishedAt: string;
+    url: string;
+    prerelease: boolean;
+}
+
+export interface VersionCheckResult {
+    currentVersion: string;
+    channel: UpdateChannel;
+    latestStable: ReleaseInfo | null;
+    latestBeta: ReleaseInfo | null;
+    updateAvailable: boolean;
+    checkedAt: string;
 }
 
 export const adminService = new AdminService();
