@@ -331,6 +331,25 @@ export interface SlowQueriesStats {
     pgStatStatementsAvailable: boolean;
 }
 
+// Version Check
+export interface ReleaseInfo {
+    version: string;
+    tag: string;
+    name: string;
+    publishedAt: string;
+    url: string;
+    prerelease: boolean;
+}
+
+export interface VersionCheckResult {
+    currentVersion: string;
+    channel: 'stable' | 'beta';
+    latestStable: ReleaseInfo | null;
+    latestBeta: ReleaseInfo | null;
+    updateAvailable: boolean;
+    checkedAt: string;
+}
+
 // System Settings Interfaces
 export interface SystemSetting {
     key: string;
@@ -427,6 +446,10 @@ class AdminAPI {
 
     async getSlowQueries(): Promise<SlowQueriesStats> {
         return this.fetch<SlowQueriesStats>('/stats/slow-queries');
+    }
+
+    async getVersionCheck(): Promise<VersionCheckResult> {
+        return this.fetch<VersionCheckResult>('/version-check');
     }
 
     // User Management

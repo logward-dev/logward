@@ -629,6 +629,27 @@ export async function adminRoutes(fastify: FastifyInstance) {
         }
     );
 
+    // GET /api/v1/admin/version-check - Check for new releases on GitHub
+    fastify.get(
+        '/version-check',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const result = await adminService.checkVersion();
+                return reply.send(result);
+            } catch (error) {
+                console.error('Error checking version:', error);
+                return reply.status(500).send({
+                    error: 'Failed to check for updates',
+                });
+            }
+        }
+    );
+
     // Cache Management Routes
     // GET /api/v1/admin/cache/stats - Get cache statistics
     fastify.get(

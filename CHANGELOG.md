@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Database migration `022_add_rate_of_change_alerts` (adds columns to `alert_rules` + `baseline_metadata` JSONB to `alert_history`)
   - 19 new tests (routes, baseline calculator, service dispatching, validation) — 105 total alert tests passing
 
+- **Version Update Notifications**: Admin dashboard banner that checks GitHub releases for new versions
+  - Backend endpoint `GET /api/v1/admin/version-check` proxies GitHub Releases API with 6-hour cache (via CacheManager)
+  - Compares current `package.json` version against latest stable and beta releases using semver
+  - Release channel setting (`stable` / `beta`) configurable from Admin Settings page, persisted as `updates.channel` in `system_settings`
+  - Blue "Update available" banner with version comparison and direct link to release, or green "Up to date" indicator
+  - Dynamic version in `/health` endpoint (replaced hardcoded string with `package.json` read)
+
 ### Fixed
 
 - **Log Context metadata expanding dialog infinitely**: Opening metadata in the Log Context dialog caused horizontal overflow, stretching the dialog indefinitely. Added `max-w-full` to `<pre>` blocks and `overflow-hidden` to log entry containers so metadata scrolls within its bounds
