@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Admin Dashboard Revision**: Complete redesign of the admin panel for platform-level observability
+  - **Dashboard home**: 4 health status cards (system health, ingestion rate, active issues, total logs), platform activity chart (24h timeline of logs/detections/spans), 8 stat cards (users, orgs, projects, ingestion, alerts, queues, database, redis), top organizations and projects tables
+  - **System Health page** (`/dashboard/admin/system-health`): Database/connection pool/Redis diagnostics, database tables overview, TimescaleDB compression stats with progress bars, continuous aggregates health with staleness indicators, storage & performance metrics, worker queue details
+  - **Slow queries monitoring**: Active running queries table (from `pg_stat_activity`) with duration color-coding, historical slowest queries table (from `pg_stat_statements` when available)
+  - **Platform timeline chart**: ECharts area chart with 3 series (logs, detections, spans) using continuous aggregates for fast queries
+  - 5 new backend endpoints: `platform-timeline`, `active-issues`, `compression`, `continuous-aggregates`, `slow-queries`
+
 - **PII Masking at Ingestion**: Automatic detection and masking of sensitive data in log entries before storage (GDPR-compliant, data never touches disk unmasked)
   - **Phase 1 — Content patterns**: Built-in regex rules for email, credit card, phone (US), SSN, IPv4, API keys/secrets
   - **Phase 2 — Field name masking**: Scans metadata JSON keys (`password`, `token`, `secret`, `authorization`, etc.) and masks their values
@@ -41,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 19 new tests (routes, baseline calculator, service dispatching, validation) — 105 total alert tests passing
 
 ### Fixed
+
+- **Continuous Aggregates showing "Refresh: unknown"**: Fixed backend query reading `schedule_interval` from JSONB `config` field instead of the direct column on `timescaledb_information.jobs`
+
+- **HealthStats type mismatch**: Frontend had `'up'|'down'` status values while backend uses `'healthy'|'degraded'|'down'`; also missing `pool` property and `'not_configured'` redis status
+
+- **Admin panel consistency fixes**:
+  - Added admin guard (`is_admin` check + redirect) to Users, Organizations, and Auth Providers pages — previously only checked server-side
+  - Replaced unsafe click-to-confirm delete patterns (3-5s timeout) with proper `AlertDialog` confirmation modals on Projects list, Project detail, and Organization detail pages
+  - Replaced browser `confirm()` in Auth Providers with `AlertDialog`
+  - Replaced custom overlay modal in Organization detail with standard `AlertDialog` component
+  - Fixed `window.location.href` navigation (full page reload) with SvelteKit `goto()` in Organization detail and Project detail pages
+  - Fixed Svelte 4 `authStore.subscribe()` pattern in Auth Providers to use reactive `$authStore`
 
 - **Charts not resizing on sidebar toggle**: ECharts instances (LogsChart, TimelineWidget, SeverityPieChart, MitreHeatmap, ServiceMap, PreviewTimeline) stayed at previous size when toggling the sidebar or changing content density — replaced `window.resize` listener with `ResizeObserver` on chart containers
 

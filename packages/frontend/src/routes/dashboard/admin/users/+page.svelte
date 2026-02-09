@@ -26,6 +26,12 @@
         ChevronLeft,
         ChevronRight,
     } from "lucide-svelte";
+    import { authStore } from "$lib/stores/auth";
+    import { goto } from "$app/navigation";
+    import { browser } from "$app/environment";
+    import { untrack } from "svelte";
+    import { UsersAPI } from "$lib/api/users";
+    import { get } from "svelte/store";
 
     let users: UserBasic[] = $state([]);
     let loading = $state(true);
@@ -36,7 +42,32 @@
     let total = $state(0);
     const limit = 50;
 
+    const usersAPI = new UsersAPI(() => get(authStore).token);
+
+    $effect(() => {
+        if (browser && $authStore.user) {
+            if ($authStore.user.is_admin === undefined) {
+                untrack(() => {
+                    usersAPI
+                        .getCurrentUser()
+                        .then(({ user }) => {
+                            const currentUser = get(authStore).user;
+                            if (currentUser) {
+                                authStore.updateUser({ ...currentUser, ...user });
+                                if (user.is_admin) loadUsers();
+                            }
+                        })
+                        .catch(() => goto("/dashboard"));
+                });
+            } else if ($authStore.user.is_admin === false) {
+                untrack(() => goto("/dashboard"));
+            }
+        }
+    });
+
     async function loadUsers() {
+        if ($authStore.user?.is_admin !== true) return;
+
         loading = true;
         error = "";
         try {
@@ -80,7 +111,7 @@
     }
 
     onMount(() => {
-        loadUsers();
+        if ($authStore.user?.is_admin) loadUsers();
     });
 </script>
 
