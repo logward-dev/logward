@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Log Context metadata expanding dialog infinitely**: Opening metadata in the Log Context dialog caused horizontal overflow, stretching the dialog indefinitely. Added `max-w-full` to `<pre>` blocks and `overflow-hidden` to log entry containers so metadata scrolls within its bounds
+
+- **Email logo not rendering in some clients**: Switched logo URLs from `.svg` to `.png` — many email clients (Outlook, Gmail) don't support SVG in `<img>` tags
+
+- **Client errors (4xx) logged as ERROR**: The `onError` hook in the internal logging plugin was logging all errors at `error` level regardless of status code — a 415 Unsupported Media Type would appear as a critical error in the dashboard. Now 4xx errors are logged as `warn`, 5xx as `error`. Also added `skipPaths` to the `onError` hook to avoid logging noise from ingestion endpoints.
+
 - **Continuous Aggregates showing "Refresh: unknown"**: Fixed backend query reading `schedule_interval` from JSONB `config` field instead of the direct column on `timescaledb_information.jobs`
 
 - **HealthStats type mismatch**: Frontend had `'up'|'down'` status values while backend uses `'healthy'|'degraded'|'down'`; also missing `pool` property and `'not_configured'` redis status
