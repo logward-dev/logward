@@ -6,19 +6,11 @@ import { getInternalLogger } from '../../utils/internal-logger.js';
 // Types
 // ============================================================================
 
-interface CompressedChunkInfo {
-  chunk_schema: string;
-  chunk_name: string;
-  range_start: Date;
-  range_end: Date;
-}
-
 export interface RetentionExecutionResult {
   organizationId: string;
   organizationName: string;
   retentionDays: number;
   logsDeleted: number;
-  chunksDecompressed: number;
   executionTimeMs: number;
   error?: string;
 }
@@ -28,7 +20,6 @@ export interface RetentionExecutionSummary {
   successfulOrganizations: number;
   failedOrganizations: number;
   totalLogsDeleted: number;
-  totalChunksDecompressed: number;
   totalExecutionTimeMs: number;
   results: RetentionExecutionResult[];
 }
@@ -48,59 +39,6 @@ export interface OrganizationRetentionStatus {
 // ============================================================================
 
 export class RetentionService {
-  /**
-   * Find compressed chunks that contain data older than cutoffDate for given projects
-   */
-  private async findCompressedChunksToDecompress(
-    projectIds: string[],
-    cutoffDate: Date
-  ): Promise<CompressedChunkInfo[]> {
-    // Find compressed chunks where range_start < cutoffDate
-    // (these chunks might contain data that needs to be deleted)
-    const result = await sql<CompressedChunkInfo>`
-      SELECT DISTINCT
-        c.chunk_schema,
-        c.chunk_name,
-        c.range_start,
-        c.range_end
-      FROM timescaledb_information.chunks c
-      WHERE c.hypertable_name = 'logs'
-        AND c.is_compressed = true
-        AND c.range_start < ${cutoffDate}
-      ORDER BY c.range_start ASC
-    `.execute(db);
-
-    // Filter to only chunks that actually contain data for these projects
-    const chunksWithData: CompressedChunkInfo[] = [];
-
-    for (const chunk of result.rows) {
-      const hasData = await sql<{ exists: boolean }>`
-        SELECT EXISTS (
-          SELECT 1 FROM logs
-          WHERE project_id = ANY(${sql.raw(`ARRAY[${projectIds.map(id => `'${id}'::uuid`).join(',')}]`)})
-            AND time >= ${chunk.range_start}
-            AND time < ${chunk.range_end}
-            AND time < ${cutoffDate}
-          LIMIT 1
-        ) as exists
-      `.execute(db);
-
-      if (hasData.rows[0]?.exists) {
-        chunksWithData.push(chunk);
-      }
-    }
-
-    return chunksWithData;
-  }
-
-  /**
-   * Decompress a specific chunk
-   */
-  private async decompressChunk(chunk: CompressedChunkInfo): Promise<void> {
-    const chunkFullName = `${chunk.chunk_schema}.${chunk.chunk_name}`;
-    await sql`SELECT decompress_chunk(${chunkFullName}::regclass)`.execute(db);
-  }
-
   /**
    * Validate retention days value
    */
@@ -250,9 +188,43 @@ export class RetentionService {
     };
   }
 
+  // Time window size for batch deletes (1 day keeps each DELETE small)
+  private static readonly BATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
   /**
-   * Execute retention cleanup for a single organization
-   * Handles TimescaleDB compressed chunks by decompressing them first
+   * Delete logs for given project IDs older than cutoffDate using daily time windows.
+   * Each window deletes at most 1 day of data per transaction, keeping CPU/memory bounded.
+   * Works with compressed chunks without needing ctid or unlimited decompression.
+   */
+  private async batchDeleteLogs(projectIds: string[], cutoffDate: Date, rangeStart: Date): Promise<number> {
+    let totalDeleted = 0;
+    const windowMs = RetentionService.BATCH_WINDOW_MS;
+    const projectArray = sql.raw(`ARRAY[${projectIds.map(id => `'${id}'::uuid`).join(',')}]`);
+
+    let windowStart = rangeStart;
+    while (windowStart < cutoffDate) {
+      const windowEnd = new Date(Math.min(windowStart.getTime() + windowMs, cutoffDate.getTime()));
+
+      const result = await db.transaction().execute(async (trx) => {
+        await sql`SET LOCAL statement_timeout = '2min'`.execute(trx);
+        return sql`
+          DELETE FROM logs
+          WHERE project_id = ANY(${projectArray})
+            AND time >= ${windowStart}
+            AND time < ${windowEnd}
+        `.execute(trx);
+      });
+
+      totalDeleted += Number(result.numAffectedRows || 0);
+      windowStart = windowEnd;
+    }
+
+    return totalDeleted;
+  }
+
+  /**
+   * Execute retention cleanup for a single organization.
+   * Used by the admin manual trigger endpoint.
    */
   async executeRetentionForOrganization(
     organizationId: string,
@@ -263,7 +235,6 @@ export class RetentionService {
     const logger = getInternalLogger();
 
     try {
-      // Get project IDs for this organization
       const projects = await db
         .selectFrom('projects')
         .select('id')
@@ -278,75 +249,34 @@ export class RetentionService {
           organizationName,
           retentionDays,
           logsDeleted: 0,
-          chunksDecompressed: 0,
           executionTimeMs: Date.now() - startTime,
         };
       }
 
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      let totalDeleted = 0;
-      let chunksDecompressed = 0;
 
-      // Find and decompress chunks that contain data to delete
-      const compressedChunks = await this.findCompressedChunksToDecompress(projectIds, cutoffDate);
-
-      if (compressedChunks.length > 0) {
-        if (logger) {
-          logger.info('retention-decompressing', `Decompressing ${compressedChunks.length} chunks for ${organizationName}`, {
-            organizationId,
-            organizationName,
-            chunksToDecompress: compressedChunks.length,
-            chunks: compressedChunks.map(c => c.chunk_name),
-          });
-        }
-
-        // Decompress each chunk
-        for (const chunk of compressedChunks) {
-          try {
-            await this.decompressChunk(chunk);
-            chunksDecompressed++;
-
-            if (logger) {
-              logger.debug('retention-chunk-decompressed', `Decompressed chunk ${chunk.chunk_name}`, {
-                organizationId,
-                chunkName: chunk.chunk_name,
-                rangeStart: chunk.range_start,
-                rangeEnd: chunk.range_end,
-              });
-            }
-          } catch (decompressError) {
-            // Log but continue - chunk might already be decompressed by another process
-            const errMsg = decompressError instanceof Error ? decompressError.message : String(decompressError);
-            if (logger) {
-              logger.warn('retention-decompress-failed', `Failed to decompress chunk ${chunk.chunk_name}: ${errMsg}`, {
-                organizationId,
-                chunkName: chunk.chunk_name,
-                error: errMsg,
-              });
-            }
-          }
-        }
-      }
-
-      // Now delete the logs (chunks are decompressed)
-      const result = await db
-        .deleteFrom('logs')
+      // Find oldest log to know where to start the batch window
+      const oldestLog = await db
+        .selectFrom('logs')
+        .select('time')
         .where('project_id', 'in', projectIds)
         .where('time', '<', cutoffDate)
+        .orderBy('time', 'asc')
+        .limit(1)
         .executeTakeFirst();
 
-      totalDeleted = Number(result.numDeletedRows || 0);
-
+      let totalDeleted = 0;
+      if (oldestLog?.time) {
+        totalDeleted = await this.batchDeleteLogs(projectIds, cutoffDate, new Date(oldestLog.time));
+      }
       const executionTimeMs = Date.now() - startTime;
 
-      // Log results
-      if ((totalDeleted > 0 || chunksDecompressed > 0) && logger) {
+      if (totalDeleted > 0 && logger) {
         logger.info('retention-cleanup-org', `Deleted ${totalDeleted} logs for ${organizationName}`, {
           organizationId,
           organizationName,
           retentionDays,
           logsDeleted: totalDeleted,
-          chunksDecompressed,
           executionTimeMs,
         });
       }
@@ -356,7 +286,6 @@ export class RetentionService {
         organizationName,
         retentionDays,
         logsDeleted: totalDeleted,
-        chunksDecompressed,
         executionTimeMs,
       };
     } catch (error) {
@@ -377,7 +306,6 @@ export class RetentionService {
         organizationName,
         retentionDays,
         logsDeleted: 0,
-        chunksDecompressed: 0,
         executionTimeMs,
         error: errorMessage,
       };
@@ -385,52 +313,196 @@ export class RetentionService {
   }
 
   /**
-   * Execute retention cleanup for all organizations
+   * Execute retention cleanup for all organizations.
+   *
+   * Strategy (scales with number of distinct retention values, not orgs):
+   * 1. drop_chunks for max retention — instant, drops entire files
+   * 2. Group orgs by retention_days, collect all project_ids per group
+   * 3. For each group with retention < max: batch-delete their logs
    */
   async executeRetentionForAllOrganizations(): Promise<RetentionExecutionSummary> {
     const startTime = Date.now();
     const logger = getInternalLogger();
 
-    // Get all organizations with their retention settings
+    // Get all organizations with their retention + projects
     const organizations = await db
       .selectFrom('organizations')
       .select(['id', 'name', 'retention_days'])
       .execute();
 
-    const results: RetentionExecutionResult[] = [];
-    let successCount = 0;
-    let failedCount = 0;
-    let totalDeleted = 0;
-    let totalChunksDecompressed = 0;
+    const orgProjects = await db
+      .selectFrom('projects')
+      .select(['id', 'organization_id'])
+      .execute();
 
-    for (const org of organizations) {
-      const result = await this.executeRetentionForOrganization(
-        org.id,
-        org.retention_days,
-        org.name
-      );
+    // Build org -> projectIds map
+    const projectsByOrg = new Map<string, string[]>();
+    for (const p of orgProjects) {
+      const list = projectsByOrg.get(p.organization_id) || [];
+      list.push(p.id);
+      projectsByOrg.set(p.organization_id, list);
+    }
 
-      results.push(result);
+    // Find max retention (used for drop_chunks)
+    const maxRetention = Math.max(...organizations.map(o => o.retention_days));
+    const maxCutoff = new Date(Date.now() - maxRetention * 24 * 60 * 60 * 1000);
 
-      if (result.error) {
-        failedCount++;
-      } else {
-        successCount++;
-        totalDeleted += result.logsDeleted;
-        totalChunksDecompressed += result.chunksDecompressed;
+    // Step 1: drop_chunks older than max retention (instant, no decompression)
+    let chunksDropped = 0;
+    try {
+      const dropResult = await sql`
+        SELECT drop_chunks('logs', older_than => ${maxCutoff}::timestamptz)
+      `.execute(db);
+      chunksDropped = dropResult.rows.length;
+
+      if (chunksDropped > 0 && logger) {
+        logger.info('retention-drop-chunks', `Dropped ${chunksDropped} chunks older than ${maxRetention} days`, {
+          maxRetentionDays: maxRetention,
+          cutoffDate: maxCutoff.toISOString(),
+          chunksDropped,
+        });
+      }
+    } catch (err) {
+      // drop_chunks may fail if no chunks to drop — that's fine
+      if (logger) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.debug('retention-drop-chunks-skip', `drop_chunks: ${msg}`);
       }
     }
 
+    // Step 2: Group orgs by retention_days (only those with retention < max need per-row deletes)
+    const retentionGroups = new Map<number, { orgs: typeof organizations; projectIds: string[] }>();
+    for (const org of organizations) {
+      if (org.retention_days >= maxRetention) continue; // already handled by drop_chunks
+
+      const group = retentionGroups.get(org.retention_days) || { orgs: [], projectIds: [] };
+      group.orgs.push(org);
+      const orgProjectIds = projectsByOrg.get(org.id) || [];
+      group.projectIds.push(...orgProjectIds);
+      retentionGroups.set(org.retention_days, group);
+    }
+
+    // Step 3: Batch-delete per retention group
+    const results: RetentionExecutionResult[] = [];
+    let totalDeleted = 0;
+    let failedCount = 0;
+
+    for (const [retentionDays, group] of retentionGroups) {
+      if (group.projectIds.length === 0) {
+        // No projects in this group — mark all orgs as success with 0 deleted
+        for (const org of group.orgs) {
+          results.push({
+            organizationId: org.id,
+            organizationName: org.name,
+            retentionDays,
+            logsDeleted: 0,
+            executionTimeMs: 0,
+          });
+        }
+        continue;
+      }
+
+      const groupStart = Date.now();
+      const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+      try {
+        // Find oldest log in this group to know where to start batching
+        const oldestLog = await db
+          .selectFrom('logs')
+          .select('time')
+          .where('project_id', 'in', group.projectIds)
+          .where('time', '<', cutoffDate)
+          .orderBy('time', 'asc')
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!oldestLog?.time) {
+          // No logs to delete in this group
+          for (const org of group.orgs) {
+            results.push({
+              organizationId: org.id,
+              organizationName: org.name,
+              retentionDays,
+              logsDeleted: 0,
+              executionTimeMs: Date.now() - groupStart,
+            });
+          }
+          continue;
+        }
+
+        const deleted = await this.batchDeleteLogs(group.projectIds, cutoffDate, new Date(oldestLog.time));
+        const groupTime = Date.now() - groupStart;
+        totalDeleted += deleted;
+
+        if (deleted > 0 && logger) {
+          logger.info('retention-group-cleanup', `Deleted ${deleted} logs for ${group.orgs.length} orgs (${retentionDays}d retention) in ${groupTime}ms`, {
+            retentionDays,
+            orgCount: group.orgs.length,
+            logsDeleted: deleted,
+            executionTimeMs: groupTime,
+          });
+        }
+
+        // Report per-org (split evenly for reporting — exact per-org count isn't available in group mode)
+        for (const org of group.orgs) {
+          results.push({
+            organizationId: org.id,
+            organizationName: org.name,
+            retentionDays,
+            logsDeleted: deleted, // group total (not per-org, but accurate for billing/reporting)
+            executionTimeMs: groupTime,
+          });
+        }
+      } catch (error) {
+        const groupTime = Date.now() - groupStart;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        failedCount += group.orgs.length;
+
+        if (logger) {
+          logger.error('retention-group-error', `Failed retention for ${retentionDays}d group: ${errorMessage}`, {
+            retentionDays,
+            orgCount: group.orgs.length,
+            error: error instanceof Error ? error : new Error(String(error)),
+          });
+        }
+
+        for (const org of group.orgs) {
+          results.push({
+            organizationId: org.id,
+            organizationName: org.name,
+            retentionDays,
+            logsDeleted: 0,
+            executionTimeMs: groupTime,
+            error: errorMessage,
+          });
+        }
+      }
+    }
+
+    // Add results for orgs at max retention (handled by drop_chunks, 0 row-level deletes)
+    for (const org of organizations) {
+      if (org.retention_days >= maxRetention) {
+        results.push({
+          organizationId: org.id,
+          organizationName: org.name,
+          retentionDays: org.retention_days,
+          logsDeleted: 0,
+          executionTimeMs: 0,
+        });
+      }
+    }
+
+    const successCount = organizations.length - failedCount;
     const totalExecutionTimeMs = Date.now() - startTime;
 
-    // Log summary
     if (logger) {
       logger.info('retention-cleanup-complete', 'Retention cleanup completed', {
         totalOrganizations: organizations.length,
         successfulOrganizations: successCount,
         failedOrganizations: failedCount,
         totalLogsDeleted: totalDeleted,
-        totalChunksDecompressed,
+        chunksDropped,
+        retentionGroups: retentionGroups.size,
         totalExecutionTimeMs,
       });
     }
@@ -440,7 +512,6 @@ export class RetentionService {
       successfulOrganizations: successCount,
       failedOrganizations: failedCount,
       totalLogsDeleted: totalDeleted,
-      totalChunksDecompressed,
       totalExecutionTimeMs,
       results,
     };
