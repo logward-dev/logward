@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { currentOrganization } from '$lib/stores/organization';
+  import { shortcutsStore } from '$lib/stores/shortcuts';
   import { dashboardAPI } from '$lib/api/dashboard';
   import type { DashboardStats, TimeseriesDataPoint, TopService, RecentError, TimelineEvent } from '$lib/api/dashboard';
   import StatsCard from '$lib/components/dashboard/StatsCard.svelte';
@@ -83,6 +85,27 @@
       loading = false;
     }
   }
+
+  onMount(() => {
+    shortcutsStore.setScope('dashboard');
+    shortcutsStore.register([
+      {
+        id: 'dashboard:refresh',
+        combo: 'r',
+        label: 'Refresh dashboard',
+        scope: 'dashboard',
+        category: 'actions',
+        action: () => {
+          lastLoadedOrg = null;
+          loadDashboard();
+        },
+      },
+    ]);
+  });
+
+  onDestroy(() => {
+    shortcutsStore.unregisterScope('dashboard');
+  });
 
   $effect(() => {
     if (!browser || !$currentOrganization) {
