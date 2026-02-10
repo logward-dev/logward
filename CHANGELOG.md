@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Keyboard Shortcuts for Power Users** (#42): Comprehensive keyboard shortcuts system for faster navigation and actions
+  - **Command Palette** (`Ctrl/Cmd+K`): Fuzzy search over pages and quick actions (toggle sidebar, reload, toggle theme, show shortcuts). Search trigger button with shortcut hint in the header
+  - **Help Modal** (`?`): Grouped list of all available shortcuts with platform-aware key display (⌘ on Mac, Ctrl on Windows)
+  - **Sequence Navigation** (`G then D/S/A/P/T/E/R/X`): GitHub-style two-key navigation to Dashboard, Logs, Alerts, Projects, Traces, Security, Errors, Settings
+  - **Search Page Shortcuts**: `/` focus search input, `J/K` navigate logs with visual highlight, `Enter` expand/collapse selected log, `R` refresh results
+  - **Dashboard Shortcuts**: `R` refresh dashboard data
+  - **Global Shortcuts**: `Ctrl/Cmd+/` go to search / focus search input, `Ctrl/Cmd+B` toggle sidebar, `Escape` close modals
+  - **Discoverability**: First-time toast notification, shortcut hints in command palette items, `⌘K`/`Ctrl+K` badge in header
+  - Input-aware: shortcuts suppressed when typing in inputs, textareas, or comboboxes
+
 - **Admin Dashboard Revision**: Complete redesign of the admin panel for platform-level observability
   - **Dashboard home**: 4 health status cards (system health, ingestion rate, active issues, total logs), platform activity chart (24h timeline of logs/detections/spans), 8 stat cards (users, orgs, projects, ingestion, alerts, queues, database, redis), top organizations and projects tables
   - **System Health page** (`/dashboard/admin/system-health`): Database/connection pool/Redis diagnostics, database tables overview, TimescaleDB compression stats with progress bars, continuous aggregates health with staleness indicators, storage & performance metrics, worker queue details
