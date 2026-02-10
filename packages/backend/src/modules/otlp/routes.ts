@@ -53,7 +53,9 @@ const otlpRoutes: FastifyPluginAsync = async (fastify) => {
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : 'Unknown error';
           console.error('[OTLP] Gzip JSON decompression failed:', errMsg);
-          throw new Error(`Failed to decompress gzip JSON data: ${errMsg}`);
+          const decompressError = new Error(`Failed to decompress gzip JSON data: ${errMsg}`) as Error & { statusCode: number };
+          decompressError.statusCode = 400;
+          throw decompressError;
         }
       }
 

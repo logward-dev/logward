@@ -806,7 +806,7 @@
 											</div>
 											<div class="flex flex-col gap-1">
 												<span class="text-muted-foreground text-xs">Log Level</span>
-												<Badge variant="outline" class={getLevelColor(detection.logLevel)}>{detection.logLevel}</Badge>
+												<Badge variant="outline" class="w-fit {getLevelColor(detection.logLevel)}">{detection.logLevel}</Badge>
 											</div>
 											{#if detection.traceId}
 												<div class="flex flex-col gap-1">

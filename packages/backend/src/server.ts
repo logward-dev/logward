@@ -75,15 +75,23 @@ export async function build(opts = {}) {
     }
   });
 
-  // Global error handler: ensure parse errors return 400, not 500
+  // Global error handler: ensure client errors return proper 4xx, not 500
   fastify.setErrorHandler((error, request, reply) => {
-    const statusCode = (error as any).statusCode && (error as any).statusCode >= 400
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Determine HTTP status code:
+    // 1. error.statusCode set by Fastify (validation, rate limit) or custom parsers
+    // 2. Fastify validation errors have a .validation property → 400
+    // 3. Default → 500
+    let statusCode = typeof (error as any).statusCode === 'number'
       ? (error as any).statusCode
       : undefined;
 
-    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (!statusCode && ((error as any).validation || (error as any).code === 'FST_ERR_VALIDATION')) {
+      statusCode = 400;
+    }
 
-    if (statusCode) {
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
       reply.code(statusCode).send({
         statusCode,
         error: errMessage,
@@ -91,10 +99,10 @@ export async function build(opts = {}) {
       return;
     }
 
-    // Default: 500
+    // Server errors (5xx) or unknown
     request.log.error(error);
-    reply.code(500).send({
-      statusCode: 500,
+    reply.code(statusCode || 500).send({
+      statusCode: statusCode || 500,
       error: 'Internal Server Error',
       message: errMessage,
     });

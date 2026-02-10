@@ -98,6 +98,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send(stats);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting dashboard stats:', error);
         return reply.status(500).send({
           error: 'Failed to get dashboard statistics',
@@ -177,6 +183,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send({ detections });
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting detection events:', error);
         return reply.status(500).send({
           error: 'Failed to get detection events',
@@ -283,6 +295,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.status(201).send(incident);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error creating incident:', error);
         return reply.status(500).send({
           error: 'Failed to create incident',
@@ -377,6 +395,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send({ incidents });
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error listing incidents:', error);
         return reply.status(500).send({
           error: 'Failed to list incidents',
@@ -466,6 +490,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
           history,
         });
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting incident:', error);
         return reply.status(500).send({
           error: 'Failed to get incident',
@@ -564,6 +594,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send(incident);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error updating incident:', error);
         return reply.status(500).send({
           error: 'Failed to update incident',
@@ -632,6 +668,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.status(204).send();
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error deleting incident:', error);
         return reply.status(500).send({
           error: 'Failed to delete incident',
@@ -722,6 +764,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.status(201).send(comment);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error adding comment:', error);
         return reply.status(500).send({
           error: 'Failed to add comment',
@@ -776,6 +824,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send(reputation);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error checking IP reputation:', error);
         return reply.status(500).send({
           error: 'Failed to check IP reputation',
@@ -826,6 +880,12 @@ export async function siemRoutes(fastify: FastifyInstance) {
 
         return reply.send(geoData);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting GeoIP data:', error);
         return reply.status(500).send({
           error: 'Failed to get GeoIP data',

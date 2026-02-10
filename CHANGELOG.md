@@ -56,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **UI layout fixes**: Fixed Badge components stretching to fill container width in alert history detection cards and other grid layouts
+
+- **Client errors returning 500 instead of 4xx**: Multiple API routes were returning Internal Server Error for invalid client input
+  - Global error handler now detects Fastify validation errors (`FST_ERR_VALIDATION`) as 400 even when `statusCode` is missing
+  - SIEM routes (10 endpoints): `z.parse()` failures were caught as 500 — now return 400 with validation details
+  - Exceptions routes (8 endpoints): same `z.parse()` pattern — now return 400
+  - OTLP content-type parsers: gzip decompression errors now set `statusCode: 400` instead of falling through to 500
+  - Retention route: fixed `error.name === 'ZodError'` check to use `instanceof` for reliability
+
 - **Log Context metadata expanding dialog infinitely**: Opening metadata in the Log Context dialog caused horizontal overflow, stretching the dialog indefinitely. Added `max-w-full` to `<pre>` blocks and `overflow-hidden` to log entry containers so metadata scrolls within its bounds
 
 - **Email logo not rendering in some clients**: Switched logo URLs from `.svg` to `.png` — many email clients (Outlook, Gmail) don't support SVG in `<img>` tags

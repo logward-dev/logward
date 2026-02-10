@@ -47,7 +47,7 @@ export async function retentionRoutes(fastify: FastifyInstance) {
           ...result,
         });
       } catch (error: any) {
-        if (error.name === 'ZodError') {
+        if (error instanceof z.ZodError) {
           return reply.status(400).send({
             error: 'Invalid retention days. Must be an integer between 1 and 365.',
           });
