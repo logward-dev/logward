@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Host Security Detection Packs**: 3 new pre-built detection packs for host-based security monitoring (15 rules total, all MITRE ATT&CK mapped)
+  - **Antivirus & Malware Pack** (`antivirus-malware`): Malware detection (ClamAV FOUND patterns), AV scan failures, webshell in web directories (compound condition), outdated virus signatures, quarantine/removal failures
+  - **Rootkit Detection Pack** (`rootkit-detection`): Rootkit identification (rkhunter/chkrootkit), hidden processes, system binary tampering (checksum mismatch), suspicious kernel modules, promiscuous network interfaces
+  - **File Integrity Monitoring Pack** (`file-integrity`): Critical system file changes (/etc/passwd, /etc/shadow, /boot), SSH config modifications, web directory file changes, cron job tampering, mass file changes (ransomware indicator)
+  - All rules use `logsource.product: linux` for proper scoping
+  - Compound conditions (`selection_malware and selection_path`) on webshell and FIM rules to reduce false positives
+  - Integration test script (`testing-scripts/host-security-packs-test.ts`) with 28 assertions covering enable/disable lifecycle, sigma rule generation, MITRE mapping, log ingestion, and cleanup
+
+### Fixed
+
+- **Sigma API missing tags and MITRE fields**: `getSigmaRules` (list) and `getSigmaRuleById` (detail) were not including `tags`, `mitreTactics`, and `mitreTechniques` in the camelCase response transformation — fields were stored correctly in the DB but silently dropped from API responses. Also fixed the same gap in `importSigmaRule` return value.
+
 - **Keyboard Shortcuts for Power Users** (#42): Comprehensive keyboard shortcuts system for faster navigation and actions
   - **Command Palette** (`Ctrl/Cmd+K`): Fuzzy search over pages and quick actions (toggle sidebar, reload, toggle theme, show shortcuts). Search trigger button with shortcut hint in the header
   - **Help Modal** (`?`): Grouped list of all available shortcuts with platform-aware key display (⌘ on Mac, Ctrl on Windows)
