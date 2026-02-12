@@ -693,4 +693,156 @@ describe('AdminService', () => {
             expect(typeof stats.notifications.failed).toBe('number');
         });
     });
+
+    describe('getPlatformTimeline', () => {
+        it('should return timeline structure', async () => {
+            const result = await adminService.getPlatformTimeline(24);
+
+            expect(result).toHaveProperty('timeline');
+            expect(Array.isArray(result.timeline)).toBe(true);
+        });
+
+        it('should accept custom hours parameter', async () => {
+            const result = await adminService.getPlatformTimeline(48);
+
+            expect(result).toHaveProperty('timeline');
+            expect(Array.isArray(result.timeline)).toBe(true);
+        });
+
+        it('should use default 24 hours when no parameter given', async () => {
+            const result = await adminService.getPlatformTimeline();
+
+            expect(result).toHaveProperty('timeline');
+        });
+
+        it('should return timeline items with correct shape', async () => {
+            const result = await adminService.getPlatformTimeline(24);
+
+            for (const item of result.timeline) {
+                expect(item).toHaveProperty('bucket');
+                expect(item).toHaveProperty('logsCount');
+                expect(item).toHaveProperty('detectionsCount');
+                expect(item).toHaveProperty('spansCount');
+                expect(typeof item.logsCount).toBe('number');
+                expect(typeof item.detectionsCount).toBe('number');
+                expect(typeof item.spansCount).toBe('number');
+            }
+        });
+
+        it('should return sorted timeline by bucket', async () => {
+            const result = await adminService.getPlatformTimeline(24);
+
+            if (result.timeline.length > 1) {
+                for (let i = 1; i < result.timeline.length; i++) {
+                    const prev = new Date(result.timeline[i - 1].bucket).getTime();
+                    const curr = new Date(result.timeline[i].bucket).getTime();
+                    expect(curr).toBeGreaterThanOrEqual(prev);
+                }
+            }
+        });
+    });
+
+    describe('getActiveIssues', () => {
+        it('should return active issues structure', async () => {
+            const result = await adminService.getActiveIssues();
+
+            expect(result).toHaveProperty('openIncidents');
+            expect(result).toHaveProperty('criticalDetections24h');
+            expect(result).toHaveProperty('failedNotifications24h');
+            expect(result).toHaveProperty('openErrorGroups');
+        });
+
+        it('should return numeric values', async () => {
+            const result = await adminService.getActiveIssues();
+
+            expect(typeof result.openIncidents).toBe('number');
+            expect(typeof result.criticalDetections24h).toBe('number');
+            expect(typeof result.failedNotifications24h).toBe('number');
+            expect(typeof result.openErrorGroups).toBe('number');
+        });
+
+        it('should return zero counts when no issues exist', async () => {
+            const result = await adminService.getActiveIssues();
+
+            expect(result.openIncidents).toBeGreaterThanOrEqual(0);
+            expect(result.criticalDetections24h).toBeGreaterThanOrEqual(0);
+            expect(result.failedNotifications24h).toBeGreaterThanOrEqual(0);
+            expect(result.openErrorGroups).toBeGreaterThanOrEqual(0);
+        });
+    });
+
+    describe('checkVersion', () => {
+        it('should return version check result structure', async () => {
+            const result = await adminService.checkVersion();
+
+            expect(result).toHaveProperty('currentVersion');
+            expect(result).toHaveProperty('channel');
+            expect(result).toHaveProperty('latestStable');
+            expect(result).toHaveProperty('latestBeta');
+            expect(result).toHaveProperty('updateAvailable');
+            expect(result).toHaveProperty('checkedAt');
+        });
+
+        it('should return current version as string', async () => {
+            const result = await adminService.checkVersion();
+
+            expect(typeof result.currentVersion).toBe('string');
+            expect(result.currentVersion).toMatch(/^\d+\.\d+\.\d+/);
+        });
+
+        it('should return boolean for updateAvailable', async () => {
+            const result = await adminService.checkVersion();
+
+            expect(typeof result.updateAvailable).toBe('boolean');
+        });
+
+        it('should return ISO string for checkedAt', async () => {
+            const result = await adminService.checkVersion();
+
+            expect(typeof result.checkedAt).toBe('string');
+            expect(new Date(result.checkedAt).toISOString()).toBe(result.checkedAt);
+        });
+
+        it('should return valid channel value', async () => {
+            const result = await adminService.checkVersion();
+
+            expect(['stable', 'beta']).toContain(result.channel);
+        });
+    });
+
+    describe('getSlowQueries', () => {
+        it('should return slow queries structure', async () => {
+            const result = await adminService.getSlowQueries();
+
+            expect(result).toHaveProperty('activeQueries');
+            expect(result).toHaveProperty('topSlowQueries');
+            expect(result).toHaveProperty('pgStatStatementsAvailable');
+        });
+
+        it('should return arrays for queries', async () => {
+            const result = await adminService.getSlowQueries();
+
+            expect(Array.isArray(result.activeQueries)).toBe(true);
+            expect(Array.isArray(result.topSlowQueries)).toBe(true);
+        });
+
+        it('should return boolean for pgStatStatementsAvailable', async () => {
+            const result = await adminService.getSlowQueries();
+
+            expect(typeof result.pgStatStatementsAvailable).toBe('boolean');
+        });
+
+        it('should return active queries with correct shape', async () => {
+            const result = await adminService.getSlowQueries();
+
+            for (const q of result.activeQueries) {
+                expect(q).toHaveProperty('pid');
+                expect(q).toHaveProperty('durationMs');
+                expect(q).toHaveProperty('state');
+                expect(q).toHaveProperty('query');
+                expect(q).toHaveProperty('applicationName');
+                expect(q).toHaveProperty('startedAt');
+            }
+        });
+    });
 });

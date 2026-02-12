@@ -475,4 +475,305 @@ describe('Admin Routes', () => {
             expect(body.message).toContain('invalidated');
         });
     });
+
+    describe('GET /api/v1/admin/stats/platform-timeline', () => {
+        it('should return platform timeline for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/platform-timeline',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('timeline');
+            expect(Array.isArray(body.timeline)).toBe(true);
+        });
+
+        it('should accept hours parameter', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/platform-timeline?hours=48',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+        });
+
+        it('should return 400 for invalid hours parameter', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/platform-timeline?hours=0',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+
+        it('should return 400 for hours > 168', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/platform-timeline?hours=200',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/platform-timeline',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /api/v1/admin/stats/active-issues', () => {
+        it('should return active issues for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/active-issues',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('openIncidents');
+            expect(body).toHaveProperty('criticalDetections24h');
+            expect(body).toHaveProperty('failedNotifications24h');
+            expect(body).toHaveProperty('openErrorGroups');
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/active-issues',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /api/v1/admin/stats/compression', () => {
+        it('should return compression stats for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/compression',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('hypertables');
+            expect(Array.isArray(body.hypertables)).toBe(true);
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/compression',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /api/v1/admin/stats/continuous-aggregates', () => {
+        it('should return aggregate stats for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/continuous-aggregates',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('aggregates');
+            expect(Array.isArray(body.aggregates)).toBe(true);
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/continuous-aggregates',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /api/v1/admin/stats/slow-queries', () => {
+        it('should return slow queries for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/slow-queries',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('activeQueries');
+            expect(body).toHaveProperty('topSlowQueries');
+            expect(body).toHaveProperty('pgStatStatementsAvailable');
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/stats/slow-queries',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('GET /api/v1/admin/version-check', () => {
+        it('should return version check result for admin', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/version-check',
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body).toHaveProperty('currentVersion');
+            expect(body).toHaveProperty('channel');
+            expect(body).toHaveProperty('updateAvailable');
+            expect(body).toHaveProperty('checkedAt');
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/v1/admin/version-check',
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
+
+    describe('PATCH /api/v1/admin/users/:id/role', () => {
+        it('should promote user to admin', async () => {
+            const response = await app.inject({
+                method: 'PATCH',
+                url: `/api/v1/admin/users/${regularUser.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+                payload: {
+                    is_admin: true,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body.message).toContain('promoted');
+        });
+
+        it('should demote user from admin', async () => {
+            // Make regular user an admin first
+            await db.updateTable('users').set({ is_admin: true }).where('id', '=', regularUser.id).execute();
+
+            const response = await app.inject({
+                method: 'PATCH',
+                url: `/api/v1/admin/users/${regularUser.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+                payload: {
+                    is_admin: false,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.payload);
+            expect(body.message).toContain('demoted');
+        });
+
+        it('should return 400 for invalid is_admin value', async () => {
+            const response = await app.inject({
+                method: 'PATCH',
+                url: `/api/v1/admin/users/${regularUser.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+                payload: {
+                    is_admin: 'invalid',
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        });
+
+        it('should prevent admin from demoting themselves', async () => {
+            const response = await app.inject({
+                method: 'PATCH',
+                url: `/api/v1/admin/users/${adminUser.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${adminToken}`,
+                },
+                payload: {
+                    is_admin: false,
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = JSON.parse(response.payload);
+            expect(body.error).toContain('Cannot remove admin role from yourself');
+        });
+
+        it('should return 403 for non-admin users', async () => {
+            const response = await app.inject({
+                method: 'PATCH',
+                url: `/api/v1/admin/users/${regularUser.id}/role`,
+                headers: {
+                    Authorization: `Bearer ${userToken}`,
+                },
+                payload: {
+                    is_admin: true,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+        });
+    });
 });
