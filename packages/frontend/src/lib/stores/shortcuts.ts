@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
-import { matchesCombo, isTypingTarget, formatKey, getPlatform } from '$lib/utils/keyboard';
+import { matchesCombo, isTypingTarget } from '$lib/utils/keyboard';
 import { layoutStore } from '$lib/stores/layout';
 
 // ---------------------------------------------------------------------------

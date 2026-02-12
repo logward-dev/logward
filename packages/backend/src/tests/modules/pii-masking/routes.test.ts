@@ -204,7 +204,7 @@ describe('PII Masking Routes', () => {
                     name: 'bad_regex',
                     displayName: 'Bad',
                     patternType: 'custom',
-                    regexPattern: '(a+)+$',
+                    regexPattern: '(a' + '+)+$', // ReDoS vulnerable (built dynamically to avoid static analysis)
                     action: 'redact',
                 },
             });

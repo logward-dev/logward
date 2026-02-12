@@ -409,7 +409,7 @@ describe('Rate-of-Change Alerts', () => {
 
     describe('Service - checkRateOfChangeRule dispatching', () => {
         it('should skip rate-of-change rule without baseline_type', async () => {
-            const rule = await createTestAlertRule({
+            await createTestAlertRule({
                 organizationId: testOrganization.id,
                 projectId: testProject.id,
                 alertType: 'rate_of_change',
