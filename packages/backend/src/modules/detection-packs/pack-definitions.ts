@@ -420,6 +420,344 @@ const paymentBillingPack: DetectionPack = {
 };
 
 /**
+ * Antivirus & Malware Pack
+ * Detects malware findings, AV scan failures, and infection patterns
+ * from ClamAV and similar antivirus tools
+ */
+const antivirusMalwarePack: DetectionPack = {
+  id: 'antivirus-malware',
+  name: 'Antivirus & Malware Pack',
+  description: 'Monitors antivirus tools for malware detections, scan failures, and signature issues. Covers ClamAV and similar AV engines.',
+  category: 'security',
+  icon: 'bug',
+  author: 'LogTide',
+  version: '1.0.0',
+  rules: [
+    {
+      id: 'malware-detected',
+      name: 'Malware Detected',
+      description: 'Triggers when antivirus software reports a malware finding.',
+      logsource: {
+        product: 'linux',
+        service: 'clamav',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['FOUND', 'Virus found', 'malware detected', 'infected:', 'Trojan found', 'Worm found', 'threat detected'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.execution', 'attack.t1204'],
+      references: ['https://attack.mitre.org/techniques/T1204/'],
+    },
+    {
+      id: 'av-scan-failure',
+      name: 'Antivirus Scan Failure',
+      description: 'Detects scan errors that could indicate AV tampering or misconfiguration.',
+      logsource: {
+        product: 'linux',
+        service: 'clamav',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['scan failed', 'scan error', 'access denied', 'database corrupt', 'engine error', 'cannot open'],
+        },
+      },
+      level: 'medium',
+      status: 'stable',
+      tags: ['attack.defense_evasion', 'attack.t1562'],
+      references: ['https://attack.mitre.org/techniques/T1562/'],
+    },
+    {
+      id: 'webshell-detected',
+      name: 'Malware in Web Directory',
+      description: 'Detects malware findings inside web-accessible directories, indicating a possible webshell.',
+      logsource: {
+        product: 'linux',
+        service: 'clamav',
+      },
+      detection: {
+        condition: 'selection_malware and selection_path',
+        selection_malware: {
+          'message|contains': ['FOUND', 'infected:', 'malware detected'],
+        },
+        selection_path: {
+          'message|contains': ['/var/www', '/usr/share/nginx', '/opt/apache', 'public_html', 'htdocs', 'wwwroot'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1505.003'],
+      references: ['https://attack.mitre.org/techniques/T1505/003/'],
+    },
+    {
+      id: 'av-signatures-outdated',
+      name: 'Virus Signatures Outdated',
+      description: 'Detects when antivirus definitions are stale, reducing detection capability.',
+      logsource: {
+        product: 'linux',
+        service: 'clamav',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['database is older than', 'outdated signatures', 'update recommended', 'definitions expired', 'freshclam error', 'update failed'],
+        },
+      },
+      level: 'medium',
+      status: 'stable',
+      tags: ['attack.defense_evasion', 'attack.t1562.001'],
+      references: ['https://attack.mitre.org/techniques/T1562/001/'],
+    },
+    {
+      id: 'quarantine-failure',
+      name: 'Quarantine or Removal Failed',
+      description: 'Alerts when malware quarantine or removal fails, leaving the host exposed.',
+      logsource: {
+        product: 'linux',
+        service: 'clamav',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['quarantine failed', 'removal failed', 'cannot delete', 'disinfect failed', 'clean failed', 'move to quarantine error'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.defense_evasion', 'attack.t1070'],
+      references: ['https://attack.mitre.org/techniques/T1070/'],
+    },
+  ],
+};
+
+/**
+ * Rootkit Detection Pack
+ * Detects rootkits, hidden processes, kernel tampering, and system binary modifications
+ * from rkhunter, chkrootkit, and similar scanners
+ */
+const rootkitDetectionPack: DetectionPack = {
+  id: 'rootkit-detection',
+  name: 'Rootkit Detection Pack',
+  description: 'Monitors for rootkit indicators from rkhunter, chkrootkit, and similar tools. Detects hidden processes, binary tampering, and kernel anomalies.',
+  category: 'security',
+  icon: 'skull',
+  author: 'LogTide',
+  version: '1.0.0',
+  rules: [
+    {
+      id: 'rootkit-found',
+      name: 'Rootkit Detected',
+      description: 'Triggers on positive rootkit identification by any scanner.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['Possible rootkit', 'Rootkit found', 'INFECTED', 'rootkit detected', 'rootkit warning', 'known rootkit'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.privilege_escalation', 'attack.t1014'],
+      references: ['https://attack.mitre.org/techniques/T1014/'],
+    },
+    {
+      id: 'hidden-process',
+      name: 'Hidden Process Detected',
+      description: 'Detects processes hidden from standard tools, a classic rootkit indicator.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['hidden process', 'process not visible', 'Suspicious: PID', 'hidden PID', 'unlisted process', 'process hidden from'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.defense_evasion', 'attack.t1564', 'attack.t1014'],
+      references: ['https://attack.mitre.org/techniques/T1564/'],
+    },
+    {
+      id: 'system-binary-modified',
+      name: 'System Binary Modified',
+      description: 'Detects modifications to critical system binaries that could indicate trojanization.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['has been replaced', 'binary modified', 'checksum mismatch', 'hash changed', 'file properties have changed', 'binary hash mismatch'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1554'],
+      references: ['https://attack.mitre.org/techniques/T1554/'],
+    },
+    {
+      id: 'suspicious-kernel-module',
+      name: 'Suspicious Kernel Module',
+      description: 'Detects loading of suspicious or unknown kernel modules.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['suspicious kernel module', 'unknown module', 'unhidden module', 'LKM trojan', 'module not in modprobe', 'unsigned kernel module'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1547.006'],
+      references: ['https://attack.mitre.org/techniques/T1547/006/'],
+    },
+    {
+      id: 'promiscuous-interface',
+      name: 'Network Interface in Promiscuous Mode',
+      description: 'Detects network interfaces set to promiscuous mode, indicating possible sniffing.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['promiscuous mode', 'PROMISC', 'packet sniffing', 'interface sniffing', 'entered promiscuous'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.credential_access', 'attack.discovery', 'attack.t1040'],
+      references: ['https://attack.mitre.org/techniques/T1040/'],
+    },
+  ],
+};
+
+/**
+ * File Integrity Monitoring Pack
+ * Detects unauthorized file modifications on critical paths
+ * from AIDE, OSSEC, Tripwire, and similar FIM tools
+ */
+const fileIntegrityPack: DetectionPack = {
+  id: 'file-integrity',
+  name: 'File Integrity Monitoring Pack',
+  description: 'Monitors critical system files, SSH configs, web directories, and scheduled tasks for unauthorized changes. Works with AIDE, OSSEC, Tripwire, and similar tools.',
+  category: 'security',
+  icon: 'file-check',
+  author: 'LogTide',
+  version: '1.0.0',
+  rules: [
+    {
+      id: 'critical-file-modified',
+      name: 'Critical System File Modified',
+      description: 'Detects changes to sensitive files like /etc/passwd, /etc/shadow, /etc/sudoers.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection_fim and selection_path',
+        selection_fim: {
+          'message|contains': ['file modified', 'integrity check', 'changed:', 'AIDE found differences', 'ossec: integrity'],
+        },
+        selection_path: {
+          'message|contains': ['/etc/passwd', '/etc/shadow', '/etc/sudoers', '/etc/gshadow', '/boot/', '/lib/modules'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1098', 'attack.t1543'],
+      references: ['https://attack.mitre.org/techniques/T1098/'],
+    },
+    {
+      id: 'ssh-config-changed',
+      name: 'SSH Configuration Modified',
+      description: 'Detects changes to SSH server or client configuration files.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection_fim and selection_path',
+        selection_fim: {
+          'message|contains': ['file modified', 'integrity check', 'changed:', 'AIDE found differences', 'file changed'],
+        },
+        selection_path: {
+          'message|contains': ['sshd_config', 'ssh_config', 'authorized_keys', '.ssh/config', 'ssh_host_'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.lateral_movement', 'attack.t1098.004'],
+      references: ['https://attack.mitre.org/techniques/T1098/004/'],
+    },
+    {
+      id: 'web-files-modified',
+      name: 'Web Application Files Modified',
+      description: 'Detects unauthorized file changes in web directories that could indicate webshell deployment.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection_fim and selection_path',
+        selection_fim: {
+          'message|contains': ['file modified', 'file added', 'new file:', 'integrity check', 'file changed'],
+        },
+        selection_path: {
+          'message|contains': ['/var/www', '/usr/share/nginx', '/opt/apache', 'htdocs', 'wwwroot'],
+        },
+      },
+      level: 'high',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1505.003'],
+      references: ['https://attack.mitre.org/techniques/T1505/003/'],
+    },
+    {
+      id: 'cron-modified',
+      name: 'Scheduled Task Modified',
+      description: 'Detects changes to cron jobs and scheduled tasks, a common persistence mechanism.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['/etc/crontab', '/etc/cron.d', '/var/spool/cron', 'crontab modified', 'cron job changed', 'at job created', 'systemd timer changed'],
+        },
+      },
+      level: 'medium',
+      status: 'stable',
+      tags: ['attack.persistence', 'attack.t1053.003'],
+      references: ['https://attack.mitre.org/techniques/T1053/003/'],
+    },
+    {
+      id: 'mass-file-changes',
+      name: 'Mass File System Changes',
+      description: 'Detects bulk file modifications that could indicate ransomware or wiper activity.',
+      logsource: {
+        product: 'linux',
+      },
+      detection: {
+        condition: 'selection',
+        selection: {
+          'message|contains': ['mass file change', 'bulk modification', 'files changed:', 'large number of changes', 'files encrypted', 'files deleted in bulk', 'ransom'],
+        },
+      },
+      level: 'critical',
+      status: 'stable',
+      tags: ['attack.impact', 'attack.t1486'],
+      references: ['https://attack.mitre.org/techniques/T1486/'],
+    },
+  ],
+};
+
+/**
  * All available detection packs
  */
 export const DETECTION_PACKS: DetectionPack[] = [
@@ -427,6 +765,9 @@ export const DETECTION_PACKS: DetectionPack[] = [
   authSecurityPack,
   databaseHealthPack,
   paymentBillingPack,
+  antivirusMalwarePack,
+  rootkitDetectionPack,
+  fileIntegrityPack,
 ];
 
 /**
