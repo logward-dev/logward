@@ -14,6 +14,12 @@
 -- The most effective optimization for hostname queries is keeping the time
 -- window short (6h default = ~350ms vs 7d = ~3s+).
 
--- No schema changes needed - optimizations are in application code.
+-- Reduce chunk interval from 7 days to 1 day.
+-- With ~4.5 GB/day ingestion, weekly chunks grow to 31 GB uncompressed
+-- before compression can kick in (only works on closed chunks).
+-- Daily chunks keep uncompressed data at ~4.5 GB, compressed within 1 day.
+-- Existing chunks are not affected (they stay weekly).
+SELECT set_chunk_time_interval('logs', INTERVAL '1 day');
+
 -- Run ANALYZE to ensure planner has up-to-date statistics.
 ANALYZE logs;
