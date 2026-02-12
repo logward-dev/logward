@@ -1,5 +1,7 @@
 import { sql } from 'kysely';
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
+import type { TimeBucket, StoredLogRecord } from '@logtide/reservoir';
 import { CacheManager, CACHE_TTL } from '../../utils/cache.js';
 import type { LogLevel } from '@logtide/shared';
 
@@ -46,7 +48,6 @@ export class QueryService {
     } = params;
 
     // PERFORMANCE: Default to last 24h if no time filter provided
-    // This prevents full table scans on datasets with millions of logs
     const effectiveFrom = from || new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Generate deterministic cache key
@@ -67,7 +68,6 @@ export class QueryService {
     const cached = await CacheManager.get<any>(cacheKey);
 
     if (cached) {
-      // Convert date strings back to Date objects
       return {
         ...cached,
         logs: cached.logs.map((log: any) => ({
@@ -77,148 +77,43 @@ export class QueryService {
       };
     }
 
-    let query = db.selectFrom('logs').selectAll();
+    // Delegate to reservoir (raw parametrized SQL, no Kysely overhead)
+    const queryResult = await reservoir.query({
+      projectId,
+      service,
+      level,
+      hostname,
+      traceId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+      search: q,
+      searchMode,
+      limit,
+      offset,
+      cursor,
+    });
 
-    // Project filter - support single or multiple projects
-    if (Array.isArray(projectId)) {
-      query = query.where('project_id', 'in', projectId);
-    } else {
-      query = query.where('project_id', '=', projectId);
-    }
-
-    // Apply cursor filter if present
-    if (cursor) {
-      try {
-        const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
-        const [cursorTimeStr, cursorId] = decoded.split(',');
-        const cursorTime = new Date(cursorTimeStr);
-
-        // Validate cursor components - skip if invalid
-        if (!cursorId || isNaN(cursorTime.getTime())) {
-          console.warn('Invalid cursor format', cursor);
-        } else {
-          // WHERE (time, id) < (cursorTime, cursorId) for DESC order
-          query = query.where((eb) => eb.or([
-            eb('time', '<', cursorTime),
-            eb.and([
-              eb('time', '=', cursorTime),
-              eb('id', '<', cursorId)
-            ])
-          ]));
-        }
-      } catch (e) {
-        console.warn('Invalid cursor format', cursor);
-      }
-    }
-
-    // Apply filters
-    if (service) {
-      if (Array.isArray(service)) {
-        // Multiple services - use IN clause
-        query = query.where('service', 'in', service);
-      } else {
-        // Single service
-        query = query.where('service', '=', service);
-      }
-    }
-
-    if (level) {
-      if (Array.isArray(level)) {
-        // Multiple levels - use IN clause
-        query = query.where('level', 'in', level);
-      } else {
-        // Single level
-        query = query.where('level', '=', level);
-      }
-    }
-
-    // Filter by hostname (stored in metadata JSONB)
-    if (hostname) {
-      if (Array.isArray(hostname)) {
-        // Multiple hostnames - use IN clause with JSONB operator
-        query = query.where(sql`metadata->>'hostname'`, 'in', hostname);
-      } else {
-        // Single hostname
-        query = query.where(sql`metadata->>'hostname'`, '=', hostname);
-      }
-    }
-
-    if (traceId) {
-      query = query.where('trace_id', '=', traceId);
-    }
-
-    // PERFORMANCE: Always apply time filter (effectiveFrom has default of 24h)
-    query = query.where('time', '>=', effectiveFrom);
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    // Search on message - support both fulltext and substring modes
-    if (q) {
-      if (searchMode === 'substring') {
-        // Substring search using ILIKE with trigram index (pg_trgm)
-        // This finds text anywhere in the message, unlike fulltext which is word-based
-        // Escape special LIKE characters (%, _, \) to prevent pattern manipulation
-        // Backslash must be escaped first to avoid double-escaping
-        const escapedQuery = q.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
-        // Build the pattern and pass it as a parameter to Kysely
-        const pattern = `%${escapedQuery}%`;
-        query = query.where(
-          sql<boolean>`message ILIKE ${pattern}`
-        );
-      } else {
-        // Full-text search (default) - word-based with stemming
-        // Uses GIN index on to_tsvector('english', message)
-        query = query.where(
-          sql<boolean>`to_tsvector('english', message) @@ plainto_tsquery('english', ${q})`
-        );
-      }
-    }
-
-    // PERFORMANCE: Skip expensive COUNT(*) - it scans all matching rows and is the main
-    // bottleneck on large datasets (was causing 12s+ response times).
-    // Use limit+1 pattern to detect "has more" without counting everything.
-    const fetchLimit = limit + 1;
-
-    const dbLogs = await query
-      .orderBy('time', 'desc')
-      .orderBy('id', 'desc') // Deterministic sort
-      .limit(fetchLimit)
-      .offset(offset) // Keep offset support if cursor not used
-      .execute();
-
-    const hasMore = dbLogs.length > limit;
-    const logsToReturn = hasMore ? dbLogs.slice(0, limit) : dbLogs;
-
-    let nextCursor: string | undefined;
-    if (hasMore) {
-      const lastLog = logsToReturn[logsToReturn.length - 1];
-      nextCursor = Buffer.from(`${lastLog.time.toISOString()},${lastLog.id}`).toString('base64');
-    }
-
-    // Map database fields (snake_case) to API format (camelCase)
-    const logs = logsToReturn.map(log => ({
+    // Map reservoir StoredLogRecord to API format
+    const logs = queryResult.logs.map((log: StoredLogRecord) => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     }));
 
     const result = {
       logs,
-      total: -1, // Exact count removed for performance - use hasMore/nextCursor instead
-      hasMore,
-      limit,
-      offset,
-      nextCursor,
+      total: -1,
+      hasMore: queryResult.hasMore,
+      limit: queryResult.limit,
+      offset: queryResult.offset,
+      nextCursor: queryResult.nextCursor,
     };
 
-    // Cache result using CacheManager
     await CacheManager.set(cacheKey, result, CACHE_TTL.QUERY);
 
     return result;
@@ -362,51 +257,22 @@ export class QueryService {
   }) {
     const { projectId, service, from, to, interval } = params;
 
-    // Map interval to PostgreSQL interval
-    const intervalMap = {
-      '1m': '1 minute',
-      '5m': '5 minutes',
-      '1h': '1 hour',
-      '1d': '1 day',
-    };
+    const aggResult = await reservoir.aggregate({
+      projectId,
+      service,
+      from,
+      to,
+      interval,
+    });
 
-    let query = db
-      .selectFrom('logs')
-      .select([
-        sql<Date>`time_bucket('${sql.raw(intervalMap[interval])}', time)`.as('bucket'),
-        db.fn.count('time').as('total'),
-        'level',
-      ])
-      .where('project_id', '=', projectId)
-      .where('time', '>=', from)
-      .where('time', '<=', to)
-      .groupBy(['bucket', 'level'])
-      .orderBy('bucket', 'asc');
+    // Map reservoir format (byLevel) to existing API format (by_level)
+    const timeseries = aggResult.timeseries.map((bucket: TimeBucket) => ({
+      bucket: bucket.bucket,
+      total: bucket.total,
+      by_level: bucket.byLevel ?? {},
+    }));
 
-    if (service) {
-      query = query.where('service', '=', service);
-    }
-
-    const results = await query.execute();
-
-    // Group by bucket
-    const timeseries = results.reduce((acc, row) => {
-      const bucketKey = row.bucket.toISOString();
-      if (!acc[bucketKey]) {
-        acc[bucketKey] = {
-          bucket: row.bucket,
-          total: 0,
-          by_level: {} as Record<string, number>,
-        };
-      }
-      acc[bucketKey].total += Number(row.total);
-      acc[bucketKey].by_level[row.level] = Number(row.total);
-      return acc;
-    }, {} as Record<string, any>);
-
-    return {
-      timeseries: Object.values(timeseries),
-    };
+    return { timeseries };
   }
 
   /**

@@ -42,6 +42,7 @@
     "@fastify/rate-limit": "^10.2.1",
     "@fastify/websocket": "^11.0.2",
     "@logtide/sdk-node": "^0.1.0",
+    "@logtide/reservoir": "workspace:*",
     "@logtide/shared": "workspace:*",
     "@maxmind/geoip2-node": "^6.3.4",
     "@opentelemetry/otlp-transformer": "^0.208.0",
