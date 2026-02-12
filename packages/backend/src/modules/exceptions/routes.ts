@@ -136,6 +136,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(exception);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting exception by log:', error);
         return reply.status(500).send({
           error: 'Failed to get exception',
@@ -217,6 +223,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(exception);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting exception:', error);
         return reply.status(500).send({
           error: 'Failed to get exception',
@@ -297,6 +309,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(result);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error listing error groups:', error);
         return reply.status(500).send({
           error: 'Failed to list error groups',
@@ -361,6 +379,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send({ groups });
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting top error groups:', error);
         return reply.status(500).send({
           error: 'Failed to get top error groups',
@@ -442,6 +466,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(group);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting error group:', error);
         return reply.status(500).send({
           error: 'Failed to get error group',
@@ -529,6 +559,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(group);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error updating error group status:', error);
         return reply.status(500).send({
           error: 'Failed to update error group status',
@@ -618,6 +654,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send({ trend });
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting error group trend:', error);
         return reply.status(500).send({
           error: 'Failed to get error group trend',
@@ -713,6 +755,12 @@ export async function exceptionsRoutes(fastify: FastifyInstance) {
 
         return reply.send(result);
       } catch (error: any) {
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: 'Validation error',
+            details: error.errors,
+          });
+        }
         console.error('Error getting error group logs:', error);
         return reply.status(500).send({
           error: 'Failed to get error group logs',

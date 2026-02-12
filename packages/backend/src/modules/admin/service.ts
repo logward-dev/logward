@@ -2,6 +2,14 @@ import { db, getPoolStats } from '../../database/index.js';
 import { sql } from 'kysely';
 import { connection as redis, isRedisAvailable } from '../../queue/connection.js';
 import { CacheManager, type CacheStats, isCacheEnabled } from '../../utils/cache.js';
+import { settingsService, type UpdateChannel } from '../settings/service.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, '../../../package.json'), 'utf-8'));
+const CURRENT_VERSION: string = packageJson.version;
 
 // System-wide statistics
 export interface SystemStats {
@@ -594,7 +602,7 @@ export class AdminService {
                 }>(
                     sql`
                         SELECT
-                            config->>'schedule_interval' AS schedule_interval
+                            schedule_interval::text AS schedule_interval
                         FROM timescaledb_information.jobs
                         WHERE hypertable_name = ${agg.view_name}
                         AND proc_name = 'policy_refresh_continuous_aggregate'
@@ -1449,6 +1457,445 @@ export class AdminService {
     async invalidateProjectCache(projectId: string): Promise<void> {
         await CacheManager.invalidateProjectCache(projectId);
     }
+
+    /**
+     * Get platform activity timeline (hourly data for the chart)
+     * Uses continuous aggregates for fast queries
+     */
+    async getPlatformTimeline(hours: number = 24): Promise<PlatformTimeline> {
+        const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+        const [logsTimeline, detectionsTimeline, spansTimeline] = await Promise.all([
+            // Logs per hour from continuous aggregate
+            db.executeQuery<{ bucket: string; count: number }>(
+                sql`
+                    SELECT
+                        bucket::text AS bucket,
+                        SUM(log_count)::int AS count
+                    FROM logs_hourly_stats
+                    WHERE bucket >= ${sql.lit(since)}
+                    GROUP BY bucket
+                    ORDER BY bucket ASC
+                `.compile(db)
+            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
+
+            // Detection events per hour from continuous aggregate
+            db.executeQuery<{ bucket: string; count: number }>(
+                sql`
+                    SELECT
+                        bucket::text AS bucket,
+                        SUM(detection_count)::int AS count
+                    FROM detection_events_hourly_stats
+                    WHERE bucket >= ${sql.lit(since)}
+                    GROUP BY bucket
+                    ORDER BY bucket ASC
+                `.compile(db)
+            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
+
+            // Spans per hour from continuous aggregate
+            db.executeQuery<{ bucket: string; count: number }>(
+                sql`
+                    SELECT
+                        bucket::text AS bucket,
+                        SUM(span_count)::int AS count
+                    FROM spans_hourly_stats
+                    WHERE bucket >= ${sql.lit(since)}
+                    GROUP BY bucket
+                    ORDER BY bucket ASC
+                `.compile(db)
+            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
+        ]);
+
+        // Merge all timelines into a single array by bucket
+        const bucketMap = new Map<string, {
+            bucket: string;
+            logsCount: number;
+            detectionsCount: number;
+            spansCount: number;
+        }>();
+
+        for (const row of logsTimeline.rows) {
+            bucketMap.set(row.bucket, {
+                bucket: row.bucket,
+                logsCount: row.count,
+                detectionsCount: 0,
+                spansCount: 0,
+            });
+        }
+
+        for (const row of detectionsTimeline.rows) {
+            const existing = bucketMap.get(row.bucket);
+            if (existing) {
+                existing.detectionsCount = row.count;
+            } else {
+                bucketMap.set(row.bucket, {
+                    bucket: row.bucket,
+                    logsCount: 0,
+                    detectionsCount: row.count,
+                    spansCount: 0,
+                });
+            }
+        }
+
+        for (const row of spansTimeline.rows) {
+            const existing = bucketMap.get(row.bucket);
+            if (existing) {
+                existing.spansCount = row.count;
+            } else {
+                bucketMap.set(row.bucket, {
+                    bucket: row.bucket,
+                    logsCount: 0,
+                    detectionsCount: 0,
+                    spansCount: row.count,
+                });
+            }
+        }
+
+        const timeline = Array.from(bucketMap.values()).sort(
+            (a, b) => new Date(a.bucket).getTime() - new Date(b.bucket).getTime()
+        );
+
+        return { timeline };
+    }
+
+    /**
+     * Get active issues summary across the platform
+     */
+    async getActiveIssues(): Promise<ActiveIssues> {
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const [openIncidents, criticalDetections, failedNotifications, unresolvedErrors] = await Promise.all([
+            // Open incidents (not resolved)
+            db
+                .selectFrom('incidents')
+                .select(sql<number>`COUNT(*)::int`.as('count'))
+                .where('status', 'in', ['open', 'investigating'])
+                .executeTakeFirstOrThrow()
+                .catch((e) => { console.error('[AdminService] Failed to query incidents:', e.message); return { count: 0 }; }),
+
+            // Critical/high detections in last 24h
+            db.executeQuery<{ count: number }>(
+                sql`
+                    SELECT COUNT(*)::int AS count
+                    FROM detection_events
+                    WHERE time >= ${sql.lit(oneDayAgo)}
+                    AND severity IN ('critical', 'high')
+                `.compile(db)
+            ).then(r => r.rows[0] ?? { count: 0 })
+             .catch((e) => { console.error('[AdminService] Failed to query detection_events:', e.message); return { count: 0 }; }),
+
+            // Failed alert notifications in last 24h
+            db
+                .selectFrom('alert_history')
+                .select(sql<number>`COUNT(*)::int`.as('count'))
+                .where('triggered_at', '>=', oneDayAgo)
+                .where('notified', '=', true)
+                .where('error', 'is not', null)
+                .executeTakeFirstOrThrow()
+                .catch((e) => { console.error('[AdminService] Failed to query alert_history:', e.message); return { count: 0 }; }),
+
+            // Open error groups
+            db
+                .selectFrom('error_groups')
+                .select(sql<number>`COUNT(*)::int`.as('count'))
+                .where('status', '=', 'open')
+                .executeTakeFirstOrThrow()
+                .catch((e) => { console.error('[AdminService] Failed to query error_groups:', e.message); return { count: 0 }; }),
+        ]);
+
+        return {
+            openIncidents: openIncidents.count,
+            criticalDetections24h: criticalDetections.count,
+            failedNotifications24h: failedNotifications.count,
+            openErrorGroups: unresolvedErrors.count,
+        };
+    }
+
+    /**
+     * Check for new versions by querying GitHub Releases API.
+     * Results are cached for 6 hours.
+     */
+    async checkVersion(): Promise<VersionCheckResult> {
+        // Try cache first
+        const cacheKey = CacheManager.adminStatsKey('version-check');
+        const cached = await CacheManager.get<VersionCheckResult>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const channel = await settingsService.get('updates.channel').catch(() => 'stable' as UpdateChannel);
+
+        let latestStable: ReleaseInfo | null = null;
+        let latestBeta: ReleaseInfo | null = null;
+
+        try {
+            const headers: Record<string, string> = {
+                'Accept': 'application/vnd.github+json',
+                'User-Agent': 'LogTide',
+            };
+            const githubToken = process.env.GITHUB_TOKEN;
+            if (githubToken) {
+                headers['Authorization'] = `Bearer ${githubToken}`;
+            }
+
+            const response = await fetch(
+                'https://api.github.com/repos/logtide-dev/logtide/releases?per_page=20',
+                { headers }
+            );
+
+            if (!response.ok) {
+                console.error(`[AdminService] GitHub API returned ${response.status}`);
+                const result: VersionCheckResult = {
+                    currentVersion: CURRENT_VERSION,
+                    channel,
+                    latestStable: null,
+                    latestBeta: null,
+                    updateAvailable: false,
+                    checkedAt: new Date().toISOString(),
+                };
+                // Cache error result for 30 minutes to avoid hammering
+                await CacheManager.set(cacheKey, result, 1800);
+                return result;
+            }
+
+            const releases: GitHubRelease[] = await response.json();
+
+            for (const release of releases) {
+                if (release.draft) continue;
+
+                const info: ReleaseInfo = {
+                    version: release.tag_name.replace(/^v/, ''),
+                    tag: release.tag_name,
+                    name: release.name || release.tag_name,
+                    publishedAt: release.published_at,
+                    url: release.html_url,
+                    prerelease: release.prerelease,
+                };
+
+                if (!release.prerelease && !latestStable) {
+                    latestStable = info;
+                }
+                if (release.prerelease && !latestBeta) {
+                    latestBeta = info;
+                }
+
+                if (latestStable && latestBeta) break;
+            }
+        } catch (error) {
+            console.error('[AdminService] Error checking GitHub releases:', error);
+        }
+
+        const targetRelease = channel === 'beta' ? (latestBeta || latestStable) : latestStable;
+        const updateAvailable = targetRelease
+            ? this.isNewerVersion(CURRENT_VERSION, targetRelease.version)
+            : false;
+
+        const result: VersionCheckResult = {
+            currentVersion: CURRENT_VERSION,
+            channel,
+            latestStable,
+            latestBeta,
+            updateAvailable,
+            checkedAt: new Date().toISOString(),
+        };
+
+        // Cache for 6 hours
+        await CacheManager.set(cacheKey, result, 21600);
+
+        return result;
+    }
+
+    /**
+     * Compare semver versions. Returns true if remote is newer than current.
+     */
+    private isNewerVersion(current: string, remote: string): boolean {
+        const parseSemver = (v: string) => {
+            // Strip pre-release suffix for comparison (e.g. "0.6.0-beta.1" -> [0,6,0])
+            const clean = v.replace(/^v/, '').split('-')[0];
+            return clean.split('.').map(Number);
+        };
+
+        const c = parseSemver(current);
+        const r = parseSemver(remote);
+
+        for (let i = 0; i < Math.max(c.length, r.length); i++) {
+            const cv = c[i] || 0;
+            const rv = r[i] || 0;
+            if (rv > cv) return true;
+            if (rv < cv) return false;
+        }
+        return false;
+    }
+
+    /**
+     * Get slow/long-running queries from pg_stat_activity and pg_stat_statements
+     */
+    async getSlowQueries(): Promise<SlowQueriesStats> {
+        // 1. Currently running queries (from pg_stat_activity, always available)
+        const activeQueries = await db.executeQuery<{
+            pid: number;
+            duration_ms: number;
+            state: string;
+            query: string;
+            wait_event: string | null;
+            application_name: string;
+            started_at: string;
+        }>(
+            sql`
+                SELECT
+                    pid,
+                    EXTRACT(EPOCH FROM (NOW() - query_start))::int * 1000 AS duration_ms,
+                    state,
+                    LEFT(query, 200) AS query,
+                    wait_event_type || ':' || wait_event AS wait_event,
+                    application_name,
+                    query_start::text AS started_at
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND state != 'idle'
+                  AND pid != pg_backend_pid()
+                  AND query_start IS NOT NULL
+                ORDER BY query_start ASC
+                LIMIT 20
+            `.compile(db)
+        ).catch(() => ({ rows: [] as Array<{
+            pid: number; duration_ms: number; state: string;
+            query: string; wait_event: string | null;
+            application_name: string; started_at: string;
+        }> }));
+
+        // 2. Historical slow queries (from pg_stat_statements, may not be available)
+        let topSlowQueries: Array<{
+            query: string;
+            calls: number;
+            avg_ms: number;
+            total_ms: number;
+            rows_per_call: number;
+        }> = [];
+        let pgStatStatementsAvailable = false;
+
+        try {
+            // Check if extension is installed
+            const extCheck = await db.executeQuery<{ installed: boolean }>(
+                sql`
+                    SELECT EXISTS(
+                        SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'
+                    ) AS installed
+                `.compile(db)
+            );
+
+            if (extCheck.rows[0]?.installed) {
+                pgStatStatementsAvailable = true;
+                const result = await db.executeQuery<{
+                    query: string;
+                    calls: number;
+                    avg_ms: number;
+                    total_ms: number;
+                    rows_per_call: number;
+                }>(
+                    sql`
+                        SELECT
+                            LEFT(query, 200) AS query,
+                            calls::int AS calls,
+                            ROUND((mean_exec_time)::numeric, 2)::float AS avg_ms,
+                            ROUND((total_exec_time)::numeric, 0)::float AS total_ms,
+                            CASE WHEN calls > 0
+                                THEN ROUND((rows::numeric / calls), 1)::float
+                                ELSE 0
+                            END AS rows_per_call
+                        FROM pg_stat_statements
+                        WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+                          AND calls > 5
+                          AND query NOT LIKE '%pg_stat%'
+                        ORDER BY mean_exec_time DESC
+                        LIMIT 15
+                    `.compile(db)
+                );
+                topSlowQueries = result.rows;
+            }
+        } catch (e) {
+            console.error('[AdminService] pg_stat_statements query failed:', (e as Error).message);
+        }
+
+        return {
+            activeQueries: activeQueries.rows.map(q => ({
+                pid: q.pid,
+                durationMs: q.duration_ms,
+                state: q.state,
+                query: q.query,
+                waitEvent: q.wait_event,
+                applicationName: q.application_name,
+                startedAt: q.started_at,
+            })),
+            topSlowQueries,
+            pgStatStatementsAvailable,
+        };
+    }
+}
+
+// Interfaces for new endpoints
+export interface PlatformTimeline {
+    timeline: Array<{
+        bucket: string;
+        logsCount: number;
+        detectionsCount: number;
+        spansCount: number;
+    }>;
+}
+
+export interface ActiveIssues {
+    openIncidents: number;
+    criticalDetections24h: number;
+    failedNotifications24h: number;
+    openErrorGroups: number;
+}
+
+export interface SlowQueriesStats {
+    activeQueries: Array<{
+        pid: number;
+        durationMs: number;
+        state: string;
+        query: string;
+        waitEvent: string | null;
+        applicationName: string;
+        startedAt: string;
+    }>;
+    topSlowQueries: Array<{
+        query: string;
+        calls: number;
+        avg_ms: number;
+        total_ms: number;
+        rows_per_call: number;
+    }>;
+    pgStatStatementsAvailable: boolean;
+}
+
+// GitHub Release API types (subset)
+interface GitHubRelease {
+    tag_name: string;
+    name: string | null;
+    prerelease: boolean;
+    draft: boolean;
+    published_at: string;
+    html_url: string;
+}
+
+export interface ReleaseInfo {
+    version: string;
+    tag: string;
+    name: string;
+    publishedAt: string;
+    url: string;
+    prerelease: boolean;
+}
+
+export interface VersionCheckResult {
+    currentVersion: string;
+    channel: UpdateChannel;
+    latestStable: ReleaseInfo | null;
+    latestBeta: ReleaseInfo | null;
+    updateAvailable: boolean;
+    checkedAt: string;
 }
 
 export const adminService = new AdminService();

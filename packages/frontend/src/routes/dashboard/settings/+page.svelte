@@ -32,6 +32,7 @@
   import Fingerprint from '@lucide/svelte/icons/fingerprint';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import BellRing from '@lucide/svelte/icons/bell-ring';
+  import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import {
     Table,
     TableBody,
@@ -465,6 +466,27 @@
       <p class="text-sm text-muted-foreground">
         Define custom regex patterns to automatically extract identifiers like order IDs, customer IDs,
         or any application-specific values from your logs for correlation.
+      </p>
+    </CardContent>
+  </Card>
+
+  <Card class="hover:bg-accent/50 transition-colors cursor-pointer" onclick={() => goto('/dashboard/settings/pii-masking')}>
+    <CardHeader>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <ShieldAlert class="w-5 h-5 text-primary" />
+          <div>
+            <CardTitle>PII Masking</CardTitle>
+            <CardDescription>Automatically detect and mask sensitive data in logs</CardDescription>
+          </div>
+        </div>
+        <ChevronRight class="w-5 h-5 text-muted-foreground" />
+      </div>
+    </CardHeader>
+    <CardContent>
+      <p class="text-sm text-muted-foreground">
+        Configure rules to automatically mask emails, credit cards, phone numbers, API keys,
+        and other sensitive data before logs are stored. GDPR-compliant by design.
       </p>
     </CardContent>
   </Card>

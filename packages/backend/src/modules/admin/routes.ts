@@ -519,6 +519,137 @@ export async function adminRoutes(fastify: FastifyInstance) {
         }
     );
 
+    // GET /api/v1/admin/stats/platform-timeline - Platform activity timeline
+    fastify.get(
+        '/stats/platform-timeline',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (request, reply) => {
+            try {
+                const { hours: hoursParam = '24' } = request.query as { hours?: string };
+                const hours = parseInt(hoursParam);
+                if (isNaN(hours) || hours < 1 || hours > 168) {
+                    return reply.status(400).send({ error: 'Invalid hours parameter (1-168)' });
+                }
+                const stats = await adminService.getPlatformTimeline(hours);
+                return reply.send(stats);
+            } catch (error) {
+                console.error('Error getting platform timeline:', error);
+                return reply.status(500).send({
+                    error: 'Failed to retrieve platform timeline',
+                });
+            }
+        }
+    );
+
+    // GET /api/v1/admin/stats/active-issues - Active issues summary
+    fastify.get(
+        '/stats/active-issues',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const stats = await adminService.getActiveIssues();
+                return reply.send(stats);
+            } catch (error) {
+                console.error('Error getting active issues:', error);
+                return reply.status(500).send({
+                    error: 'Failed to retrieve active issues',
+                });
+            }
+        }
+    );
+
+    // GET /api/v1/admin/stats/compression - Compression statistics for all hypertables
+    fastify.get(
+        '/stats/compression',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const stats = await adminService.getCompressionStats();
+                return reply.send({ hypertables: stats });
+            } catch (error) {
+                console.error('Error getting compression stats:', error);
+                return reply.status(500).send({
+                    error: 'Failed to retrieve compression statistics',
+                });
+            }
+        }
+    );
+
+    // GET /api/v1/admin/stats/continuous-aggregates - Continuous aggregate health
+    fastify.get(
+        '/stats/continuous-aggregates',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const stats = await adminService.getAggregateStats();
+                return reply.send({ aggregates: stats });
+            } catch (error) {
+                console.error('Error getting aggregate stats:', error);
+                return reply.status(500).send({
+                    error: 'Failed to retrieve continuous aggregate statistics',
+                });
+            }
+        }
+    );
+
+    // GET /api/v1/admin/stats/slow-queries - Slow/active queries
+    fastify.get(
+        '/stats/slow-queries',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const stats = await adminService.getSlowQueries();
+                return reply.send(stats);
+            } catch (error) {
+                console.error('Error getting slow queries:', error);
+                return reply.status(500).send({
+                    error: 'Failed to retrieve slow queries',
+                });
+            }
+        }
+    );
+
+    // GET /api/v1/admin/version-check - Check for new releases on GitHub
+    fastify.get(
+        '/version-check',
+        {
+            config: {
+                rateLimit: rateLimitConfig,
+            },
+        },
+        async (_request, reply) => {
+            try {
+                const result = await adminService.checkVersion();
+                return reply.send(result);
+            } catch (error) {
+                console.error('Error checking version:', error);
+                return reply.status(500).send({
+                    error: 'Failed to check for updates',
+                });
+            }
+        }
+    );
+
     // Cache Management Routes
     // GET /api/v1/admin/cache/stats - Get cache statistics
     fastify.get(

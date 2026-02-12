@@ -650,7 +650,7 @@ describe('SIEM Routes', () => {
                 },
             });
 
-            expect(response.statusCode).toBe(500);
+            expect(response.statusCode).toBe(400);
         });
     });
 
@@ -683,7 +683,7 @@ describe('SIEM Routes', () => {
                 },
             });
 
-            expect(response.statusCode).toBe(500);
+            expect(response.statusCode).toBe(400);
         });
     });
 

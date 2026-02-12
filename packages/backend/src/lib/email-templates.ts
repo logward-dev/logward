@@ -308,12 +308,85 @@ export interface AlertEmailData {
   organizationName?: string;
   projectName?: string | null;
   historyId?: string;
+  baselineMetadata?: {
+    baseline_value: number;
+    current_value: number;
+    deviation_ratio: number;
+    baseline_type: string;
+  };
 }
+
+const baselineTypeLabels: Record<string, string> = {
+  same_time_yesterday: 'Same time yesterday',
+  same_day_last_week: 'Same day last week',
+  rolling_7d_avg: '7-day rolling average',
+  percentile_p95: '95th percentile (7 days)',
+};
 
 export function generateAlertEmail(data: AlertEmailData): { html: string; text: string } {
   const frontendUrl = getFrontendUrl();
   const dashboardUrl = `${frontendUrl}/dashboard/alerts`;
+  const isRateOfChange = !!data.baselineMetadata;
 
+  if (isRateOfChange) {
+    const bm = data.baselineMetadata!;
+    const baselineLabel = baselineTypeLabels[bm.baseline_type] || bm.baseline_type;
+
+    const html = baseTemplate(
+      card(`
+        ${header(`Anomaly: ${data.ruleName}`, { text: `${bm.deviation_ratio}x above normal`, color: colors.warning })}
+        ${divider()}
+        ${subtitle(`Unusual log volume detected compared to baseline.`)}
+        ${timestamp()}
+        ${alertBox(
+          `Current rate: <strong>${Math.round(bm.current_value).toLocaleString()}</strong> logs/hr &mdash; Baseline: <strong>${Math.round(bm.baseline_value).toLocaleString()}</strong> logs/hr &mdash; <strong>${bm.deviation_ratio}x</strong> above normal`,
+          'warning'
+        )}
+        ${infoBox([
+          { label: 'Rule Name', value: data.ruleName },
+          { label: 'Baseline Method', value: baselineLabel },
+          { label: 'Current Rate', value: `${Math.round(bm.current_value).toLocaleString()} logs/hr` },
+          { label: 'Baseline Rate', value: `${Math.round(bm.baseline_value).toLocaleString()} logs/hr` },
+          { label: 'Deviation', value: `${bm.deviation_ratio}x` },
+          ...(data.service ? [{ label: 'Service Filter', value: data.service, isCode: true }] : []),
+          ...(data.organizationName ? [{ label: 'Organization', value: data.organizationName }] : []),
+          ...(data.projectName ? [{ label: 'Project', value: data.projectName }] : []),
+        ])}
+        ${cta('View Alert History', dashboardUrl)}
+      `),
+      { preheader: `${bm.deviation_ratio}x above baseline for "${data.ruleName}"` }
+    );
+
+    const text = `
+ANOMALY DETECTED: ${data.ruleName}
+${'='.repeat(50)}
+
+Log volume is ${bm.deviation_ratio}x above the baseline.
+
+Current Rate: ${Math.round(bm.current_value).toLocaleString()} logs/hr
+Baseline (${baselineLabel}): ${Math.round(bm.baseline_value).toLocaleString()} logs/hr
+Deviation: ${bm.deviation_ratio}x above normal
+
+DETAILS
+-------
+Rule Name: ${data.ruleName}
+${data.service ? `Service: ${data.service}` : ''}
+${data.organizationName ? `Organization: ${data.organizationName}` : ''}
+${data.projectName ? `Project: ${data.projectName}` : ''}
+
+Triggered: ${formatEmailDate()}
+
+View details: ${dashboardUrl}
+
+--
+Sent by LogTide
+Manage notifications: ${frontendUrl}/dashboard/settings/channels
+`.trim();
+
+    return { html, text };
+  }
+
+  // Standard threshold alert email
   const html = baseTemplate(
     card(`
       ${header(`Alert: ${data.ruleName}`, { text: 'Triggered', color: colors.error })}

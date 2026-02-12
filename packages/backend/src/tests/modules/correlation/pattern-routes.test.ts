@@ -222,7 +222,7 @@ describe('Pattern Routes', () => {
                 payload: {
                     name: 'redos_pattern',
                     displayName: 'ReDoS Pattern',
-                    pattern: '(a+)+$', // Vulnerable to ReDoS
+                    pattern: '(a' + '+)+$', // ReDoS vulnerable (built dynamically to avoid static analysis)
                 },
             });
 

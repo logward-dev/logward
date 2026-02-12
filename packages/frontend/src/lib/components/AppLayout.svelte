@@ -1,12 +1,17 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth";
-  import { currentOrganization } from "$lib/stores/organization";
+  import { currentOrganization, organizationStore } from "$lib/stores/organization";
   import { toastStore } from "$lib/stores/toast";
+  import { shortcutsStore } from "$lib/stores/shortcuts";
   import { NotificationsAPI, type Notification } from "$lib/api/notifications";
   import { layoutStore, type ContentDensity } from "$lib/stores/layout";
+  import { getPlatform } from "$lib/utils/keyboard";
+  import CommandPalette from "$lib/components/CommandPalette.svelte";
+  import ShortcutsHelpModal from "$lib/components/ShortcutsHelpModal.svelte";
   import Button from "$lib/components/ui/button/button.svelte";
   import { Separator } from "$lib/components/ui/separator";
   import { DropdownMenu as DropdownMenuPrimitive, Tooltip as TooltipPrimitive } from "bits-ui";
@@ -40,6 +45,7 @@
   import PanelLeft from "@lucide/svelte/icons/panel-left";
   import LayoutGrid from "@lucide/svelte/icons/layout-grid";
   import Check from "@lucide/svelte/icons/check";
+  import SearchIcon from "@lucide/svelte/icons/search";
   import { formatTimeAgo } from "$lib/utils/datetime";
   import Footer from "$lib/components/Footer.svelte";
   import OnboardingChecklist from "$lib/components/OnboardingChecklist.svelte";
@@ -263,6 +269,22 @@
     authStore.clearAuth();
     goto("/login");
   }
+
+  // Install keyboard shortcuts handler
+  onMount(() => {
+    shortcutsStore.install();
+
+    // First-time hint toast
+    if (!shortcutsStore.hasShownHint()) {
+      const mod = getPlatform().modSymbol;
+      setTimeout(() => {
+        toastStore.info(`Pro tip: Press ${mod}+K to open command palette, or ? for shortcuts`, 8000);
+        shortcutsStore.markHintShown();
+      }, 3000);
+    }
+
+    return () => shortcutsStore.uninstall();
+  });
 </script>
 
 <TooltipPrimitive.Provider>
@@ -464,6 +486,17 @@
       </div>
 
       <div class="flex items-center gap-2">
+        <!-- Command Palette Trigger -->
+        <button
+          onclick={() => shortcutsStore.openCommandPalette()}
+          class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-muted/50 text-muted-foreground text-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+          title="Command Palette"
+        >
+          <SearchIcon class="w-4 h-4" />
+          <span class="text-xs">Search...</span>
+          <kbd class="ml-2 px-1.5 py-0.5 rounded border border-border bg-background text-[10px] font-mono">{getPlatform().modSymbol}K</kbd>
+        </button>
+
         <!-- Layout Controls -->
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -597,11 +630,14 @@
                       if (!notification.read) {
                         markNotificationAsRead(notification.id);
                       }
+                      // Switch org if notification belongs to a different one
+                      if (notification.organizationId && notification.organizationId !== $currentOrganization?.id) {
+                        organizationStore.setCurrentOrganization(notification.organizationId);
+                      }
                       // Handle navigation based on notification type
                       if (notification.metadata?.link) {
-                        // If notification has a specific link, use it
                         goto(notification.metadata.link);
-                      } else if (notification.type === "alert" && notification.organizationSlug) {
+                      } else if (notification.type === "alert") {
                         goto(`/dashboard/alerts`);
                       }
                     }}
@@ -736,4 +772,6 @@
 </div>
 
 <UserSettingsDialog bind:open={showUserSettings} />
+<CommandPalette />
+<ShortcutsHelpModal />
 </TooltipPrimitive.Provider>

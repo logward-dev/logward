@@ -9,6 +9,8 @@ import { notificationChannelsService } from '../notification-channels/index.js';
 const organizationsService = new OrganizationsService();
 
 const levelEnum = z.enum(LOG_LEVELS);
+const alertTypeEnum = z.enum(['threshold', 'rate_of_change']);
+const baselineTypeEnum = z.enum(['same_time_yesterday', 'same_day_last_week', 'rolling_7d_avg', 'percentile_p95']);
 
 const createAlertRuleSchema = z.object({
   organizationId: z.string().uuid(),
@@ -19,12 +21,26 @@ const createAlertRuleSchema = z.object({
   level: z.array(levelEnum).min(1),
   threshold: z.number().int().min(1),
   timeWindow: z.number().int().min(1),
+  alertType: alertTypeEnum.optional(),
+  baselineType: baselineTypeEnum.optional().nullable(),
+  deviationMultiplier: z.number().min(1.5).max(20).optional().nullable(),
+  minBaselineValue: z.number().int().min(0).optional().nullable(),
+  cooldownMinutes: z.number().int().min(5).max(1440).optional().nullable(),
+  sustainedMinutes: z.number().int().min(1).max(60).optional().nullable(),
   emailRecipients: z.array(z.string().email()).optional(),
   webhookUrl: z.string().url().optional().nullable(),
   channelIds: z.array(z.string().uuid()).optional(),
 }).refine(
   (data) => (data.emailRecipients && data.emailRecipients.length > 0) || (data.channelIds && data.channelIds.length > 0),
   { message: 'At least one email recipient or notification channel is required' }
+).refine(
+  (data) => {
+    if (data.alertType === 'rate_of_change') {
+      return !!data.baselineType && data.deviationMultiplier != null;
+    }
+    return true;
+  },
+  { message: 'Rate-of-change alerts require baselineType and deviationMultiplier' }
 );
 
 const updateAlertRuleSchema = z.object({
@@ -34,10 +50,24 @@ const updateAlertRuleSchema = z.object({
   level: z.array(levelEnum).min(1).optional(),
   threshold: z.number().int().min(1).optional(),
   timeWindow: z.number().int().min(1).optional(),
+  alertType: alertTypeEnum.optional(),
+  baselineType: baselineTypeEnum.optional().nullable(),
+  deviationMultiplier: z.number().min(1.5).max(20).optional().nullable(),
+  minBaselineValue: z.number().int().min(0).optional().nullable(),
+  cooldownMinutes: z.number().int().min(5).max(1440).optional().nullable(),
+  sustainedMinutes: z.number().int().min(1).max(60).optional().nullable(),
   emailRecipients: z.array(z.string().email()).optional(),
   webhookUrl: z.string().url().optional().nullable(),
   channelIds: z.array(z.string().uuid()).optional(),
-});
+}).refine(
+  (data) => {
+    if (data.alertType === 'rate_of_change') {
+      return !!data.baselineType && data.deviationMultiplier != null;
+    }
+    return true;
+  },
+  { message: 'Rate-of-change alerts require baselineType and deviationMultiplier' }
+);
 
 const alertRuleIdSchema = z.object({
   id: z.string().uuid('Invalid alert rule ID format'),
@@ -123,9 +153,15 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const { channelIds, ...alertData } = body;
+      const { channelIds, alertType, baselineType, deviationMultiplier, minBaselineValue, cooldownMinutes, sustainedMinutes, ...alertData } = body;
       const alertRule = await alertsService.createAlertRule({
         ...alertData,
+        alertType: alertType || 'threshold',
+        baselineType: baselineType || null,
+        deviationMultiplier: deviationMultiplier ?? null,
+        minBaselineValue: minBaselineValue ?? null,
+        cooldownMinutes: cooldownMinutes ?? null,
+        sustainedMinutes: sustainedMinutes ?? null,
         emailRecipients: alertData.emailRecipients || [],
       });
 
@@ -316,8 +352,19 @@ export async function alertsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const { channelIds, ...updateData } = body;
-      const alertRule = await alertsService.updateAlertRule(id, organizationId, updateData);
+      const { channelIds, alertType, baselineType, deviationMultiplier, minBaselineValue, cooldownMinutes, sustainedMinutes, ...updateData } = body;
+      const rateOfChangeFields: Record<string, unknown> = {};
+      if (alertType !== undefined) rateOfChangeFields.alertType = alertType;
+      if (baselineType !== undefined) rateOfChangeFields.baselineType = baselineType;
+      if (deviationMultiplier !== undefined) rateOfChangeFields.deviationMultiplier = deviationMultiplier;
+      if (minBaselineValue !== undefined) rateOfChangeFields.minBaselineValue = minBaselineValue;
+      if (cooldownMinutes !== undefined) rateOfChangeFields.cooldownMinutes = cooldownMinutes;
+      if (sustainedMinutes !== undefined) rateOfChangeFields.sustainedMinutes = sustainedMinutes;
+
+      const alertRule = await alertsService.updateAlertRule(id, organizationId, {
+        ...updateData,
+        ...rateOfChangeFields,
+      } as any);
 
       if (!alertRule) {
         return reply.status(404).send({

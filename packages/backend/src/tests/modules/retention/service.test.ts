@@ -288,15 +288,13 @@ describe('RetentionService', () => {
       expect(summary.totalLogsDeleted).toBe(sumFromResults);
     });
 
-    it('should track chunks decompressed count', async () => {
+    it('should return execution time in summary', async () => {
       const ctx = await createTestContext();
       await createTestLog({ projectId: ctx.project.id });
 
       const summary = await service.executeRetentionForAllOrganizations();
 
-      // chunksDecompressed should be a number (0 in test env since no compression)
-      expect(typeof summary.totalChunksDecompressed).toBe('number');
-      expect(summary.totalChunksDecompressed).toBeGreaterThanOrEqual(0);
+      expect(summary.totalExecutionTimeMs).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -463,7 +461,7 @@ describe('RetentionService', () => {
       expect(remainingLogs[0].message).toBe('new');
     });
 
-    it('should return chunksDecompressed as 0 when no compressed chunks', async () => {
+    it('should return executionTimeMs in result', async () => {
       const ctx = await createTestContext();
 
       const result = await service.executeRetentionForOrganization(
@@ -472,7 +470,7 @@ describe('RetentionService', () => {
         ctx.organization.name
       );
 
-      expect(result.chunksDecompressed).toBe(0);
+      expect(result.executionTimeMs).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -686,7 +684,6 @@ describe('RetentionService', () => {
       );
 
       expect(result.logsDeleted).toBe(0);
-      expect(result.chunksDecompressed).toBe(0);
     });
   });
 });

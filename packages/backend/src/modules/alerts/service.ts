@@ -1,6 +1,8 @@
 import { db } from '../../database/connection.js';
 import { sql } from 'kysely';
 import type { LogLevel } from '@logtide/shared';
+import type { AlertType, BaselineType, BaselineMetadata } from '../../database/types.js';
+import { baselineCalculator } from './baseline-calculator.js';
 
 // Preview types
 export type { LogLevel } from '@logtide/shared';
@@ -84,6 +86,12 @@ export interface AlertRule {
   level: ('debug' | 'info' | 'warn' | 'error' | 'critical')[];
   threshold: number;
   timeWindow: number;
+  alertType: AlertType;
+  baselineType: BaselineType | null;
+  deviationMultiplier: number | null;
+  minBaselineValue: number | null;
+  cooldownMinutes: number | null;
+  sustainedMinutes: number | null;
   emailRecipients: string[];
   webhookUrl: string | null;
   createdAt: Date;
@@ -99,6 +107,12 @@ export interface CreateAlertRuleInput {
   level: ('debug' | 'info' | 'warn' | 'error' | 'critical')[];
   threshold: number;
   timeWindow: number;
+  alertType?: AlertType;
+  baselineType?: BaselineType | null;
+  deviationMultiplier?: number | null;
+  minBaselineValue?: number | null;
+  cooldownMinutes?: number | null;
+  sustainedMinutes?: number | null;
   emailRecipients: string[];
   webhookUrl?: string | null;
 }
@@ -110,11 +124,20 @@ export interface UpdateAlertRuleInput {
   level?: ('debug' | 'info' | 'warn' | 'error' | 'critical')[];
   threshold?: number;
   timeWindow?: number;
+  alertType?: AlertType;
+  baselineType?: BaselineType | null;
+  deviationMultiplier?: number | null;
+  minBaselineValue?: number | null;
+  cooldownMinutes?: number | null;
+  sustainedMinutes?: number | null;
   emailRecipients?: string[];
   webhookUrl?: string | null;
 }
 
 export class AlertsService {
+  // In-memory state for sustained check tracking (resets on worker restart - acceptable)
+  private sustainedState = new Map<string, { count: number; lastCheck: number }>();
+
   /**
    * Create a new alert rule
    */
@@ -130,6 +153,12 @@ export class AlertsService {
         level: input.level,
         threshold: input.threshold,
         time_window: input.timeWindow,
+        alert_type: input.alertType || 'threshold',
+        baseline_type: input.baselineType || null,
+        deviation_multiplier: input.deviationMultiplier || null,
+        min_baseline_value: input.minBaselineValue || null,
+        cooldown_minutes: input.cooldownMinutes || null,
+        sustained_minutes: input.sustainedMinutes || null,
         email_recipients: input.emailRecipients,
         webhook_url: input.webhookUrl || null,
       })
@@ -207,6 +236,12 @@ export class AlertsService {
     if (input.level !== undefined) updateData.level = input.level;
     if (input.threshold !== undefined) updateData.threshold = input.threshold;
     if (input.timeWindow !== undefined) updateData.time_window = input.timeWindow;
+    if (input.alertType !== undefined) updateData.alert_type = input.alertType;
+    if (input.baselineType !== undefined) updateData.baseline_type = input.baselineType;
+    if (input.deviationMultiplier !== undefined) updateData.deviation_multiplier = input.deviationMultiplier;
+    if (input.minBaselineValue !== undefined) updateData.min_baseline_value = input.minBaselineValue;
+    if (input.cooldownMinutes !== undefined) updateData.cooldown_minutes = input.cooldownMinutes;
+    if (input.sustainedMinutes !== undefined) updateData.sustained_minutes = input.sustainedMinutes;
     if (input.emailRecipients !== undefined) updateData.email_recipients = input.emailRecipients;
     if (input.webhookUrl !== undefined) updateData.webhook_url = input.webhookUrl;
 
@@ -286,6 +321,11 @@ export class AlertsService {
    * PERFORMANCE: Uses pre-fetched orgProjectsMap instead of querying per rule
    */
   private async checkRule(rule: any, orgProjectsMap: Map<string, string[]>) {
+    // Dispatch to rate-of-change logic if applicable
+    if (rule.alert_type === 'rate_of_change') {
+      return this.checkRateOfChangeRule(rule, orgProjectsMap);
+    }
+
     // Get the last trigger time for this rule
     const lastTrigger = await db
       .selectFrom('alert_history')
@@ -369,6 +409,129 @@ export class AlertsService {
   }
 
   /**
+   * Check a rate-of-change alert rule against baseline
+   */
+  private async checkRateOfChangeRule(rule: any, orgProjectsMap: Map<string, string[]>) {
+    if (!rule.baseline_type || !rule.deviation_multiplier) return null;
+
+    const deviationMultiplier = Number(rule.deviation_multiplier);
+    const minBaseline = Number(rule.min_baseline_value || 10);
+    const cooldownMin = Number(rule.cooldown_minutes || 60);
+    const sustainedMin = Number(rule.sustained_minutes || 5);
+
+    // Get project IDs
+    const projectIds = rule.project_id
+      ? [rule.project_id]
+      : (orgProjectsMap.get(rule.organization_id) || []);
+
+    if (projectIds.length === 0) return null;
+
+    // Check cooldown: skip if last trigger was within cooldown period
+    const lastTrigger = await db
+      .selectFrom('alert_history')
+      .select(['triggered_at'])
+      .where('rule_id', '=', rule.id)
+      .orderBy('triggered_at', 'desc')
+      .executeTakeFirst();
+
+    if (lastTrigger) {
+      const cooldownEnd = new Date(lastTrigger.triggered_at).getTime() + cooldownMin * 60 * 1000;
+      if (Date.now() < cooldownEnd) {
+        return null;
+      }
+    }
+
+    // Calculate baseline
+    const baseline = await baselineCalculator.calculate(
+      rule.baseline_type,
+      projectIds,
+      rule.level,
+      rule.service || null,
+    );
+
+    if (!baseline || baseline.value < minBaseline) {
+      // Reset sustained state - baseline too low or no data
+      this.sustainedState.delete(rule.id);
+      return null;
+    }
+
+    // Get current hourly rate
+    const currentValue = await baselineCalculator.getCurrentHourlyRate(
+      projectIds,
+      rule.level,
+      rule.service || null,
+    );
+
+    const deviationRatio = baseline.value > 0 ? currentValue / baseline.value : 0;
+
+    // Check if deviation exceeds multiplier
+    if (deviationRatio < deviationMultiplier) {
+      // Reset sustained state - not exceeding threshold
+      this.sustainedState.delete(rule.id);
+      return null;
+    }
+
+    // Sustained check: anomaly must persist for sustained_minutes
+    // We track consecutive checks (each ~60s apart)
+    const requiredChecks = Math.max(1, Math.ceil(sustainedMin / 1)); // 1 check per minute
+    const state = this.sustainedState.get(rule.id);
+    const now = Date.now();
+
+    if (state && (now - state.lastCheck) < 3 * 60 * 1000) {
+      // Within 3 minutes of last check - increment counter
+      const newCount = state.count + 1;
+      this.sustainedState.set(rule.id, { count: newCount, lastCheck: now });
+
+      if (newCount < requiredChecks) {
+        return null; // Not yet sustained enough
+      }
+    } else {
+      // First check or gap too large - start counting
+      this.sustainedState.set(rule.id, { count: 1, lastCheck: now });
+      if (requiredChecks > 1) {
+        return null; // Need more checks
+      }
+    }
+
+    // Reset sustained state after trigger
+    this.sustainedState.delete(rule.id);
+
+    const baselineMetadata: BaselineMetadata = {
+      baseline_value: baseline.value,
+      current_value: currentValue,
+      deviation_ratio: Math.round(deviationRatio * 100) / 100,
+      baseline_type: rule.baseline_type,
+      evaluation_time: new Date().toISOString(),
+    };
+
+    // Record alert trigger
+    const historyRecord = await db
+      .insertInto('alert_history')
+      .values({
+        rule_id: rule.id,
+        triggered_at: new Date(),
+        log_count: currentValue,
+        baseline_metadata: baselineMetadata,
+      })
+      .returning(['id'])
+      .executeTakeFirstOrThrow();
+
+    return {
+      historyId: historyRecord.id,
+      rule_id: rule.id,
+      rule_name: rule.name,
+      organization_id: rule.organization_id,
+      project_id: rule.project_id,
+      log_count: currentValue,
+      threshold: rule.threshold,
+      time_window: rule.time_window,
+      email_recipients: rule.email_recipients,
+      webhook_url: rule.webhook_url,
+      baseline_metadata: baselineMetadata,
+    };
+  }
+
+  /**
    * Get alert history for an organization
    */
   async getAlertHistory(
@@ -387,6 +550,7 @@ export class AlertsService {
         'projects.name as project_name',
         'alert_history.triggered_at',
         'alert_history.log_count',
+        'alert_history.baseline_metadata',
         'alert_history.notified',
         'alert_history.error',
         // Alert rule details
@@ -394,6 +558,7 @@ export class AlertsService {
         'alert_rules.time_window',
         'alert_rules.service',
         'alert_rules.level',
+        'alert_rules.alert_type',
       ])
       .where('alert_rules.organization_id', '=', organizationId);
 
@@ -438,12 +603,14 @@ export class AlertsService {
         projectName: row.project_name,
         triggeredAt: row.triggered_at,
         logCount: row.log_count,
+        baselineMetadata: (row as any).baseline_metadata || null,
         notified: row.notified,
         error: row.error,
         threshold: row.threshold,
         timeWindow: row.time_window,
         service: row.service,
         level: row.level,
+        alertType: (row as any).alert_type || 'threshold',
       })),
       total: Number(total?.count || 0),
       limit: options?.limit ?? 100,
@@ -915,6 +1082,12 @@ export class AlertsService {
       level: row.level,
       threshold: row.threshold,
       timeWindow: row.time_window,
+      alertType: row.alert_type || 'threshold',
+      baselineType: row.baseline_type || null,
+      deviationMultiplier: row.deviation_multiplier != null ? Number(row.deviation_multiplier) : null,
+      minBaselineValue: row.min_baseline_value != null ? Number(row.min_baseline_value) : null,
+      cooldownMinutes: row.cooldown_minutes != null ? Number(row.cooldown_minutes) : null,
+      sustainedMinutes: row.sustained_minutes != null ? Number(row.sustained_minutes) : null,
       emailRecipients: row.email_recipients,
       webhookUrl: row.webhook_url,
       createdAt: new Date(row.created_at),

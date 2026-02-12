@@ -122,15 +122,20 @@ export interface RedisStats {
 
 export interface HealthStats {
     database: {
-        status: 'up' | 'down';
+        status: 'healthy' | 'degraded' | 'down';
         latency: number;
         connections: number;
     };
     redis: {
-        status: 'up' | 'down';
+        status: 'healthy' | 'degraded' | 'down' | 'not_configured';
         latency: number;
     };
-    overall: 'up' | 'down';
+    pool: {
+        totalConnections: number;
+        idleConnections: number;
+        waitingRequests: number;
+    };
+    overall: 'healthy' | 'degraded' | 'down';
 }
 
 // User Management Interfaces
@@ -258,6 +263,93 @@ export interface ProjectsListResponse {
     totalPages: number;
 }
 
+// Platform Timeline
+export interface PlatformTimeline {
+    timeline: Array<{
+        bucket: string;
+        logsCount: number;
+        detectionsCount: number;
+        spansCount: number;
+    }>;
+}
+
+// Active Issues
+export interface ActiveIssues {
+    openIncidents: number;
+    criticalDetections24h: number;
+    failedNotifications24h: number;
+    openErrorGroups: number;
+}
+
+// Compression Stats
+export interface CompressionStatsItem {
+    hypertable: string;
+    totalChunks: number;
+    compressedChunks: number;
+    uncompressedSizeBytes: number;
+    compressedSizeBytes: number;
+    compressionRatio: number;
+    spaceSavedBytes: number;
+    spaceSavedPretty: string;
+}
+
+export interface CompressionStatsResponse {
+    hypertables: CompressionStatsItem[];
+}
+
+// Continuous Aggregates Health
+export interface AggregateStatsItem {
+    viewName: string;
+    hypertableName: string;
+    lastRefresh: string | null;
+    refreshInterval: string;
+    totalRows: number;
+}
+
+export interface AggregatesResponse {
+    aggregates: AggregateStatsItem[];
+}
+
+// Slow Queries
+export interface SlowQueriesStats {
+    activeQueries: Array<{
+        pid: number;
+        durationMs: number;
+        state: string;
+        query: string;
+        waitEvent: string | null;
+        applicationName: string;
+        startedAt: string;
+    }>;
+    topSlowQueries: Array<{
+        query: string;
+        calls: number;
+        avg_ms: number;
+        total_ms: number;
+        rows_per_call: number;
+    }>;
+    pgStatStatementsAvailable: boolean;
+}
+
+// Version Check
+export interface ReleaseInfo {
+    version: string;
+    tag: string;
+    name: string;
+    publishedAt: string;
+    url: string;
+    prerelease: boolean;
+}
+
+export interface VersionCheckResult {
+    currentVersion: string;
+    channel: 'stable' | 'beta';
+    latestStable: ReleaseInfo | null;
+    latestBeta: ReleaseInfo | null;
+    updateAvailable: boolean;
+    checkedAt: string;
+}
+
 // System Settings Interfaces
 export interface SystemSetting {
     key: string;
@@ -333,6 +425,31 @@ class AdminAPI {
 
     async getHealthStats(): Promise<HealthStats> {
         return this.fetch<HealthStats>('/stats/health');
+    }
+
+    // New dashboard endpoints
+    async getPlatformTimeline(hours: number = 24): Promise<PlatformTimeline> {
+        return this.fetch<PlatformTimeline>(`/stats/platform-timeline?hours=${hours}`);
+    }
+
+    async getActiveIssues(): Promise<ActiveIssues> {
+        return this.fetch<ActiveIssues>('/stats/active-issues');
+    }
+
+    async getCompressionStats(): Promise<CompressionStatsResponse> {
+        return this.fetch<CompressionStatsResponse>('/stats/compression');
+    }
+
+    async getContinuousAggregates(): Promise<AggregatesResponse> {
+        return this.fetch<AggregatesResponse>('/stats/continuous-aggregates');
+    }
+
+    async getSlowQueries(): Promise<SlowQueriesStats> {
+        return this.fetch<SlowQueriesStats>('/stats/slow-queries');
+    }
+
+    async getVersionCheck(): Promise<VersionCheckResult> {
+        return this.fetch<VersionCheckResult>('/version-check');
     }
 
     // User Management

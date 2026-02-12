@@ -24,6 +24,7 @@
         Info,
         User,
         Search,
+        ArrowUpCircle,
     } from "lucide-svelte";
     import { browser } from "$app/environment";
     import { untrack } from "svelte";
@@ -43,6 +44,9 @@
     // Search settings state
     let searchDefaultMode = $state<"fulltext" | "substring">("fulltext");
     let searchSubstringIndexed = $state(true);
+
+    // Updates settings state
+    let updatesChannel = $state<"stable" | "beta">("stable");
 
     // Users list for auth-free mode selector
     let usersList = $state<UserBasic[]>([]);
@@ -97,6 +101,8 @@
             // Search settings
             searchDefaultMode = (settings["search.default_mode"] as "fulltext" | "substring") ?? "fulltext";
             searchSubstringIndexed = (settings["search.substring_indexed"] as boolean) ?? true;
+            // Updates settings
+            updatesChannel = (settings["updates.channel"] as "stable" | "beta") ?? "stable";
             // Only show active admin users for default user selection
             usersList = usersResponse.users.filter(u => !u.disabled && u.is_admin);
         } catch (e: any) {
@@ -118,6 +124,7 @@
                 "auth.default_user_id": defaultUserId,
                 "search.default_mode": searchDefaultMode,
                 "search.substring_indexed": searchSubstringIndexed,
+                "updates.channel": updatesChannel,
             });
             success = "Settings saved successfully";
             setTimeout(() => {
@@ -438,6 +445,52 @@
                             <p class="text-sm text-blue-600 dark:text-blue-400">
                                 <strong>Full-text:</strong> Word-based search with stemming (e.g., "fail" finds "failed", "failing").<br/>
                                 <strong>Substring:</strong> Finds text anywhere in the message (e.g., "bluez" finds "spa.bluez5.native").
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <!-- Update Channel Settings -->
+                <Card class="md:col-span-2">
+                    <CardHeader>
+                        <CardTitle class="flex items-center gap-2">
+                            <ArrowUpCircle class="h-5 w-5" />
+                            Update Notifications
+                        </CardTitle>
+                        <CardDescription>
+                            Choose which release channel to track for update notifications
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent class="space-y-4">
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="space-y-2">
+                                <Label>Release Channel</Label>
+                                <Select.Root
+                                    type="single"
+                                    value={updatesChannel}
+                                    onValueChange={(v) => {
+                                        if (v && (v === 'stable' || v === 'beta')) {
+                                            updatesChannel = v;
+                                        }
+                                    }}
+                                >
+                                    <Select.Trigger class="w-full">
+                                        {updatesChannel === "stable" ? "Stable" : "Beta (Pre-releases)"}
+                                    </Select.Trigger>
+                                    <Select.Content>
+                                        <Select.Item value="stable">Stable</Select.Item>
+                                        <Select.Item value="beta">Beta (Pre-releases)</Select.Item>
+                                    </Select.Content>
+                                </Select.Root>
+                                <p class="text-xs text-muted-foreground">
+                                    Controls which releases trigger "update available" notifications
+                                </p>
+                            </div>
+                        </div>
+                        <div class="bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
+                            <p class="text-sm text-blue-600 dark:text-blue-400">
+                                <strong>Stable:</strong> Only notify for production-ready releases.<br/>
+                                <strong>Beta:</strong> Also notify for pre-release versions (may contain experimental features).
                             </p>
                         </div>
                     </CardContent>

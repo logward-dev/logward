@@ -14,10 +14,14 @@ export const SETTING_KEYS = {
   AUTH_SIGNUP_ENABLED: 'auth.signup_enabled',
   AUTH_MODE: 'auth.mode',
   AUTH_DEFAULT_USER_ID: 'auth.default_user_id',
+  UPDATES_CHANNEL: 'updates.channel',
 } as const;
 
 // Type for auth mode
 export type AuthMode = 'standard' | 'none';
+
+// Type for update channel
+export type UpdateChannel = 'stable' | 'beta';
 
 // Interface for a setting record
 export interface SettingRecord {
@@ -33,6 +37,7 @@ export interface SystemSettings {
   'auth.signup_enabled': boolean;
   'auth.mode': AuthMode;
   'auth.default_user_id': string | null;
+  'updates.channel': UpdateChannel;
 }
 
 // Default values for settings
@@ -40,6 +45,7 @@ const DEFAULT_VALUES: SystemSettings = {
   'auth.signup_enabled': true,
   'auth.mode': 'standard',
   'auth.default_user_id': null,
+  'updates.channel': 'stable',
 };
 
 export class SettingsService {

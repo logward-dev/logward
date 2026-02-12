@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { alertsAPI, type CreateAlertRuleInput, type PreviewSuggestion } from "$lib/api/alerts";
+	import { alertsAPI, type CreateAlertRuleInput, type PreviewSuggestion, type AlertType, type BaselineType } from "$lib/api/alerts";
 	import { sigmaAPI } from "$lib/api/sigma";
 	import { toastStore } from "$lib/stores/toast";
 	import { checklistStore } from "$lib/stores/checklist";
@@ -18,6 +18,10 @@
 	import Spinner from "$lib/components/Spinner.svelte";
 	import AlertPreview from "$lib/components/alerts/AlertPreview.svelte";
 	import Eye from "@lucide/svelte/icons/eye";
+	import Bell from "@lucide/svelte/icons/bell";
+	import ChevronDown from "@lucide/svelte/icons/chevron-down";
+	import ChevronUp from "@lucide/svelte/icons/chevron-up";
+	import TrendingUp from "@lucide/svelte/icons/trending-up";
 	import { ChannelSelector } from "$lib/components/notification-channels";
 
 	interface Props {
@@ -48,8 +52,24 @@
 	let sigmaYaml = $state("");
 	let sigmaSelectedChannelIds = $state<string[]>([]);
 
+	// Alert type state
+	let alertType = $state<AlertType>("threshold");
+	let baselineType = $state<BaselineType>("rolling_7d_avg");
+	let deviationMultiplier = $state(3);
+	let minBaselineValue = $state(10);
+	let cooldownMinutes = $state(60);
+	let sustainedMinutes = $state(5);
+	let showAdvancedRoc = $state(false);
+
 	let submitting = $state(false);
 	let showPreview = $state(false);
+
+	const baselineTypeOptions: { value: BaselineType; label: string; desc: string }[] = [
+		{ value: "rolling_7d_avg", label: "7-day rolling avg", desc: "Average of the same hour over the last 7 days" },
+		{ value: "same_time_yesterday", label: "Same time yesterday", desc: "Compare with the same hour yesterday" },
+		{ value: "same_day_last_week", label: "Same day last week", desc: "Compare with the same day/hour last week" },
+		{ value: "percentile_p95", label: "95th percentile (7d)", desc: "95th percentile of hourly rates over 7 days" },
+	];
 
 	const availableLevels = [
 		"debug",
@@ -78,6 +98,14 @@
 		timeWindow = 5;
 		selectedChannelIds = [];
 
+		alertType = "threshold";
+		baselineType = "rolling_7d_avg";
+		deviationMultiplier = 3;
+		minBaselineValue = 10;
+		cooldownMinutes = 60;
+		sustainedMinutes = 5;
+		showAdvancedRoc = false;
+
 		sigmaYaml = "";
 		sigmaSelectedChannelIds = [];
 
@@ -86,6 +114,7 @@
 	}
 
 	function isFormValidForPreview(): boolean {
+		if (alertType === "rate_of_change") return false;
 		return selectedLevels.size > 0 && threshold >= 1 && timeWindow >= 1;
 	}
 
@@ -114,7 +143,6 @@
 	}
 
 	async function handleBuilderSubmit() {
-		// Validation
 		if (!name.trim()) {
 			toastStore.error("Alert name is required");
 			return;
@@ -125,14 +153,22 @@
 			return;
 		}
 
-		if (threshold < 1) {
-			toastStore.error("Threshold must be at least 1");
-			return;
+		if (alertType === "threshold") {
+			if (threshold < 1) {
+				toastStore.error("Threshold must be at least 1");
+				return;
+			}
+			if (timeWindow < 1) {
+				toastStore.error("Time window must be at least 1 minute");
+				return;
+			}
 		}
 
-		if (timeWindow < 1) {
-			toastStore.error("Time window must be at least 1 minute");
-			return;
+		if (alertType === "rate_of_change") {
+			if (deviationMultiplier < 1.5 || deviationMultiplier > 20) {
+				toastStore.error("Deviation multiplier must be between 1.5 and 20");
+				return;
+			}
 		}
 
 		if (selectedChannelIds.length === 0) {
@@ -150,10 +186,19 @@
 				enabled: true,
 				service: service.trim() || null,
 				level: Array.from(selectedLevels) as any,
-				threshold,
-				timeWindow,
+				threshold: alertType === "rate_of_change" ? 1 : threshold,
+				timeWindow: alertType === "rate_of_change" ? 60 : timeWindow,
+				alertType,
 				channelIds: selectedChannelIds,
 			};
+
+			if (alertType === "rate_of_change") {
+				input.baselineType = baselineType;
+				input.deviationMultiplier = deviationMultiplier;
+				input.minBaselineValue = minBaselineValue;
+				input.cooldownMinutes = cooldownMinutes;
+				input.sustainedMinutes = sustainedMinutes;
+			}
 
 			await alertsAPI.createAlertRule(input);
 
@@ -189,7 +234,6 @@
 				channelIds: sigmaSelectedChannelIds.length > 0 ? sigmaSelectedChannelIds : undefined,
 			});
 
-			// Check for errors
 			if (result.errors && result.errors.length > 0) {
 				const errorMsg = `Import failed: ${result.errors.join(", ")}`;
 				toastStore.error(errorMsg);
@@ -260,13 +304,44 @@
 						handleSubmit();
 					}}
 				>
+					<!-- Alert Type Toggle -->
+					<div class="space-y-2">
+						<Label>Alert Type</Label>
+						<div class="grid grid-cols-2 gap-2">
+							<button
+								type="button"
+								class="flex items-center gap-2 p-3 rounded-lg border-2 text-left transition-colors {alertType === 'threshold' ? 'border-primary bg-primary/5' : 'border-muted hover:border-muted-foreground/30'}"
+								onclick={() => (alertType = "threshold")}
+								disabled={submitting}
+							>
+								<Bell class="w-5 h-5 {alertType === 'threshold' ? 'text-primary' : 'text-muted-foreground'}" />
+								<div>
+									<div class="font-medium text-sm">Threshold</div>
+									<div class="text-xs text-muted-foreground">Fixed log count limit</div>
+								</div>
+							</button>
+							<button
+								type="button"
+								class="flex items-center gap-2 p-3 rounded-lg border-2 text-left transition-colors {alertType === 'rate_of_change' ? 'border-primary bg-primary/5' : 'border-muted hover:border-muted-foreground/30'}"
+								onclick={() => (alertType = "rate_of_change")}
+								disabled={submitting}
+							>
+								<TrendingUp class="w-5 h-5 {alertType === 'rate_of_change' ? 'text-primary' : 'text-muted-foreground'}" />
+								<div>
+									<div class="font-medium text-sm">Rate of Change</div>
+									<div class="text-xs text-muted-foreground">Anomaly vs baseline</div>
+								</div>
+							</button>
+						</div>
+					</div>
+
 					<!-- Alert Name -->
 					<div class="space-y-2">
 						<Label for="name">Alert Name *</Label>
 						<Input
 							id="name"
 							type="text"
-							placeholder="High error rate"
+							placeholder={alertType === "rate_of_change" ? "Error rate anomaly" : "High error rate"}
 							bind:value={name}
 							disabled={submitting}
 							required
@@ -312,42 +387,150 @@
 						</p>
 					</div>
 
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
-							<Label for="threshold">Threshold *</Label>
-							<Input
-								id="threshold"
-								type="number"
-								min="1"
-								bind:value={threshold}
-								disabled={submitting}
-								required
-							/>
-							<p class="text-xs text-muted-foreground">
-								Number of logs
-							</p>
+					{#if alertType === "threshold"}
+						<!-- Threshold Config -->
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-2">
+								<Label for="threshold">Threshold *</Label>
+								<Input
+									id="threshold"
+									type="number"
+									min="1"
+									bind:value={threshold}
+									disabled={submitting}
+									required
+								/>
+								<p class="text-xs text-muted-foreground">
+									Number of logs
+								</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="timeWindow">Time Window *</Label>
+								<Input
+									id="timeWindow"
+									type="number"
+									min="1"
+									bind:value={timeWindow}
+									disabled={submitting}
+									required
+								/>
+								<p class="text-xs text-muted-foreground">Minutes</p>
+							</div>
 						</div>
 
-						<div class="space-y-2">
-							<Label for="timeWindow">Time Window *</Label>
-							<Input
-								id="timeWindow"
-								type="number"
-								min="1"
-								bind:value={timeWindow}
-								disabled={submitting}
-								required
-							/>
-							<p class="text-xs text-muted-foreground">Minutes</p>
+						<div class="p-3 bg-muted rounded-md text-sm">
+							Alert triggers when <strong>{threshold}</strong> or more
+							logs matching the criteria are received within
+							<strong>{timeWindow}</strong>
+							minute{timeWindow > 1 ? "s" : ""}
 						</div>
-					</div>
+					{:else}
+						<!-- Rate of Change Config -->
+						<div class="space-y-4">
+							<div class="space-y-2">
+								<Label>Baseline Method *</Label>
+								<div class="grid grid-cols-2 gap-2">
+									{#each baselineTypeOptions as opt}
+										<button
+											type="button"
+											class="p-2.5 rounded-lg border text-left transition-colors {baselineType === opt.value ? 'border-primary bg-primary/5' : 'border-muted hover:border-muted-foreground/30'}"
+											onclick={() => (baselineType = opt.value)}
+											disabled={submitting}
+										>
+											<div class="font-medium text-sm">{opt.label}</div>
+											<div class="text-xs text-muted-foreground">{opt.desc}</div>
+										</button>
+									{/each}
+								</div>
+							</div>
 
-					<div class="p-3 bg-muted rounded-md text-sm">
-						Alert triggers when <strong>{threshold}</strong> or more
-						logs matching the criteria are received within
-						<strong>{timeWindow}</strong>
-						minute{timeWindow > 1 ? "s" : ""}
-					</div>
+							<div class="space-y-2">
+								<Label for="deviationMultiplier">Deviation Multiplier *</Label>
+								<Input
+									id="deviationMultiplier"
+									type="number"
+									min="1.5"
+									max="20"
+									step="0.5"
+									bind:value={deviationMultiplier}
+									disabled={submitting}
+									required
+								/>
+								<p class="text-xs text-muted-foreground">
+									Alert when current rate exceeds baseline by this factor (e.g., 3x = 200% above normal)
+								</p>
+							</div>
+
+							<div class="p-3 bg-muted rounded-md text-sm">
+								Alert triggers when log rate is <strong>{deviationMultiplier}x</strong> above
+								the <strong>{baselineTypeOptions.find(o => o.value === baselineType)?.label}</strong> baseline
+							</div>
+
+							<!-- Advanced Settings -->
+							<div class="border rounded-lg">
+								<button
+									type="button"
+									class="flex items-center justify-between w-full p-3 text-sm font-medium hover:bg-muted/50 rounded-lg"
+									onclick={() => (showAdvancedRoc = !showAdvancedRoc)}
+								>
+									<span>Advanced Settings</span>
+									{#if showAdvancedRoc}
+										<ChevronUp class="w-4 h-4" />
+									{:else}
+										<ChevronDown class="w-4 h-4" />
+									{/if}
+								</button>
+								{#if showAdvancedRoc}
+									<div class="px-3 pb-3 space-y-3 border-t pt-3">
+										<div class="grid grid-cols-3 gap-3">
+											<div class="space-y-1">
+												<Label for="minBaseline" class="text-xs">Min Baseline</Label>
+												<Input
+													id="minBaseline"
+													type="number"
+													min="0"
+													bind:value={minBaselineValue}
+													disabled={submitting}
+												/>
+												<p class="text-xs text-muted-foreground">
+													Ignore if baseline below this (logs/hr)
+												</p>
+											</div>
+											<div class="space-y-1">
+												<Label for="cooldown" class="text-xs">Cooldown (min)</Label>
+												<Input
+													id="cooldown"
+													type="number"
+													min="5"
+													max="1440"
+													bind:value={cooldownMinutes}
+													disabled={submitting}
+												/>
+												<p class="text-xs text-muted-foreground">
+													Wait between alerts
+												</p>
+											</div>
+											<div class="space-y-1">
+												<Label for="sustained" class="text-xs">Sustained (min)</Label>
+												<Input
+													id="sustained"
+													type="number"
+													min="1"
+													max="60"
+													bind:value={sustainedMinutes}
+													disabled={submitting}
+												/>
+												<p class="text-xs text-muted-foreground">
+													Anomaly must persist
+												</p>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
 
 					<!-- Notification Channels -->
 					<div class="space-y-2">
@@ -363,37 +546,39 @@
 						</p>
 					</div>
 
-					<!-- Preview Section -->
-					<div class="border-t pt-4 mt-2">
-						{#if !showPreview}
-							<div class="flex justify-center">
-								<Button
-									type="button"
-									variant="outline"
-									onclick={handleShowPreview}
-									disabled={submitting || !isFormValidForPreview()}
-									class="gap-2"
-								>
-									<Eye class="h-4 w-4" />
-									Preview Alert Behavior
-								</Button>
-							</div>
-							<p class="text-xs text-center text-muted-foreground mt-2">
-								See how this alert would have performed on historical data
-							</p>
-						{/if}
+					<!-- Preview Section (threshold only) -->
+					{#if alertType === "threshold"}
+						<div class="border-t pt-4 mt-2">
+							{#if !showPreview}
+								<div class="flex justify-center">
+									<Button
+										type="button"
+										variant="outline"
+										onclick={handleShowPreview}
+										disabled={submitting || !isFormValidForPreview()}
+										class="gap-2"
+									>
+										<Eye class="h-4 w-4" />
+										Preview Alert Behavior
+									</Button>
+								</div>
+								<p class="text-xs text-center text-muted-foreground mt-2">
+									See how this alert would have performed on historical data
+								</p>
+							{/if}
 
-						<AlertPreview
-							{organizationId}
-							{projectId}
-							service={service.trim() || null}
-							levels={Array.from(selectedLevels) as any}
-							{threshold}
-							{timeWindow}
-							bind:visible={showPreview}
-							onSuggestionApply={handleSuggestionApply}
-						/>
-					</div>
+							<AlertPreview
+								{organizationId}
+								{projectId}
+								service={service.trim() || null}
+								levels={Array.from(selectedLevels) as any}
+								{threshold}
+								{timeWindow}
+								bind:visible={showPreview}
+								onSuggestionApply={handleSuggestionApply}
+							/>
+						</div>
+					{/if}
 				</form>
 			</TabsContent>
 

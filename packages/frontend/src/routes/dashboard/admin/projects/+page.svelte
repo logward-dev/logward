@@ -21,6 +21,16 @@
         Trash2,
     } from "lucide-svelte";
     import { browser } from "$app/environment";
+    import {
+        AlertDialog,
+        AlertDialogAction,
+        AlertDialogCancel,
+        AlertDialogContent,
+        AlertDialogDescription,
+        AlertDialogFooter,
+        AlertDialogHeader,
+        AlertDialogTitle,
+    } from "$lib/components/ui/alert-dialog";
 
     let projects = $state<ProjectBasic[]>([]);
     let loading = $state(true);
@@ -29,7 +39,10 @@
     let currentPage = $state(1);
     let totalPages = $state(1);
     let total = $state(0);
-    let deleteConfirm = $state<string | null>(null);
+    let showDeleteDialog = $state(false);
+    let deleteTargetId = $state<string | null>(null);
+    let deleteTargetName = $state("");
+    let deleting = $state(false);
 
     async function loadProjects() {
         if (!$authStore.user?.is_admin) return;
@@ -53,21 +66,24 @@
         }
     }
 
-    async function handleDelete(projectId: string, projectName: string) {
-        if (deleteConfirm !== projectId) {
-            deleteConfirm = projectId;
-            setTimeout(() => {
-                deleteConfirm = null;
-            }, 3000);
-            return;
-        }
+    function confirmDelete(projectId: string, projectName: string) {
+        deleteTargetId = projectId;
+        deleteTargetName = projectName;
+        showDeleteDialog = true;
+    }
 
+    async function handleDelete() {
+        if (!deleteTargetId) return;
+        deleting = true;
         try {
-            await adminAPI.deleteProject(projectId);
+            await adminAPI.deleteProject(deleteTargetId);
+            showDeleteDialog = false;
+            deleteTargetId = null;
             await loadProjects();
-            deleteConfirm = null;
         } catch (e: any) {
             error = `Failed to delete project: ${e.message}`;
+        } finally {
+            deleting = false;
         }
     }
 
@@ -287,16 +303,12 @@
                                             variant="destructive"
                                             size="sm"
                                             onclick={() =>
-                                                handleDelete(
+                                                confirmDelete(
                                                     project.id,
                                                     project.name,
                                                 )}
                                         >
-                                            {#if deleteConfirm === project.id}
-                                                Confirm?
-                                            {:else}
-                                                <Trash2 class="h-4 w-4" />
-                                            {/if}
+                                            <Trash2 class="h-4 w-4" />
                                         </Button>
                                     </div>
                                 </Table.Cell>
@@ -337,3 +349,21 @@
         </CardContent>
     </Card>
 </div>
+
+<AlertDialog bind:open={showDeleteDialog}>
+    <AlertDialogContent>
+        <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+                Are you sure you want to delete <strong>{deleteTargetName}</strong>?
+                This will permanently delete all logs, API keys, alert rules, and sigma rules. This action cannot be undone.
+            </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onclick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete Project"}
+            </AlertDialogAction>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>

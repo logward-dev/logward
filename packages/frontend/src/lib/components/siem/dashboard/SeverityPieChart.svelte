@@ -107,8 +107,8 @@
 		chart = echarts.init(chartContainer);
 		chart.setOption(getChartOption());
 
-		const handleResize = () => chart?.resize();
-		window.addEventListener('resize', handleResize);
+		const resizeObserver = new ResizeObserver(() => chart?.resize());
+		resizeObserver.observe(chartContainer);
 
 		// Subscribe to theme changes
 		const unsubscribe = themeStore.subscribe(() => {
@@ -118,7 +118,7 @@
 		});
 
 		return () => {
-			window.removeEventListener('resize', handleResize);
+			resizeObserver.disconnect();
 			unsubscribe();
 			chart?.dispose();
 		};

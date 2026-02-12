@@ -5,6 +5,122 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-12
+
+### Added
+
+- **Host Security Detection Packs**: 3 new pre-built detection packs for host-based security monitoring (15 rules total, all MITRE ATT&CK mapped)
+  - **Antivirus & Malware Pack** (`antivirus-malware`): Malware detection (ClamAV FOUND patterns), AV scan failures, webshell in web directories (compound condition), outdated virus signatures, quarantine/removal failures
+  - **Rootkit Detection Pack** (`rootkit-detection`): Rootkit identification (rkhunter/chkrootkit), hidden processes, system binary tampering (checksum mismatch), suspicious kernel modules, promiscuous network interfaces
+  - **File Integrity Monitoring Pack** (`file-integrity`): Critical system file changes (/etc/passwd, /etc/shadow, /boot), SSH config modifications, web directory file changes, cron job tampering, mass file changes (ransomware indicator)
+  - All rules use `logsource.product: linux` for proper scoping
+  - Compound conditions (`selection_malware and selection_path`) on webshell and FIM rules to reduce false positives
+  - Integration test script (`testing-scripts/host-security-packs-test.ts`) with 28 assertions covering enable/disable lifecycle, sigma rule generation, MITRE mapping, log ingestion, and cleanup
+
+### Fixed
+
+- **Sigma API missing tags and MITRE fields**: `getSigmaRules` (list) and `getSigmaRuleById` (detail) were not including `tags`, `mitreTactics`, and `mitreTechniques` in the camelCase response transformation — fields were stored correctly in the DB but silently dropped from API responses. Also fixed the same gap in `importSigmaRule` return value.
+
+- **Keyboard Shortcuts for Power Users** (#42): Comprehensive keyboard shortcuts system for faster navigation and actions
+  - **Command Palette** (`Ctrl/Cmd+K`): Fuzzy search over pages and quick actions (toggle sidebar, reload, toggle theme, show shortcuts). Search trigger button with shortcut hint in the header
+  - **Help Modal** (`?`): Grouped list of all available shortcuts with platform-aware key display (⌘ on Mac, Ctrl on Windows)
+  - **Sequence Navigation** (`G then D/S/A/P/T/E/R/X`): GitHub-style two-key navigation to Dashboard, Logs, Alerts, Projects, Traces, Security, Errors, Settings
+  - **Search Page Shortcuts**: `/` focus search input, `J/K` navigate logs with visual highlight, `Enter` expand/collapse selected log, `R` refresh results
+  - **Dashboard Shortcuts**: `R` refresh dashboard data
+  - **Global Shortcuts**: `Ctrl/Cmd+/` go to search / focus search input, `Ctrl/Cmd+B` toggle sidebar, `Escape` close modals
+  - **Discoverability**: First-time toast notification, shortcut hints in command palette items, `⌘K`/`Ctrl+K` badge in header
+  - Input-aware: shortcuts suppressed when typing in inputs, textareas, or comboboxes
+
+- **Admin Dashboard Revision**: Complete redesign of the admin panel for platform-level observability
+  - **Dashboard home**: 4 health status cards (system health, ingestion rate, active issues, total logs), platform activity chart (24h timeline of logs/detections/spans), 8 stat cards (users, orgs, projects, ingestion, alerts, queues, database, redis), top organizations and projects tables
+  - **System Health page** (`/dashboard/admin/system-health`): Database/connection pool/Redis diagnostics, database tables overview, TimescaleDB compression stats with progress bars, continuous aggregates health with staleness indicators, storage & performance metrics, worker queue details
+  - **Slow queries monitoring**: Active running queries table (from `pg_stat_activity`) with duration color-coding, historical slowest queries table (from `pg_stat_statements` when available)
+  - **Platform timeline chart**: ECharts area chart with 3 series (logs, detections, spans) using continuous aggregates for fast queries
+  - 5 new backend endpoints: `platform-timeline`, `active-issues`, `compression`, `continuous-aggregates`, `slow-queries`
+
+- **PII Masking at Ingestion**: Automatic detection and masking of sensitive data in log entries before storage (GDPR-compliant, data never touches disk unmasked)
+  - **Phase 1 — Content patterns**: Built-in regex rules for email, credit card, phone (US), SSN, IPv4, API keys/secrets
+  - **Phase 2 — Field name masking**: Scans metadata JSON keys (`password`, `token`, `secret`, `authorization`, etc.) and masks their values
+  - **Phase 3 — Custom rules**: Users can define org-level or project-level regex patterns and field name lists
+  - Three masking strategies: `mask` (partial — `u***@domain.com`), `redact` (full — `[REDACTED_EMAIL]`), `hash` (SHA-256 with per-org salt — `[HASH:abc123...]`)
+  - REST API: `GET/POST/PUT/DELETE /api/v1/pii-masking/rules` + `POST /api/v1/pii-masking/test`
+  - Settings UI at `/dashboard/settings/pii-masking` with rule management, enable/disable switches, action dropdowns, and live test panel (before/after preview)
+  - Built-in rules disabled by default — users opt-in per rule from the UI
+  - Project-level rules override org-level rules with the same name
+  - Database migration `021_add_pii_masking` (`pii_masking_rules` + `organization_pii_salts` tables)
+
+- **Timeline Event Markers**: Visual indicators on the Logs Timeline chart showing when alerts or security detections occurred
+  - Scatter circle markers overlaid on the existing chart at matching hourly buckets
+  - Red circles for alert triggers, purple for security detections, larger when both in same hour
+  - Hover tooltip shows alert rule names, log counts, and detection severity breakdown
+  - "Events" toggle in legend to show/hide markers
+  - Backend endpoint `GET /api/v1/dashboard/timeline-events` queries `alert_history` + `detection_events_hourly_stats` (with raw fallback)
+  - Graceful degradation: chart unchanged when no events exist
+
+- **Rate-of-Change Alerts**: Baseline-based anomaly detection that compares current log volume against historical patterns, triggering when deviation exceeds a configurable multiplier
+  - **4 baseline methods**: `same_time_yesterday`, `same_day_last_week`, `rolling_7d_avg` (default), `percentile_p95` — all computed on-the-fly from `logs_hourly_stats` continuous aggregate
+  - **Anti-spam**: Sustained check (configurable minutes before firing), cooldown period (default 60min), minimum baseline value guard (ignores low-traffic noise)
+  - **Smart defaults**: 3x deviation multiplier, 10 min baseline, 60min cooldown, 5min sustained check
+  - Frontend: Alert type toggle (Threshold / Rate of Change), baseline method picker with descriptions, deviation multiplier slider, collapsible advanced settings (min baseline, cooldown, sustained)
+  - History display: "Anomaly" badge for rate-of-change alerts, baseline metadata (current rate vs baseline, deviation ratio, method used)
+  - Email subject line: `[Anomaly] rule — Nx above baseline` (vs `[Alert]` for threshold)
+  - Webhook payload includes `baseline_metadata` and `event_type: "anomaly"` for rate-of-change alerts
+  - Zod validation: rate-of-change requires `baselineType` + `deviationMultiplier`, multiplier range 1.5–20
+  - Database migration `022_add_rate_of_change_alerts` (adds columns to `alert_rules` + `baseline_metadata` JSONB to `alert_history`)
+  - 19 new tests (routes, baseline calculator, service dispatching, validation) — 105 total alert tests passing
+
+- **Version Update Notifications**: Admin dashboard banner that checks GitHub releases for new versions
+  - Backend endpoint `GET /api/v1/admin/version-check` proxies GitHub Releases API with 6-hour cache (via CacheManager)
+  - Compares current `package.json` version against latest stable and beta releases using semver
+  - Release channel setting (`stable` / `beta`) configurable from Admin Settings page, persisted as `updates.channel` in `system_settings`
+  - Blue "Update available" banner with version comparison and direct link to release, or green "Up to date" indicator
+  - Dynamic version in `/health` endpoint (replaced hardcoded string with `package.json` read)
+
+### Fixed
+
+- **UI layout fixes**: Fixed Badge components stretching to fill container width in alert history detection cards and other grid layouts
+
+- **Client errors returning 500 instead of 4xx**: Multiple API routes were returning Internal Server Error for invalid client input
+  - Global error handler now detects Fastify validation errors (`FST_ERR_VALIDATION`) as 400 even when `statusCode` is missing
+  - SIEM routes (10 endpoints): `z.parse()` failures were caught as 500 — now return 400 with validation details
+  - Exceptions routes (8 endpoints): same `z.parse()` pattern — now return 400
+  - OTLP content-type parsers: gzip decompression errors now set `statusCode: 400` instead of falling through to 500
+  - Retention route: fixed `error.name === 'ZodError'` check to use `instanceof` for reliability
+
+- **Log Context metadata expanding dialog infinitely**: Opening metadata in the Log Context dialog caused horizontal overflow, stretching the dialog indefinitely. Added `max-w-full` to `<pre>` blocks and `overflow-hidden` to log entry containers so metadata scrolls within its bounds
+
+- **Email logo not rendering in some clients**: Switched logo URLs from `.svg` to `.png` — many email clients (Outlook, Gmail) don't support SVG in `<img>` tags
+
+- **Client errors (4xx) logged as ERROR**: The `onError` hook in the internal logging plugin was logging all errors at `error` level regardless of status code — a 415 Unsupported Media Type would appear as a critical error in the dashboard. Now 4xx errors are logged as `warn`, 5xx as `error`. Also added `skipPaths` to the `onError` hook to avoid logging noise from ingestion endpoints.
+
+- **Continuous Aggregates showing "Refresh: unknown"**: Fixed backend query reading `schedule_interval` from JSONB `config` field instead of the direct column on `timescaledb_information.jobs`
+
+- **HealthStats type mismatch**: Frontend had `'up'|'down'` status values while backend uses `'healthy'|'degraded'|'down'`; also missing `pool` property and `'not_configured'` redis status
+
+- **Admin panel consistency fixes**:
+  - Added admin guard (`is_admin` check + redirect) to Users, Organizations, and Auth Providers pages — previously only checked server-side
+  - Replaced unsafe click-to-confirm delete patterns (3-5s timeout) with proper `AlertDialog` confirmation modals on Projects list, Project detail, and Organization detail pages
+  - Replaced browser `confirm()` in Auth Providers with `AlertDialog`
+  - Replaced custom overlay modal in Organization detail with standard `AlertDialog` component
+  - Fixed `window.location.href` navigation (full page reload) with SvelteKit `goto()` in Organization detail and Project detail pages
+  - Fixed Svelte 4 `authStore.subscribe()` pattern in Auth Providers to use reactive `$authStore`
+
+- **Charts not resizing on sidebar toggle**: ECharts instances (LogsChart, TimelineWidget, SeverityPieChart, MitreHeatmap, ServiceMap, PreviewTimeline) stayed at previous size when toggling the sidebar or changing content density — replaced `window.resize` listener with `ResizeObserver` on chart containers
+
+- **Notification click navigating to wrong organization**: Clicking a notification while viewing a different organization led to "not found" errors — now auto-switches to the notification's organization before navigating
+
+### Performance
+
+- **PII masking zero-cost when disabled**: Cache hit is a single `Map.get()` + timestamp check (~0.001ms), returns immediately when no rules are enabled
+- **Compiled regex reuse**: Content rules use `lastIndex = 0` reset instead of `new RegExp()` per string — eliminates ~6000 object allocations per 1000-log batch
+- **Hot path allocation reduction**: Ingestion path skips path-tracking arrays and template string building (`trackPaths=false`), uses `Object.keys()` instead of `Object.entries()`
+- **Credit card regex rewrite**: Replaced greedy `(?:\d[ -]*?){13,19}` (backtracking-prone, false positives on any 13+ digit sequence) with specific pattern matching `XXXX-XXXX-XXXX-XXXX` format or known issuer prefixes (Visa/MC/Amex/Discover)
+- **Early exit for simple messages**: Skips all regex evaluation for strings <6 chars or containing only `[a-zA-Z0-9 _-]`
+- **In-memory rule cache**: 5-min TTL per org+project combination, invalidated on CRUD operations
+- **ReDoS protection**: Custom regex patterns validated with `safe-regex2`, lookahead/lookbehind blocked, quantifiers capped at 100
+
+---
+
 ## [0.5.5] - 2026-02-06
 
 ### Fixed

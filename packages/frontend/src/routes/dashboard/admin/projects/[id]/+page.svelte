@@ -22,13 +22,25 @@
         Building2,
     } from "lucide-svelte";
     import { Badge } from "$lib/components/ui/badge";
+    import {
+        AlertDialog,
+        AlertDialogAction,
+        AlertDialogCancel,
+        AlertDialogContent,
+        AlertDialogDescription,
+        AlertDialogFooter,
+        AlertDialogHeader,
+        AlertDialogTitle,
+    } from "$lib/components/ui/alert-dialog";
+    import { goto } from "$app/navigation";
 
     const projectId = $derived(page.params.id);
 
     let project = $state<ProjectDetails | null>(null);
     let loading = $state(true);
     let error = $state<string | null>(null);
-    let deleteConfirm = $state(false);
+    let showDeleteDialog = $state(false);
+    let deleting = $state(false);
 
     async function loadProject() {
         if (!$authStore.user?.is_admin || !projectId) return;
@@ -46,21 +58,15 @@
     }
 
     async function handleDelete() {
-        if (!deleteConfirm) {
-            deleteConfirm = true;
-            setTimeout(() => {
-                deleteConfirm = false;
-            }, 5000);
-            return;
-        }
-
+        deleting = true;
         try {
             await adminAPI.deleteProject(projectId);
-            // Redirect to projects list after delete
-            window.location.href = "/dashboard/admin/projects";
+            goto("/dashboard/admin/projects");
         } catch (e: any) {
             error = `Failed to delete project: ${e.message}`;
-            deleteConfirm = false;
+        } finally {
+            deleting = false;
+            showDeleteDialog = false;
         }
     }
 
@@ -408,18 +414,32 @@
                     </div>
                     <Button
                         variant="destructive"
-                        onclick={handleDelete}
+                        onclick={() => (showDeleteDialog = true)}
                         class="ml-4"
                     >
-                        {#if deleteConfirm}
-                            <Trash2 class="mr-2 h-4 w-4" />
-                            Confirm Delete
-                        {:else}
-                            Delete Project
-                        {/if}
+                        <Trash2 class="mr-2 h-4 w-4" />
+                        Delete Project
                     </Button>
                 </div>
             </CardContent>
         </Card>
     {/if}
 </div>
+
+<AlertDialog bind:open={showDeleteDialog}>
+    <AlertDialogContent>
+        <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+                Are you sure you want to delete <strong>{project?.name}</strong>?
+                This will permanently delete all logs, API keys, alert rules, and sigma rules. This action cannot be undone.
+            </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onclick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete Project"}
+            </AlertDialogAction>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>

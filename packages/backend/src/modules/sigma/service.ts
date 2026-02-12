@@ -157,6 +157,9 @@ export class SigmaService {
       alertRuleId: record.alert_rule_id,
       conversionStatus: record.conversion_status,
       conversionNotes: record.conversion_notes,
+      tags: record.tags,
+      mitreTactics: record.mitre_tactics,
+      mitreTechniques: record.mitre_techniques,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     } as unknown as SigmaRuleRecord;
@@ -193,6 +196,9 @@ export class SigmaService {
       conversionStatus: record.conversion_status,
       conversionNotes: record.conversion_notes,
       enabled: record.enabled,
+      tags: record.tags,
+      mitreTactics: record.mitre_tactics,
+      mitreTechniques: record.mitre_techniques,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     })) as unknown as SigmaRuleRecord[];
@@ -236,6 +242,9 @@ export class SigmaService {
       conversionStatus: record.conversion_status,
       conversionNotes: record.conversion_notes,
       enabled: record.enabled,
+      tags: record.tags,
+      mitreTactics: record.mitre_tactics,
+      mitreTechniques: record.mitre_techniques,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     } as unknown as SigmaRuleRecord;

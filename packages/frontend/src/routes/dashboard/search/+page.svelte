@@ -5,6 +5,7 @@
   import { page } from "$app/state";
   import { currentOrganization } from "$lib/stores/organization";
   import { authStore } from "$lib/stores/auth";
+  import { shortcutsStore } from "$lib/stores/shortcuts";
   import { checklistStore } from "$lib/stores/checklist";
   import { ProjectsAPI } from "$lib/api/projects";
   import { logsAPI, type SearchMode } from "$lib/api/logs";
@@ -71,6 +72,7 @@
   let expandedRows = $state(new Set<number>());
   let isLoading = $state(false);
   let logsContainer = $state<HTMLDivElement | null>(null);
+  let selectedLogIndex = $state(-1);
 
   let searchQuery = $state("");
   let searchMode = $state<SearchMode>("fulltext");
@@ -180,6 +182,66 @@
   }
 
   onMount(() => {
+    // Register page-specific keyboard shortcuts
+    shortcutsStore.setScope('search');
+    shortcutsStore.register([
+      {
+        id: 'search:focus',
+        combo: '/',
+        label: 'Focus search input',
+        scope: 'search',
+        category: 'search',
+        action: () => {
+          const el = document.getElementById('search') as HTMLInputElement | null;
+          el?.focus();
+        },
+      },
+      {
+        id: 'search:refresh',
+        combo: 'r',
+        label: 'Refresh results',
+        scope: 'search',
+        category: 'actions',
+        action: () => loadLogs(),
+      },
+      {
+        id: 'search:next-log',
+        combo: 'j',
+        label: 'Next log',
+        scope: 'search',
+        category: 'navigation',
+        action: () => {
+          if (logs.length === 0) return;
+          selectedLogIndex = Math.min(selectedLogIndex + 1, logs.length - 1);
+          scrollToSelectedLog();
+        },
+      },
+      {
+        id: 'search:prev-log',
+        combo: 'k',
+        label: 'Previous log',
+        scope: 'search',
+        category: 'navigation',
+        action: () => {
+          if (logs.length === 0) return;
+          selectedLogIndex = Math.max(selectedLogIndex - 1, 0);
+          scrollToSelectedLog();
+        },
+      },
+      {
+        id: 'search:expand-log',
+        combo: 'enter',
+        label: 'Expand/collapse selected log',
+        scope: 'search',
+        category: 'actions',
+        action: () => {
+          if (selectedLogIndex >= 0 && selectedLogIndex < logs.length) {
+            toggleRow(selectedLogIndex);
+          }
+        },
+      },
+    ]);
+
     // Restore search mode preference from session storage
     const savedSearchMode = sessionStorage.getItem("logtide_search_mode");
     if (savedSearchMode === "fulltext" || savedSearchMode === "substring") {
@@ -430,7 +492,15 @@
 
   onDestroy(() => {
     stopLiveTail();
+    shortcutsStore.unregisterScope('search');
   });
+
+  function scrollToSelectedLog() {
+    if (viewMode !== 'table') return;
+    const rows = logsContainer?.querySelectorAll('[data-log-row]');
+    if (!rows || selectedLogIndex < 0 || selectedLogIndex >= rows.length) return;
+    rows[selectedLogIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
   let availableServices = $state<string[]>([]);
   let isLoadingServices = $state(false);
@@ -1377,7 +1447,7 @@
               maxHeight="600px"
             />
           {:else}
-            <div class="rounded-md border overflow-x-auto">
+            <div class="rounded-md border overflow-x-auto" bind:this={logsContainer}>
               <Table class="w-full">
                 <TableHeader>
                   <TableRow>
@@ -1392,7 +1462,7 @@
                 <TableBody>
                   {#each paginatedLogs as log, i}
                     {@const globalIndex = i}
-                    <TableRow>
+                    <TableRow data-log-row class="{selectedLogIndex === globalIndex ? 'bg-accent/50 ring-1 ring-primary/30' : ''}">
                       <TableCell class="font-mono text-xs">
                         {formatDateTime(log.time)}
                       </TableCell>

@@ -59,6 +59,7 @@
 	import ChevronDown from "@lucide/svelte/icons/chevron-down";
 	import ChevronUp from "@lucide/svelte/icons/chevron-up";
 	import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
+	import TrendingUp from "@lucide/svelte/icons/trending-up";
 	import HelpTooltip from "$lib/components/HelpTooltip.svelte";
 	import { checklistStore } from "$lib/stores/checklist";
 	import { layoutStore } from "$lib/stores/layout";
@@ -357,6 +358,13 @@
 		}
 	}
 
+	const baselineTypeLabels: Record<string, string> = {
+		same_time_yesterday: 'Same time yesterday',
+		same_day_last_week: 'Same day last week',
+		rolling_7d_avg: '7-day rolling avg',
+		percentile_p95: '95th percentile (7d)',
+	};
+
 	function handleSigmaView(event: CustomEvent<SigmaRule>) {
 		selectedSigmaRule = event.detail;
 		showSigmaDetails = true;
@@ -454,6 +462,12 @@
 									<div class="space-y-1">
 										<div class="flex items-center gap-3">
 											<CardTitle>{alert.name}</CardTitle>
+											{#if alert.alertType === 'rate_of_change'}
+												<span class="px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 flex items-center gap-1">
+													<TrendingUp class="w-3 h-3" />
+													Anomaly
+												</span>
+											{/if}
 											<span class="px-2 py-1 text-xs font-semibold rounded-full {alert.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
 												{alert.enabled ? "Enabled" : "Disabled"}
 											</span>
@@ -496,10 +510,17 @@
 										</div>
 									</div>
 									<div>
-										<span class="font-medium">Threshold:</span>
-										<span class="ml-2">
-											{alert.threshold} logs in {alert.timeWindow} minute{alert.timeWindow > 1 ? "s" : ""}
-										</span>
+										{#if alert.alertType === 'rate_of_change'}
+											<span class="font-medium">Trigger:</span>
+											<span class="ml-2">
+												{alert.deviationMultiplier}x above {baselineTypeLabels[alert.baselineType || ''] || 'baseline'}
+											</span>
+										{:else}
+											<span class="font-medium">Threshold:</span>
+											<span class="ml-2">
+												{alert.threshold} logs in {alert.timeWindow} minute{alert.timeWindow > 1 ? "s" : ""}
+											</span>
+										{/if}
 									</div>
 									<div>
 										<span class="font-medium">Notification Channels:</span>
@@ -595,7 +616,14 @@
 									<div class="flex flex-col gap-4">
 										<div class="flex items-start justify-between">
 											<div class="flex items-center gap-2 flex-wrap">
-												<Badge variant="outline" class="text-xs bg-purple-100 text-purple-800">Alert</Badge>
+												{#if history.alertType === 'rate_of_change'}
+													<Badge variant="outline" class="text-xs bg-indigo-100 text-indigo-800 gap-1">
+														<TrendingUp class="w-3 h-3" />
+														Anomaly
+													</Badge>
+												{:else}
+													<Badge variant="outline" class="text-xs bg-purple-100 text-purple-800">Alert</Badge>
+												{/if}
 												<h3 class="font-semibold text-lg">{history.ruleName}</h3>
 												{#if history.notified}
 													<Badge variant="default" class="gap-1">
@@ -628,7 +656,27 @@
 											</div>
 										{/if}
 
-										<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+										{#if history.baselineMetadata}
+											<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Current Rate</span>
+													<span class="font-mono font-semibold text-orange-600 text-base">{Math.round(history.baselineMetadata.current_value)} logs/hr</span>
+												</div>
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Baseline</span>
+													<span class="font-medium">{Math.round(history.baselineMetadata.baseline_value)} logs/hr</span>
+												</div>
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Deviation</span>
+													<span class="font-mono font-semibold text-red-600">{history.baselineMetadata.deviation_ratio}x</span>
+												</div>
+												<div class="flex flex-col gap-1">
+													<span class="text-muted-foreground text-xs">Method</span>
+													<span class="font-medium">{baselineTypeLabels[history.baselineMetadata.baseline_type] || history.baselineMetadata.baseline_type}</span>
+												</div>
+											</div>
+										{:else}
+											<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
 											<div class="flex flex-col gap-1">
 												<span class="text-muted-foreground text-xs">Logs Matched</span>
 												<span class="font-mono font-semibold text-orange-600 text-base">{history.logCount}</span>
@@ -652,6 +700,7 @@
 												</div>
 											</div>
 										</div>
+										{/if}
 
 										<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 											<Clock class="w-4 h-4" />
@@ -757,7 +806,7 @@
 											</div>
 											<div class="flex flex-col gap-1">
 												<span class="text-muted-foreground text-xs">Log Level</span>
-												<Badge variant="outline" class={getLevelColor(detection.logLevel)}>{detection.logLevel}</Badge>
+												<Badge variant="outline" class="w-fit {getLevelColor(detection.logLevel)}">{detection.logLevel}</Badge>
 											</div>
 											{#if detection.traceId}
 												<div class="flex flex-col gap-1">

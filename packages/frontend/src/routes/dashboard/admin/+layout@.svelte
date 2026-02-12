@@ -7,6 +7,7 @@
         FolderKanban,
         Settings,
         KeyRound,
+        HeartPulse,
     } from "lucide-svelte";
     import { cn } from "$lib/utils";
     import Footer from "$lib/components/Footer.svelte";
@@ -19,6 +20,11 @@
             name: "Dashboard",
             href: "/dashboard/admin",
             icon: LayoutDashboard,
+        },
+        {
+            name: "System Health",
+            href: "/dashboard/admin/system-health",
+            icon: HeartPulse,
         },
         {
             name: "User Management",

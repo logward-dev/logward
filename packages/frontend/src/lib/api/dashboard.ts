@@ -45,6 +45,14 @@ export interface RecentError {
   traceId?: string;
 }
 
+export interface TimelineEvent {
+  time: string;
+  alerts: number;
+  detections: number;
+  alertDetails: Array<{ ruleName: string; alertType: string; logCount: number }>;
+  detectionsBySeverity: { critical: number; high: number; medium: number; low: number };
+}
+
 export class DashboardAPI {
   constructor(private getToken: () => string | null) {}
 
@@ -115,6 +123,25 @@ export class DashboardAPI {
 
     const data = await response.json();
     return data.services;
+  }
+
+  async getTimelineEvents(organizationId: string): Promise<TimelineEvent[]> {
+    const params = new URLSearchParams();
+    params.append('organizationId', organizationId);
+
+    const url = `${getApiUrl()}/api/v1/dashboard/timeline-events?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch timeline events: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.events;
   }
 
   async getRecentErrors(organizationId: string): Promise<RecentError[]> {

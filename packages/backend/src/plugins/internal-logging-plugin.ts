@@ -96,6 +96,11 @@ const internalLoggingPlugin: FastifyPluginCallback = (fastify, _options, done) =
   fastify.addHook('onError', async (request: FastifyRequest, _reply: FastifyReply, error: Error) => {
     if (!isInternalLoggingEnabled()) return;
 
+    // Skip logging for certain paths (same as request/response hooks)
+    if (skipPaths.some((path) => request.url.startsWith(path))) {
+      return;
+    }
+
     const logger = getInternalLogger();
     if (!logger) return;
 
@@ -104,19 +109,28 @@ const internalLoggingPlugin: FastifyPluginCallback = (fastify, _options, done) =
     const organizationId = (request as any).organizationId;
     const projectId = (request as any).projectId;
 
+    // Use warn for client errors (4xx), error for server errors (5xx)
+    const errorStatusCode = (error as any).statusCode;
+    const level = errorStatusCode && errorStatusCode >= 400 && errorStatusCode < 500 ? 'warn' : 'error';
+
     // Log error with full stack trace
-    logger.error('http-error', `Request error: ${error.message}`, {
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      },
-      request: {
-        method: request.method,
-        url: request.url,
-        userId,
-        organizationId,
-        projectId,
+    logger.log({
+      service: 'http-error',
+      level,
+      message: `Request error: ${error.message}`,
+      metadata: {
+        error: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        },
+        request: {
+          method: request.method,
+          url: request.url,
+          userId,
+          organizationId,
+          projectId,
+        },
       },
     });
   });

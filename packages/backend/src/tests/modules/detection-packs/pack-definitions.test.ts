@@ -11,6 +11,9 @@ describe('Detection Pack Definitions', () => {
             expect(packIds).toContain('auth-security');
             expect(packIds).toContain('database-health');
             expect(packIds).toContain('payment-billing');
+            expect(packIds).toContain('antivirus-malware');
+            expect(packIds).toContain('rootkit-detection');
+            expect(packIds).toContain('file-integrity');
         });
 
         it('should have valid structure for all packs', () => {
@@ -96,6 +99,20 @@ describe('Detection Pack Definitions', () => {
             }
         });
 
+        it('should return correct pack for host security packs', () => {
+            const hostPacks = [
+                { id: 'antivirus-malware', name: 'Antivirus & Malware Pack' },
+                { id: 'rootkit-detection', name: 'Rootkit Detection Pack' },
+                { id: 'file-integrity', name: 'File Integrity Monitoring Pack' },
+            ];
+
+            for (const expected of hostPacks) {
+                const pack = getPackById(expected.id);
+                expect(pack).toBeDefined();
+                expect(pack?.name).toBe(expected.name);
+            }
+        });
+
         it('should return undefined for empty string', () => {
             const pack = getPackById('');
             expect(pack).toBeUndefined();
@@ -118,6 +135,9 @@ describe('Detection Pack Definitions', () => {
             expect(ids).toContain('auth-security');
             expect(ids).toContain('database-health');
             expect(ids).toContain('payment-billing');
+            expect(ids).toContain('antivirus-malware');
+            expect(ids).toContain('rootkit-detection');
+            expect(ids).toContain('file-integrity');
         });
 
         it('should return unique IDs', () => {
@@ -215,6 +235,114 @@ describe('Detection Pack Definitions', () => {
             const fraudRule = pack!.rules.find((r) => r.id === 'fraud-indicators');
 
             expect(fraudRule?.level).toBe('critical');
+        });
+    });
+
+    describe('Antivirus & Malware Pack', () => {
+        it('should have expected rules', () => {
+            const pack = getPackById('antivirus-malware');
+            expect(pack).toBeDefined();
+
+            const ruleIds = pack!.rules.map((r) => r.id);
+            expect(ruleIds).toContain('malware-detected');
+            expect(ruleIds).toContain('av-scan-failure');
+            expect(ruleIds).toContain('webshell-detected');
+            expect(ruleIds).toContain('av-signatures-outdated');
+            expect(ruleIds).toContain('quarantine-failure');
+        });
+
+        it('should have critical level for malware detection', () => {
+            const pack = getPackById('antivirus-malware');
+            const malwareRule = pack!.rules.find((r) => r.id === 'malware-detected');
+
+            expect(malwareRule?.level).toBe('critical');
+            expect(malwareRule?.tags).toContain('attack.execution');
+        });
+
+        it('should use compound condition for webshell detection', () => {
+            const pack = getPackById('antivirus-malware');
+            const webshellRule = pack!.rules.find((r) => r.id === 'webshell-detected');
+
+            expect(webshellRule?.detection.condition).toBe('selection_malware and selection_path');
+            expect(webshellRule?.level).toBe('critical');
+        });
+
+        it('should be in security category', () => {
+            const pack = getPackById('antivirus-malware');
+            expect(pack?.category).toBe('security');
+        });
+    });
+
+    describe('Rootkit Detection Pack', () => {
+        it('should have expected rules', () => {
+            const pack = getPackById('rootkit-detection');
+            expect(pack).toBeDefined();
+
+            const ruleIds = pack!.rules.map((r) => r.id);
+            expect(ruleIds).toContain('rootkit-found');
+            expect(ruleIds).toContain('hidden-process');
+            expect(ruleIds).toContain('system-binary-modified');
+            expect(ruleIds).toContain('suspicious-kernel-module');
+            expect(ruleIds).toContain('promiscuous-interface');
+        });
+
+        it('should have critical level for rootkit detection', () => {
+            const pack = getPackById('rootkit-detection');
+            const rootkitRule = pack!.rules.find((r) => r.id === 'rootkit-found');
+
+            expect(rootkitRule?.level).toBe('critical');
+            expect(rootkitRule?.tags).toContain('attack.t1014');
+        });
+
+        it('should have MITRE tags for all rules', () => {
+            const pack = getPackById('rootkit-detection');
+
+            for (const rule of pack!.rules) {
+                expect(rule.tags).toBeDefined();
+                expect(rule.tags!.length).toBeGreaterThan(0);
+                expect(rule.tags!.some((t) => t.match(/attack\.t\d+/))).toBe(true);
+            }
+        });
+
+        it('should be in security category', () => {
+            const pack = getPackById('rootkit-detection');
+            expect(pack?.category).toBe('security');
+        });
+    });
+
+    describe('File Integrity Monitoring Pack', () => {
+        it('should have expected rules', () => {
+            const pack = getPackById('file-integrity');
+            expect(pack).toBeDefined();
+
+            const ruleIds = pack!.rules.map((r) => r.id);
+            expect(ruleIds).toContain('critical-file-modified');
+            expect(ruleIds).toContain('ssh-config-changed');
+            expect(ruleIds).toContain('web-files-modified');
+            expect(ruleIds).toContain('cron-modified');
+            expect(ruleIds).toContain('mass-file-changes');
+        });
+
+        it('should have critical level for mass file changes', () => {
+            const pack = getPackById('file-integrity');
+            const massRule = pack!.rules.find((r) => r.id === 'mass-file-changes');
+
+            expect(massRule?.level).toBe('critical');
+            expect(massRule?.tags).toContain('attack.t1486');
+        });
+
+        it('should use compound conditions for path-specific rules', () => {
+            const pack = getPackById('file-integrity');
+            const sshRule = pack!.rules.find((r) => r.id === 'ssh-config-changed');
+            const criticalRule = pack!.rules.find((r) => r.id === 'critical-file-modified');
+
+            expect(sshRule?.detection.condition).toContain('and');
+            expect(criticalRule?.detection.condition).toContain('and');
+        });
+
+        it('should be in security category', () => {
+            const pack = getPackById('file-integrity');
+            expect(pack?.category).toBe('security');
         });
     });
 });

@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { currentOrganization } from '$lib/stores/organization';
+  import { shortcutsStore } from '$lib/stores/shortcuts';
   import { dashboardAPI } from '$lib/api/dashboard';
-  import type { DashboardStats, TimeseriesDataPoint, TopService, RecentError } from '$lib/api/dashboard';
+  import type { DashboardStats, TimeseriesDataPoint, TopService, RecentError, TimelineEvent } from '$lib/api/dashboard';
   import StatsCard from '$lib/components/dashboard/StatsCard.svelte';
   import LogsChart from '$lib/components/dashboard/LogsChart.svelte';
   import TopServicesWidget from '$lib/components/dashboard/TopServicesWidget.svelte';
@@ -22,6 +24,7 @@
   let chartData = $state<TimeseriesDataPoint[]>([]);
   let topServices = $state<TopService[]>([]);
   let recentErrors = $state<RecentError[]>([]);
+  let timelineEvents = $state<TimelineEvent[]>([]);
   let loading = $state(true);
   let error = $state('');
   let lastLoadedOrg = $state<string | null>(null);
@@ -48,6 +51,7 @@
       chartData = [];
       topServices = [];
       recentErrors = [];
+      timelineEvents = [];
       return;
     }
 
@@ -55,17 +59,19 @@
     error = '';
 
     try {
-      const [statsData, timeseriesData, servicesData, errorsData] = await Promise.all([
+      const [statsData, timeseriesData, servicesData, errorsData, eventsData] = await Promise.all([
         dashboardAPI.getStats($currentOrganization.id),
         dashboardAPI.getTimeseries($currentOrganization.id),
         dashboardAPI.getTopServices($currentOrganization.id),
         dashboardAPI.getRecentErrors($currentOrganization.id),
+        dashboardAPI.getTimelineEvents($currentOrganization.id).catch(() => []),
       ]);
 
       stats = statsData;
       chartData = timeseriesData;
       topServices = servicesData;
       recentErrors = errorsData;
+      timelineEvents = eventsData;
       lastLoadedOrg = $currentOrganization.id;
     } catch (e) {
       console.error('Failed to load dashboard data:', e);
@@ -74,10 +80,32 @@
       chartData = [];
       topServices = [];
       recentErrors = [];
+      timelineEvents = [];
     } finally {
       loading = false;
     }
   }
+
+  onMount(() => {
+    shortcutsStore.setScope('dashboard');
+    shortcutsStore.register([
+      {
+        id: 'dashboard:refresh',
+        combo: 'r',
+        label: 'Refresh dashboard',
+        scope: 'dashboard',
+        category: 'actions',
+        action: () => {
+          lastLoadedOrg = null;
+          loadDashboard();
+        },
+      },
+    ]);
+  });
+
+  onDestroy(() => {
+    shortcutsStore.unregisterScope('dashboard');
+  });
 
   $effect(() => {
     if (!browser || !$currentOrganization) {
@@ -85,6 +113,7 @@
       chartData = [];
       topServices = [];
       recentErrors = [];
+      timelineEvents = [];
       lastLoadedOrg = null;
       return;
     }
@@ -265,7 +294,7 @@
         </div>
 
         {#if chartData.length > 0}
-          <LogsChart data={chartData} onDataPointClick={handleChartClick} />
+          <LogsChart data={chartData} events={timelineEvents} onDataPointClick={handleChartClick} />
         {:else}
           <div class="text-center py-12 text-muted-foreground">
             No log data available for the last 24 hours

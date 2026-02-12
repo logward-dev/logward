@@ -29,6 +29,7 @@ import { exceptionsRoutes } from './modules/exceptions/index.js';
 import { settingsRoutes, publicSettingsRoutes, settingsService } from './modules/settings/index.js';
 import { retentionRoutes } from './modules/retention/index.js';
 import { correlationRoutes, patternRoutes } from './modules/correlation/index.js';
+import { piiMaskingRoutes } from './modules/pii-masking/index.js';
 import { bootstrapService } from './modules/bootstrap/index.js';
 import { notificationChannelsRoutes } from './modules/notification-channels/index.js';
 import internalLoggingPlugin from './plugins/internal-logging-plugin.js';
@@ -36,6 +37,12 @@ import { initializeInternalLogging, shutdownInternalLogging } from './utils/inte
 import websocketPlugin from './plugins/websocket.js';
 import websocketRoutes from './modules/query/websocket.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __serverDirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(path.resolve(__serverDirname, '../package.json'), 'utf-8'));
 
 const PORT = config.PORT;
 const HOST = config.HOST;
@@ -68,15 +75,23 @@ export async function build(opts = {}) {
     }
   });
 
-  // Global error handler: ensure parse errors return 400, not 500
+  // Global error handler: ensure client errors return proper 4xx, not 500
   fastify.setErrorHandler((error, request, reply) => {
-    const statusCode = (error as any).statusCode && (error as any).statusCode >= 400
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Determine HTTP status code:
+    // 1. error.statusCode set by Fastify (validation, rate limit) or custom parsers
+    // 2. Fastify validation errors have a .validation property → 400
+    // 3. Default → 500
+    let statusCode = typeof (error as any).statusCode === 'number'
       ? (error as any).statusCode
       : undefined;
 
-    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (!statusCode && ((error as any).validation || (error as any).code === 'FST_ERR_VALIDATION')) {
+      statusCode = 400;
+    }
 
-    if (statusCode) {
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
       reply.code(statusCode).send({
         statusCode,
         error: errMessage,
@@ -84,10 +99,10 @@ export async function build(opts = {}) {
       return;
     }
 
-    // Default: 500
+    // Server errors (5xx) or unknown
     request.log.error(error);
-    reply.code(500).send({
-      statusCode: 500,
+    reply.code(statusCode || 500).send({
+      statusCode: statusCode || 500,
       error: 'Internal Server Error',
       message: errMessage,
     });
@@ -133,7 +148,7 @@ export async function build(opts = {}) {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.5.5',
+      version: packageJson.version,
     };
   });
 
@@ -165,6 +180,7 @@ export async function build(opts = {}) {
   await fastify.register(queryRoutes);
   await fastify.register(correlationRoutes, { prefix: '/api' });
   await fastify.register(patternRoutes, { prefix: '/api' });
+  await fastify.register(piiMaskingRoutes, { prefix: '/api' });
   await fastify.register(otlpRoutes);
   await fastify.register(otlpTraceRoutes);
   await fastify.register(tracesRoutes);
@@ -209,8 +225,6 @@ async function start() {
 }
 
 // Start the server directly when this file is run
-import { fileURLToPath } from 'url';
-
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   start();
 }

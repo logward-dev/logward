@@ -156,18 +156,14 @@
     chart.setOption(options);
   }
 
-  // Handle resize
-  function handleResize() {
-    if (chart) {
-      chart.resize();
-    }
-  }
-
   let themeUnsubscribe: (() => void) | null = null;
+  let resizeObserver: ResizeObserver | null = null;
 
   onMount(() => {
     initChart();
-    window.addEventListener("resize", handleResize);
+
+    resizeObserver = new ResizeObserver(() => chart?.resize());
+    resizeObserver.observe(chartContainer);
 
     // Subscribe to theme changes
     themeUnsubscribe = themeStore.subscribe(() => {
@@ -178,7 +174,7 @@
   });
 
   onDestroy(() => {
-    window.removeEventListener("resize", handleResize);
+    resizeObserver?.disconnect();
     if (themeUnsubscribe) {
       themeUnsubscribe();
     }

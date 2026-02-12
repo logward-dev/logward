@@ -129,7 +129,7 @@
 						← {contextLogs.before.length} log(s) before
 					</div>
 					{#each contextLogs.before as log}
-						<div class="border rounded-lg p-3 hover:bg-accent/30 transition-colors opacity-70">
+						<div class="border rounded-lg p-3 hover:bg-accent/30 transition-colors opacity-70 overflow-hidden">
 							<div class="flex items-center gap-3 flex-wrap mb-2">
 								<span class="text-xs text-muted-foreground font-mono">
 									{formatTime(log.time)}
@@ -150,7 +150,7 @@
 									<summary class="cursor-pointer text-muted-foreground hover:text-foreground">
 										View metadata
 									</summary>
-									<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto">{JSON.stringify(log.metadata, null, 2)}</pre>
+									<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto max-w-full">{JSON.stringify(log.metadata, null, 2)}</pre>
 								</details>
 							{/if}
 						</div>
@@ -158,7 +158,7 @@
 				{/if}
 
 				{#if selectedLog}
-					<div class="border-2 border-primary rounded-lg p-4 bg-primary/5">
+					<div class="border-2 border-primary rounded-lg p-4 bg-primary/5 overflow-hidden">
 						<div class="text-xs font-semibold text-primary mb-2">
 							→ Selected Log
 						</div>
@@ -182,7 +182,7 @@
 								<summary class="cursor-pointer text-muted-foreground hover:text-foreground">
 									View metadata
 								</summary>
-								<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto">{JSON.stringify(selectedLog.metadata, null, 2)}</pre>
+								<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto max-w-full">{JSON.stringify(selectedLog.metadata, null, 2)}</pre>
 							</details>
 						{/if}
 						{#if isErrorLevel(selectedLog.level) && selectedLog.id && organizationId}
@@ -206,7 +206,7 @@
 						→ {contextLogs.after.length} log(s) after
 					</div>
 					{#each contextLogs.after as log}
-						<div class="border rounded-lg p-3 hover:bg-accent/30 transition-colors opacity-70">
+						<div class="border rounded-lg p-3 hover:bg-accent/30 transition-colors opacity-70 overflow-hidden">
 							<div class="flex items-center gap-3 flex-wrap mb-2">
 								<span class="text-xs text-muted-foreground font-mono">
 									{formatTime(log.time)}
@@ -227,7 +227,7 @@
 									<summary class="cursor-pointer text-muted-foreground hover:text-foreground">
 										View metadata
 									</summary>
-									<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto">{JSON.stringify(log.metadata, null, 2)}</pre>
+									<pre class="mt-2 p-2 bg-muted rounded overflow-x-auto max-w-full">{JSON.stringify(log.metadata, null, 2)}</pre>
 								</details>
 							{/if}
 						</div>

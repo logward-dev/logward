@@ -19,6 +19,14 @@ export interface AlertNotificationData {
   // Legacy fields (deprecated, use notification_channels instead)
   email_recipients: string[];
   webhook_url?: string;
+  // Rate-of-change metadata (present only for rate_of_change alerts)
+  baseline_metadata?: {
+    baseline_value: number;
+    current_value: number;
+    deviation_ratio: number;
+    baseline_type: string;
+    evaluation_time: string;
+  };
 }
 
 // Create email transporter (reused across notifications)
@@ -169,6 +177,8 @@ async function sendEmailNotification(data: AlertNotificationData & { organizatio
     throw new Error('Email transporter not configured');
   }
 
+  const isRateOfChange = !!data.baseline_metadata;
+
   const { html, text } = generateAlertEmail({
     ruleName: data.rule_name,
     logCount: data.log_count,
@@ -177,9 +187,12 @@ async function sendEmailNotification(data: AlertNotificationData & { organizatio
     organizationName: data.organizationName,
     projectName: data.projectName,
     historyId: data.historyId,
+    baselineMetadata: data.baseline_metadata,
   });
 
-  const subject = `[Alert] ${data.rule_name} - ${data.log_count} logs exceeded threshold`;
+  const subject = isRateOfChange
+    ? `[Anomaly] ${data.rule_name} - ${data.baseline_metadata!.deviation_ratio}x above baseline`
+    : `[Alert] ${data.rule_name} - ${data.log_count} logs exceeded threshold`;
 
   await transporter.sendMail({
     from: `"LogTide" <${config.SMTP_FROM || config.SMTP_USER}>`,
@@ -204,13 +217,14 @@ async function sendWebhookNotification(data: AlertNotificationData) {
       'User-Agent': 'LogTide/1.0',
     },
     body: JSON.stringify({
-      event_type: 'alert',
+      event_type: data.baseline_metadata ? 'anomaly' : 'alert',
       alert_name: data.rule_name,
       log_count: data.log_count,
       threshold: data.threshold,
       time_window: data.time_window,
       organization_id: data.organization_id,
       project_id: data.project_id,
+      baseline_metadata: data.baseline_metadata || null,
       link: `${frontendUrl}/dashboard/alerts`,
       timestamp: new Date().toISOString(),
     }),
@@ -239,10 +253,15 @@ async function createInAppNotifications(data: AlertNotificationData, projectName
 
   // Create notification for each member
   const notificationPromises = members.map((member) => {
-    const title = `Alert Triggered: ${data.rule_name}`;
-    const message = projectName
-      ? `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes for project ${projectName}.`
-      : `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes.`;
+    const isRateOfChange = !!data.baseline_metadata;
+    const title = isRateOfChange
+      ? `Anomaly Detected: ${data.rule_name}`
+      : `Alert Triggered: ${data.rule_name}`;
+    const message = isRateOfChange
+      ? `Log volume is ${data.baseline_metadata!.deviation_ratio}x above baseline (${Math.round(data.baseline_metadata!.current_value)} vs ${Math.round(data.baseline_metadata!.baseline_value)} logs/hr)${projectName ? ` for project ${projectName}` : ''}.`
+      : projectName
+        ? `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes for project ${projectName}.`
+        : `${data.log_count} logs exceeded threshold of ${data.threshold} in ${data.time_window} minutes.`;
 
     return notificationsService.createNotification({
       userId: member.user_id,
