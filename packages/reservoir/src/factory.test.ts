@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { StorageEngineFactory } from './factory.js';
 import { TimescaleEngine } from './engines/timescale/timescale-engine.js';
+import { ClickHouseEngine } from './engines/clickhouse/clickhouse-engine.js';
 import type { StorageConfig, EngineType } from './core/types.js';
 
 const validConfig: StorageConfig = {
@@ -17,9 +18,9 @@ describe('StorageEngineFactory', () => {
     expect(engine).toBeInstanceOf(TimescaleEngine);
   });
 
-  it('throws for clickhouse type (not implemented)', () => {
-    expect(() => StorageEngineFactory.create('clickhouse', validConfig))
-      .toThrow('ClickHouse engine not yet implemented');
+  it('creates a ClickHouseEngine for clickhouse type', () => {
+    const engine = StorageEngineFactory.create('clickhouse', validConfig);
+    expect(engine).toBeInstanceOf(ClickHouseEngine);
   });
 
   it('throws for clickhouse-fdw type (not implemented)', () => {

@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
 import type { LogLevel } from '@logtide/shared';
 import {
   notificationManager,
@@ -108,15 +109,11 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
 
         try {
           // Fetch full logs from database (by log IDs)
-          // This query is fast because:
-          // 1. PostgreSQL shared buffers likely cached recent inserts
-          // 2. Log IDs are primary keys (indexed)
-          const logs = await db
-            .selectFrom('logs')
-            .selectAll()
-            .where('id', 'in', event.logIds)
-            .where('project_id', '=', projectId)
-            .execute();
+          // This query is fast because log IDs are primary keys (indexed)
+          const logs = await reservoir.getByIds({
+            ids: event.logIds,
+            projectId,
+          });
 
           if (logs.length === 0) {
             return;
@@ -149,17 +146,17 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
             return;
           }
 
-          // Transform to API format
+          // Transform to API format (reservoir returns camelCase)
           const apiLogs = filteredLogs.map((log) => ({
             id: log.id,
             time: log.time,
-            projectId: log.project_id,
+            projectId: log.projectId,
             service: log.service,
             level: log.level,
             message: log.message,
             metadata: log.metadata,
-            traceId: log.trace_id,
-            spanId: log.span_id,
+            traceId: log.traceId,
+            spanId: log.spanId,
           }));
 
           // Send to WebSocket client (safe send checks socket state)

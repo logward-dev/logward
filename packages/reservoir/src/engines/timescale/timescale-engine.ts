@@ -15,6 +15,14 @@ import type {
   StorageSegment,
   TimeBucket,
   StorageConfig,
+  GetByIdParams,
+  GetByIdsParams,
+  CountParams,
+  CountResult,
+  DistinctParams,
+  DistinctResult,
+  DeleteByTimeRangeParams,
+  DeleteResult,
 } from '../../core/types.js';
 import { TimescaleQueryTranslator } from './query-translator.js';
 
@@ -258,6 +266,58 @@ export class TimescaleEngine extends StorageEngine {
     return {
       timeseries,
       total,
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async getById(params: GetByIdParams): Promise<StoredLogRecord | null> {
+    const pool = this.getPool();
+    const result = await pool.query(
+      `SELECT * FROM ${this.schema}.${this.tableName} WHERE id = $1 AND project_id = $2 LIMIT 1`,
+      [params.id, params.projectId],
+    );
+    return result.rows.length > 0 ? mapRowToStoredLogRecord(result.rows[0]) : null;
+  }
+
+  async getByIds(params: GetByIdsParams): Promise<StoredLogRecord[]> {
+    if (params.ids.length === 0) return [];
+    const pool = this.getPool();
+    const result = await pool.query(
+      `SELECT * FROM ${this.schema}.${this.tableName} WHERE id = ANY($1::uuid[]) AND project_id = $2 ORDER BY time DESC`,
+      [params.ids, params.projectId],
+    );
+    return result.rows.map(mapRowToStoredLogRecord);
+  }
+
+  async count(params: CountParams): Promise<CountResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const native = this.translator.translateCount(params);
+    const result = await pool.query(native.query as string, native.parameters);
+    return {
+      count: Number(result.rows[0]?.count ?? 0),
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async distinct(params: DistinctParams): Promise<DistinctResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const native = this.translator.translateDistinct(params);
+    const result = await pool.query(native.query as string, native.parameters);
+    return {
+      values: result.rows.map((row: Record<string, unknown>) => row.value as string).filter((v) => v != null),
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const native = this.translator.translateDelete(params);
+    const result = await pool.query(native.query as string, native.parameters);
+    return {
+      deleted: Number(result.rowCount ?? 0),
       executionTimeMs: Date.now() - start,
     };
   }

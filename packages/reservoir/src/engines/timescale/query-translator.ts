@@ -1,5 +1,12 @@
 import { QueryTranslator, type NativeQuery } from '../../core/query-translator.js';
-import type { AggregateParams, AggregationInterval, QueryParams } from '../../core/types.js';
+import type {
+  AggregateParams,
+  AggregationInterval,
+  CountParams,
+  DeleteByTimeRangeParams,
+  DistinctParams,
+  QueryParams,
+} from '../../core/types.js';
 
 const INTERVAL_MAP: Record<AggregationInterval, string> = {
   '1m': '1 minute',
@@ -165,6 +172,155 @@ export class TimescaleQueryTranslator extends QueryTranslator {
 
     const query = `SELECT time_bucket($1, time) AS bucket, level, COUNT(*) AS total FROM ${this.table}${where} GROUP BY bucket, level ORDER BY bucket ASC`;
 
+    return { query, parameters: values };
+  }
+
+  translateCount(params: CountParams): NativeQuery {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (params.organizationId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'organization_id', params.organizationId);
+    }
+    if (params.projectId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'project_id', params.projectId);
+    }
+    if (params.service !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'service', params.service);
+    }
+    if (params.level !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'level', params.level);
+    }
+    if (params.hostname !== undefined) {
+      if (Array.isArray(params.hostname)) {
+        conditions.push(`metadata->>'hostname' = ANY($${idx})`);
+        values.push(params.hostname);
+        idx++;
+      } else {
+        conditions.push(`metadata->>'hostname' = $${idx}`);
+        values.push(params.hostname);
+        idx++;
+      }
+    }
+    if (params.traceId !== undefined) {
+      conditions.push(`trace_id = $${idx}`);
+      values.push(params.traceId);
+      idx++;
+    }
+    conditions.push(`time >= $${idx}`);
+    values.push(params.from);
+    idx++;
+    conditions.push(`time <= $${idx}`);
+    values.push(params.to);
+
+    if (params.search) {
+      idx++;
+      if (params.searchMode === 'substring') {
+        conditions.push(`message ILIKE $${idx}`);
+        values.push(`%${escapeIlike(params.search)}%`);
+      } else {
+        conditions.push(`to_tsvector('english', message) @@ plainto_tsquery('english', $${idx})`);
+        values.push(params.search);
+      }
+    }
+
+    const where = ` WHERE ${conditions.join(' AND ')}`;
+    const query = `SELECT COUNT(*) AS count FROM ${this.table}${where}`;
+    return { query, parameters: values };
+  }
+
+  translateDistinct(params: DistinctParams): NativeQuery {
+    this.validateFieldName(params.field);
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (params.organizationId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'organization_id', params.organizationId);
+    }
+    if (params.projectId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'project_id', params.projectId);
+    }
+    if (params.service !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'service', params.service);
+    }
+    if (params.level !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'level', params.level);
+    }
+    if (params.hostname !== undefined) {
+      if (Array.isArray(params.hostname)) {
+        conditions.push(`metadata->>'hostname' = ANY($${idx})`);
+        values.push(params.hostname);
+        idx++;
+      } else {
+        conditions.push(`metadata->>'hostname' = $${idx}`);
+        values.push(params.hostname);
+        idx++;
+      }
+    }
+
+    conditions.push(`time >= $${idx}`);
+    values.push(params.from);
+    idx++;
+    conditions.push(`time <= $${idx}`);
+    values.push(params.to);
+    idx++;
+
+    // Resolve the SELECT expression for the field
+    let selectExpr: string;
+    if (params.field.startsWith('metadata.')) {
+      const jsonKey = params.field.slice('metadata.'.length);
+      selectExpr = `metadata->>'${jsonKey}'`;
+    } else {
+      selectExpr = params.field;
+    }
+
+    conditions.push(`${selectExpr} IS NOT NULL`);
+    conditions.push(`${selectExpr} != ''`);
+
+    const where = ` WHERE ${conditions.join(' AND ')}`;
+    let query = `SELECT DISTINCT ${selectExpr} AS value FROM ${this.table}${where} ORDER BY value ASC`;
+
+    if (params.limit) {
+      query += ` LIMIT $${idx}`;
+      values.push(params.limit);
+    }
+
+    return { query, parameters: values };
+  }
+
+  translateDelete(params: DeleteByTimeRangeParams): NativeQuery {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (Array.isArray(params.projectId)) {
+      conditions.push(`project_id = ANY($${idx})`);
+      values.push(params.projectId);
+    } else {
+      conditions.push(`project_id = $${idx}`);
+      values.push(params.projectId);
+    }
+    idx++;
+
+    conditions.push(`time >= $${idx}`);
+    values.push(params.from);
+    idx++;
+    conditions.push(`time < $${idx}`);
+    values.push(params.to);
+    idx++;
+
+    if (params.service !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'service', params.service);
+    }
+    if (params.level !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'level', params.level);
+    }
+
+    const where = ` WHERE ${conditions.join(' AND ')}`;
+    const query = `DELETE FROM ${this.table}${where}`;
     return { query, parameters: values };
   }
 

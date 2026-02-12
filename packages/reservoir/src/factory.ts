@@ -1,20 +1,27 @@
 import type { EngineType, StorageConfig } from './core/types.js';
 import type { StorageEngine } from './core/storage-engine.js';
 import { TimescaleEngine, type TimescaleEngineOptions } from './engines/timescale/timescale-engine.js';
+import { ClickHouseEngine, type ClickHouseEngineOptions } from './engines/clickhouse/clickhouse-engine.js';
+
+export type EngineOptions = TimescaleEngineOptions | ClickHouseEngineOptions;
 
 export class StorageEngineFactory {
-  static create(type: EngineType, config: StorageConfig, options?: TimescaleEngineOptions): StorageEngine {
-    // Skip validation when using an injected pool
-    if (!options?.pool) {
+  static create(type: EngineType, config: StorageConfig, options?: EngineOptions): StorageEngine {
+    // Skip validation when using an injected pool/client
+    const skipValidation =
+      (type === 'timescale' && (options as TimescaleEngineOptions)?.pool) ||
+      (type === 'clickhouse' && (options as ClickHouseEngineOptions)?.client);
+
+    if (!skipValidation) {
       this.validateConfig(config);
     }
 
     switch (type) {
       case 'timescale':
-        return new TimescaleEngine(config, options);
+        return new TimescaleEngine(config, options as TimescaleEngineOptions);
 
       case 'clickhouse':
-        throw new Error('ClickHouse engine not yet implemented');
+        return new ClickHouseEngine(config, options as ClickHouseEngineOptions);
 
       case 'clickhouse-fdw':
         throw new Error('ClickHouse FDW engine not yet implemented');

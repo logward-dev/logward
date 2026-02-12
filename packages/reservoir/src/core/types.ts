@@ -170,6 +170,74 @@ export interface StorageSegment {
   metadata?: Record<string, unknown>;
 }
 
+/** Parameters for single log lookup by ID */
+export interface GetByIdParams {
+  id: string;
+  projectId: string;
+}
+
+/** Parameters for batch log lookup by IDs */
+export interface GetByIdsParams {
+  ids: string[];
+  projectId: string;
+}
+
+/** Parameters for counting logs */
+export interface CountParams {
+  organizationId?: string | string[];
+  projectId?: string | string[];
+  service?: string | string[];
+  level?: LogLevel | LogLevel[];
+  hostname?: string | string[];
+  traceId?: string;
+  from: Date;
+  to: Date;
+  search?: string;
+  searchMode?: SearchMode;
+  filters?: Filter[];
+}
+
+/** Result of a count query */
+export interface CountResult {
+  count: number;
+  executionTimeMs?: number;
+}
+
+/** Parameters for distinct value queries */
+export interface DistinctParams {
+  field: string;
+  organizationId?: string | string[];
+  projectId?: string | string[];
+  service?: string | string[];
+  level?: LogLevel | LogLevel[];
+  hostname?: string | string[];
+  from: Date;
+  to: Date;
+  filters?: Filter[];
+  limit?: number;
+}
+
+/** Result of a distinct query */
+export interface DistinctResult {
+  values: string[];
+  executionTimeMs?: number;
+}
+
+/** Parameters for deleting logs by time range */
+export interface DeleteByTimeRangeParams {
+  projectId: string | string[];
+  from: Date;
+  to: Date;
+  service?: string | string[];
+  level?: LogLevel | LogLevel[];
+}
+
+/** Result of a delete operation */
+export interface DeleteResult {
+  deleted: number;
+  executionTimeMs?: number;
+}
+
 /** Configuration for a storage engine */
 export interface StorageConfig {
   host: string;

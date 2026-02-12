@@ -11,6 +11,14 @@ import type {
   HealthStatus,
   EngineCapabilities,
   StorageSegment,
+  GetByIdParams,
+  GetByIdsParams,
+  CountParams,
+  CountResult,
+  DistinctParams,
+  DistinctResult,
+  DeleteByTimeRangeParams,
+  DeleteResult,
 } from './types.js';
 
 /**
@@ -58,4 +66,19 @@ export abstract class StorageEngine {
 
   /** Get storage segments in a time range (for tiering) */
   abstract getSegments(startTime: Date, endTime: Date): Promise<StorageSegment[]>;
+
+  /** Get a single log by ID */
+  abstract getById(params: GetByIdParams): Promise<StoredLogRecord | null>;
+
+  /** Get multiple logs by IDs */
+  abstract getByIds(params: GetByIdsParams): Promise<StoredLogRecord[]>;
+
+  /** Count logs matching filters */
+  abstract count(params: CountParams): Promise<CountResult>;
+
+  /** Get distinct values for a field */
+  abstract distinct(params: DistinctParams): Promise<DistinctResult>;
+
+  /** Delete logs by time range */
+  abstract deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult>;
 }

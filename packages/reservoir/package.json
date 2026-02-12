@@ -13,6 +13,10 @@
     "./engines/timescale": {
       "types": "./dist/engines/timescale/index.d.ts",
       "import": "./dist/engines/timescale/index.js"
+    },
+    "./engines/clickhouse": {
+      "types": "./dist/engines/clickhouse/index.d.ts",
+      "import": "./dist/engines/clickhouse/index.js"
     }
   },
   "scripts": {
@@ -24,6 +28,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.17.0",
     "@logtide/shared": "workspace:*"
   },
   "peerDependencies": {

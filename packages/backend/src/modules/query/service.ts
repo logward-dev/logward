@@ -123,12 +123,7 @@ export class QueryService {
    * Get a single log by ID
    */
   async getLogById(logId: string, projectId: string) {
-    const log = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('id', '=', logId)
-      .where('project_id', '=', projectId)
-      .executeTakeFirst();
+    const log = await reservoir.getById({ id: logId, projectId });
 
     if (!log) {
       return null;
@@ -137,12 +132,12 @@ export class QueryService {
     return {
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     };
   }
 
@@ -162,23 +157,25 @@ export class QueryService {
       }));
     }
 
-    const logs = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('trace_id', '=', traceId)
-      .orderBy('time', 'asc')
-      .execute();
+    // Query through reservoir (works with any engine)
+    const queryResult = await reservoir.query({
+      projectId,
+      traceId,
+      from: new Date(0), // All time - trace correlation needs all logs
+      to: new Date(),
+      sortOrder: 'asc',
+      limit: 1000,
+    });
 
-    const result = logs.map(log => ({
+    const result = queryResult.logs.map(log => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     }));
 
     // Cache for longer since trace data is immutable
@@ -469,18 +466,15 @@ export class QueryService {
    * Hostnames are extracted from metadata.hostname field.
    * Cached for performance - used for filter dropdowns.
    *
-   * PERFORMANCE: Defaults to last 6 hours. JSONB extraction (metadata->>'hostname')
-   * requires scanning raw rows and expression indexes don't help on TimescaleDB
-   * hypertables. Keeping the window short is the most effective optimization.
-   * With 5-minute cache, most requests are served from cache.
+   * PERFORMANCE: Defaults to last 6 hours. Metadata extraction is expensive
+   * on large windows. With 5-minute cache, most requests are served from cache.
    */
   async getDistinctHostnames(
     projectId: string | string[],
     from?: Date,
     to?: Date
   ): Promise<string[]> {
-    // PERFORMANCE: Default to last 6 hours (JSONB extraction is expensive on large windows)
-    // 6h window on prod: ~350ms vs 7d: ~3s+ (11M rows scanned)
+    // PERFORMANCE: Default to last 6 hours
     const effectiveFrom = from || new Date(Date.now() - 6 * 60 * 60 * 1000);
 
     // Try cache first
@@ -498,31 +492,15 @@ export class QueryService {
       return cached;
     }
 
-    // Query distinct hostnames from metadata JSONB field
-    let query = db
-      .selectFrom('logs')
-      .select(sql<string>`metadata->>'hostname'`.as('hostname'))
-      .distinct()
-      .where(sql`metadata->>'hostname'`, 'is not', null)
-      .where(sql`metadata->>'hostname'`, '!=', '')
-      .where('time', '>=', effectiveFrom)
-      .orderBy(sql`metadata->>'hostname'`, 'asc');
+    // Query through reservoir (works with any engine - handles JSONB vs JSON extraction)
+    const result = await reservoir.distinct({
+      field: 'metadata.hostname',
+      projectId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+    });
 
-    // Project filter - support single or multiple projects
-    if (Array.isArray(projectId)) {
-      query = query.where('project_id', 'in', projectId);
-    } else {
-      query = query.where('project_id', '=', projectId);
-    }
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const results = await query.execute();
-    const hostnames = results
-      .map((r) => r.hostname)
-      .filter((h): h is string => h !== null && h !== undefined);
+    const hostnames = result.values;
 
     // Cache for 5 minutes
     await CacheManager.set(cacheKey, hostnames, CACHE_TTL.STATS);

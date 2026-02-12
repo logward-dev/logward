@@ -20,6 +20,14 @@ export type {
   EngineCapabilities,
   StorageSegment,
   StorageConfig,
+  GetByIdParams,
+  GetByIdsParams,
+  CountParams,
+  CountResult,
+  DistinctParams,
+  DistinctResult,
+  DeleteByTimeRangeParams,
+  DeleteResult,
 } from './core/types.js';
 
 // Core abstractions
@@ -29,8 +37,13 @@ export type { NativeQuery } from './core/query-translator.js';
 
 // Factory and client
 export { StorageEngineFactory } from './factory.js';
+export type { EngineOptions } from './factory.js';
 export { Reservoir } from './client.js';
 
-// Engines
+// Engines - TimescaleDB
 export { TimescaleEngine, TimescaleQueryTranslator } from './engines/timescale/index.js';
 export type { TimescaleEngineOptions } from './engines/timescale/index.js';
+
+// Engines - ClickHouse
+export { ClickHouseEngine, ClickHouseQueryTranslator } from './engines/clickhouse/index.js';
+export type { ClickHouseEngineOptions } from './engines/clickhouse/index.js';

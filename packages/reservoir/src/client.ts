@@ -11,10 +11,18 @@ import type {
   IngestReturningResult,
   HealthStatus,
   EngineCapabilities,
+  GetByIdParams,
+  GetByIdsParams,
+  CountParams,
+  CountResult,
+  DistinctParams,
+  DistinctResult,
+  DeleteByTimeRangeParams,
+  DeleteResult,
 } from './core/types.js';
 import type { StorageEngine } from './core/storage-engine.js';
 import { StorageEngineFactory } from './factory.js';
-import type { TimescaleEngineOptions } from './engines/timescale/timescale-engine.js';
+import type { EngineOptions } from './factory.js';
 
 /**
  * Reservoir - unified storage client for log management.
@@ -45,7 +53,7 @@ export class Reservoir {
   private initialized = false;
   private initPromise?: Promise<void>;
 
-  constructor(type: EngineType, config: StorageConfig, options?: TimescaleEngineOptions) {
+  constructor(type: EngineType, config: StorageConfig, options?: EngineOptions) {
     this.engine = StorageEngineFactory.create(type, config, options);
   }
 
@@ -93,6 +101,31 @@ export class Reservoir {
 
   getCapabilities(): EngineCapabilities {
     return this.engine.getCapabilities();
+  }
+
+  async getById(params: GetByIdParams): Promise<StoredLogRecord | null> {
+    this.ensureInitialized();
+    return this.engine.getById(params);
+  }
+
+  async getByIds(params: GetByIdsParams): Promise<StoredLogRecord[]> {
+    this.ensureInitialized();
+    return this.engine.getByIds(params);
+  }
+
+  async count(params: CountParams): Promise<CountResult> {
+    this.ensureInitialized();
+    return this.engine.count(params);
+  }
+
+  async distinct(params: DistinctParams): Promise<DistinctResult> {
+    this.ensureInitialized();
+    return this.engine.distinct(params);
+  }
+
+  async deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult> {
+    this.ensureInitialized();
+    return this.engine.deleteByTimeRange(params);
   }
 
   async close(): Promise<void> {
