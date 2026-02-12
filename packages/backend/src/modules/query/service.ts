@@ -176,31 +176,23 @@ export class QueryService {
       }
     }
 
-    // Get total count (only if no cursor, or separate query?)
-    // For cursor pagination, total count is often omitted or separate.
-    // But we'll keep it for now.
-    const countQuery = query
-      .clearSelect()
-      .select(db.fn.count('time').as('count'));
-
-    // Fetch limit + 1 to determine if there's a next page
+    // PERFORMANCE: Skip expensive COUNT(*) - it scans all matching rows and is the main
+    // bottleneck on large datasets (was causing 12s+ response times).
+    // Use limit+1 pattern to detect "has more" without counting everything.
     const fetchLimit = limit + 1;
 
-    const [dbLogs, countResult] = await Promise.all([
-      query
-        .orderBy('time', 'desc')
-        .orderBy('id', 'desc') // Deterministic sort
-        .limit(fetchLimit)
-        .offset(offset) // Keep offset support if cursor not used
-        .execute(),
-      countQuery.executeTakeFirst(),
-    ]);
+    const dbLogs = await query
+      .orderBy('time', 'desc')
+      .orderBy('id', 'desc') // Deterministic sort
+      .limit(fetchLimit)
+      .offset(offset) // Keep offset support if cursor not used
+      .execute();
+
+    const hasMore = dbLogs.length > limit;
+    const logsToReturn = hasMore ? dbLogs.slice(0, limit) : dbLogs;
 
     let nextCursor: string | undefined;
-    let logsToReturn = dbLogs;
-
-    if (dbLogs.length > limit) {
-      logsToReturn = dbLogs.slice(0, limit);
+    if (hasMore) {
       const lastLog = logsToReturn[logsToReturn.length - 1];
       nextCursor = Buffer.from(`${lastLog.time.toISOString()},${lastLog.id}`).toString('base64');
     }
@@ -219,7 +211,8 @@ export class QueryService {
 
     const result = {
       logs,
-      total: Number(countResult?.count || 0),
+      total: -1, // Exact count removed for performance - use hasMore/nextCursor instead
+      hasMore,
       limit,
       offset,
       nextCursor,
@@ -420,8 +413,8 @@ export class QueryService {
    * Get top services by log count
    * Cached for performance - aggregation queries are expensive
    *
-   * PERFORMANCE: Always uses time filter (defaults to last 7 days)
-   * to avoid full table scan on millions of logs.
+   * PERFORMANCE: Uses logs_daily_stats continuous aggregate for historical data
+   * and raw logs only for the most recent day. Falls back to raw logs if aggregate unavailable.
    */
   async getTopServices(projectId: string, limit: number = 5, from?: Date, to?: Date) {
     // PERFORMANCE: Default to last 7 days if no time filter provided
@@ -439,23 +432,66 @@ export class QueryService {
       return cached;
     }
 
-    let query = db
-      .selectFrom('logs')
-      .select([
-        'service',
-        db.fn.count('time').as('count'),
-      ])
-      .where('project_id', '=', projectId)
-      .where('time', '>=', effectiveFrom)
-      .groupBy('service')
-      .orderBy('count', 'desc')
-      .limit(limit);
+    let result: Array<{ service: string; count: string | number | bigint }>;
 
-    if (to) {
-      query = query.where('time', '<=', to);
+    try {
+      // Fast path: use continuous aggregate
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [historicalServices, recentServices] = await Promise.all([
+        // Historical data from daily aggregate
+        db
+          .selectFrom('logs_daily_stats')
+          .select(['service', sql<string>`SUM(log_count)`.as('count')])
+          .where('project_id', '=', projectId)
+          .where('bucket', '>=', effectiveFrom)
+          .where('bucket', '<', oneDayAgo)
+          .groupBy('service')
+          .execute(),
+        // Recent data from raw logs (last 24h, not yet in daily aggregate)
+        db
+          .selectFrom('logs')
+          .select(['service', sql<string>`COUNT(*)`.as('count')])
+          .where('project_id', '=', projectId)
+          .where('time', '>=', oneDayAgo)
+          .groupBy('service')
+          .execute(),
+      ]);
+
+      // Merge counts
+      const serviceMap = new Map<string, number>();
+      for (const row of historicalServices) {
+        serviceMap.set(row.service, Number(row.count ?? 0));
+      }
+      for (const row of recentServices) {
+        const existing = serviceMap.get(row.service) ?? 0;
+        serviceMap.set(row.service, existing + Number(row.count ?? 0));
+      }
+
+      result = Array.from(serviceMap.entries())
+        .map(([service, count]) => ({ service, count }))
+        .sort((a, b) => Number(b.count) - Number(a.count))
+        .slice(0, limit);
+    } catch {
+      // Fallback: raw logs query
+      let query = db
+        .selectFrom('logs')
+        .select([
+          'service',
+          db.fn.count('time').as('count'),
+        ])
+        .where('project_id', '=', projectId)
+        .where('time', '>=', effectiveFrom)
+        .groupBy('service')
+        .orderBy('count', 'desc')
+        .limit(limit);
+
+      if (to) {
+        query = query.where('time', '<=', to);
+      }
+
+      result = await query.execute();
     }
-
-    const result = await query.execute();
 
     // Cache aggregation results
     await CacheManager.set(cacheKey, result, CACHE_TTL.STATS);
@@ -467,16 +503,16 @@ export class QueryService {
    * Get all distinct services for given projects
    * Cached for performance - used for filter dropdowns
    *
-   * PERFORMANCE: Defaults to last 30 days if no time filter provided
-   * to avoid full table scan on millions of logs.
+   * PERFORMANCE: Uses logs_daily_stats continuous aggregate instead of scanning
+   * raw logs. Falls back to raw logs with 7-day window if aggregate unavailable.
    */
   async getDistinctServices(
     projectId: string | string[],
     from?: Date,
     to?: Date
   ): Promise<string[]> {
-    // PERFORMANCE: Default to last 30 days if no time filter provided
-    const effectiveFrom = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // PERFORMANCE: Default to last 7 days (reduced from 30)
+    const effectiveFrom = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     // Try cache first
     const cacheKey = CacheManager.statsKey(
@@ -493,28 +529,68 @@ export class QueryService {
       return cached;
     }
 
-    let query = db
-      .selectFrom('logs')
-      .select('service')
-      .distinct()
-      .where('service', 'is not', null)
-      .where('service', '!=', '')
-      .where('time', '>=', effectiveFrom)
-      .orderBy('service', 'asc');
+    let services: string[];
 
-    // Project filter - support single or multiple projects
-    if (Array.isArray(projectId)) {
-      query = query.where('project_id', 'in', projectId);
-    } else {
-      query = query.where('project_id', '=', projectId);
+    try {
+      // Fast path: combine aggregate (historical) + raw logs (recent)
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const projectFilter = Array.isArray(projectId) ? projectId : [projectId];
+
+      const [aggResults, recentResults] = await Promise.all([
+        // Historical from daily aggregate
+        db
+          .selectFrom('logs_daily_stats')
+          .select('service')
+          .distinct()
+          .where('service', 'is not', null)
+          .where('service', '!=', '')
+          .where('project_id', 'in', projectFilter)
+          .where('bucket', '>=', effectiveFrom)
+          .where('bucket', '<', oneDayAgo)
+          .$if(!!to, (qb) => qb.where('bucket', '<=', to!))
+          .execute(),
+        // Recent from raw logs (last 24h, not yet in daily aggregate)
+        db
+          .selectFrom('logs')
+          .select('service')
+          .distinct()
+          .where('service', 'is not', null)
+          .where('service', '!=', '')
+          .where('project_id', 'in', projectFilter)
+          .where('time', '>=', oneDayAgo)
+          .$if(!!to, (qb) => qb.where('time', '<=', to!))
+          .execute(),
+      ]);
+
+      // Merge and deduplicate
+      const serviceSet = new Set<string>();
+      for (const r of aggResults) serviceSet.add(r.service);
+      for (const r of recentResults) serviceSet.add(r.service);
+      services = Array.from(serviceSet).sort();
+    } catch {
+      // Fallback: raw logs query
+      let query = db
+        .selectFrom('logs')
+        .select('service')
+        .distinct()
+        .where('service', 'is not', null)
+        .where('service', '!=', '')
+        .where('time', '>=', effectiveFrom)
+        .orderBy('service', 'asc');
+
+      if (Array.isArray(projectId)) {
+        query = query.where('project_id', 'in', projectId);
+      } else {
+        query = query.where('project_id', '=', projectId);
+      }
+
+      if (to) {
+        query = query.where('time', '<=', to);
+      }
+
+      const results = await query.execute();
+      services = results.map((r) => r.service);
     }
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const results = await query.execute();
-    const services = results.map((r) => r.service);
 
     // Cache for 5 minutes
     await CacheManager.set(cacheKey, services, CACHE_TTL.STATS);
@@ -527,16 +603,19 @@ export class QueryService {
    * Hostnames are extracted from metadata.hostname field.
    * Cached for performance - used for filter dropdowns.
    *
-   * PERFORMANCE: Defaults to last 30 days if no time filter provided
-   * to avoid full table scan on millions of logs.
+   * PERFORMANCE: Defaults to last 6 hours. JSONB extraction (metadata->>'hostname')
+   * requires scanning raw rows and expression indexes don't help on TimescaleDB
+   * hypertables. Keeping the window short is the most effective optimization.
+   * With 5-minute cache, most requests are served from cache.
    */
   async getDistinctHostnames(
     projectId: string | string[],
     from?: Date,
     to?: Date
   ): Promise<string[]> {
-    // PERFORMANCE: Default to last 30 days if no time filter provided
-    const effectiveFrom = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // PERFORMANCE: Default to last 6 hours (JSONB extraction is expensive on large windows)
+    // 6h window on prod: ~350ms vs 7d: ~3s+ (11M rows scanned)
+    const effectiveFrom = from || new Date(Date.now() - 6 * 60 * 60 * 1000);
 
     // Try cache first
     const cacheKey = CacheManager.statsKey(
@@ -589,12 +668,14 @@ export class QueryService {
    * Get top error messages
    * Cached for performance - aggregation queries are expensive
    *
-   * PERFORMANCE: Defaults to last 7 days if no time filter provided
-   * to avoid full table scan on millions of logs.
+   * PERFORMANCE: Defaults to last 24 hours (reduced from 7 days).
+   * GROUP BY message is inherently expensive so we keep the window tight.
+   * Uses partial index idx_logs_project_errors for fast error filtering.
    */
   async getTopErrors(projectId: string, limit: number = 10, from?: Date, to?: Date) {
-    // PERFORMANCE: Default to last 7 days if no time filter provided
-    const effectiveFrom = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // PERFORMANCE: Default to last 24 hours (reduced from 7 days)
+    // GROUP BY message on full text is expensive, keep window tight
+    const effectiveFrom = from || new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Try cache first
     const cacheKey = CacheManager.statsKey(projectId, 'top-errors', {

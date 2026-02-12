@@ -80,8 +80,7 @@
 	// Pagination state
 	let pageSize = $state(25);
 	let currentPage = $state(1);
-	let total = $state(0);
-	let totalPages = $derived(Math.ceil(total / pageSize));
+	let hasMore = $state(false);
 
 	// Dialog states
 	let contextDialogOpen = $state(false);
@@ -188,14 +187,14 @@
 			const response = await logsAPI.getLogs(filters);
 
 			logs = response.logs;
-			total = response.total;
+			hasMore = response.hasMore ?? (response.logs.length >= pageSize);
 			lastLoadedProjectId = projectId;
 		} catch (e) {
 			console.error("Failed to load logs:", e);
 			error = e instanceof Error ? e.message : "Failed to load logs";
 			toastStore.error(error);
 			logs = [];
-			total = 0;
+			hasMore = false;
 		} finally {
 			loading = false;
 		}
@@ -278,7 +277,6 @@
 						console.log("Live tail connected at", data.timestamp);
 					} else if (data.type === "log") {
 						logs = [data.data, ...logs].slice(0, 100);
-						total = logs.length;
 					}
 				} catch (e) {
 					console.error("Error parsing SSE message:", e);
@@ -341,14 +339,14 @@
 
 	// Pagination functions
 	function goToPage(page: number) {
-		if (page >= 1 && page <= totalPages && page !== currentPage) {
+		if (page >= 1 && page !== currentPage) {
 			currentPage = page;
 			loadLogs();
 		}
 	}
 
 	function nextPage() {
-		if (currentPage < totalPages) {
+		if (hasMore) {
 			currentPage++;
 			loadLogs();
 		}
@@ -447,7 +445,7 @@
 		to: getTimeRange().to.toISOString(),
 	});
 
-	let effectiveTotalLogs = $derived(liveTail ? logs.length : total);
+	let effectiveTotalLogs = $derived(logs.length);
 </script>
 
 <div class="space-y-6">
@@ -714,14 +712,11 @@
 					variant="outline"
 					size="sm"
 					onclick={() => (exportDialogOpen = true)}
-					disabled={liveTail || total === 0}
+					disabled={liveTail || logs.length === 0}
 					class="gap-2"
 				>
 					<Download class="w-4 h-4" />
 					Export
-					{#if total > 0}
-						({total.toLocaleString()})
-					{/if}
 				</Button>
 			</div>
 		</CardContent>
@@ -886,7 +881,7 @@
 				{#if !liveTail && logs.length > 0}
 					<div class="flex items-center justify-between mt-6 px-2">
 						<div class="text-sm text-muted-foreground">
-							Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, total)} of {total.toLocaleString()} logs
+							Showing {(currentPage - 1) * pageSize + 1} to {(currentPage - 1) * pageSize + logs.length} logs
 						</div>
 						<div class="flex items-center gap-2">
 							<Button
@@ -898,102 +893,14 @@
 								<ChevronLeft class="w-4 h-4" />
 								Previous
 							</Button>
-							<div class="flex items-center gap-1">
-								{#if totalPages <= 7}
-									{#each Array.from({ length: totalPages }, (_, i) => i + 1) as pageNum}
-										<Button
-											variant={currentPage === pageNum ? "default" : "outline"}
-											size="sm"
-											onclick={() => goToPage(pageNum)}
-											disabled={loading}
-											class="w-10"
-										>
-											{pageNum}
-										</Button>
-									{/each}
-								{:else if currentPage <= 3}
-									{#each [1, 2, 3, 4] as pageNum}
-										<Button
-											variant={currentPage === pageNum ? "default" : "outline"}
-											size="sm"
-											onclick={() => goToPage(pageNum)}
-											disabled={loading}
-											class="w-10"
-										>
-											{pageNum}
-										</Button>
-									{/each}
-									<span class="px-2">...</span>
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => goToPage(totalPages)}
-										disabled={loading}
-										class="w-10"
-									>
-										{totalPages}
-									</Button>
-								{:else if currentPage >= totalPages - 2}
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => goToPage(1)}
-										disabled={loading}
-										class="w-10"
-									>
-										1
-									</Button>
-									<span class="px-2">...</span>
-									{#each [totalPages - 3, totalPages - 2, totalPages - 1, totalPages] as pageNum}
-										<Button
-											variant={currentPage === pageNum ? "default" : "outline"}
-											size="sm"
-											onclick={() => goToPage(pageNum)}
-											disabled={loading}
-											class="w-10"
-										>
-											{pageNum}
-										</Button>
-									{/each}
-								{:else}
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => goToPage(1)}
-										disabled={loading}
-										class="w-10"
-									>
-										1
-									</Button>
-									<span class="px-2">...</span>
-									{#each [currentPage - 1, currentPage, currentPage + 1] as pageNum}
-										<Button
-											variant={currentPage === pageNum ? "default" : "outline"}
-											size="sm"
-											onclick={() => goToPage(pageNum)}
-											disabled={loading}
-											class="w-10"
-										>
-											{pageNum}
-										</Button>
-									{/each}
-									<span class="px-2">...</span>
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => goToPage(totalPages)}
-										disabled={loading}
-										class="w-10"
-									>
-										{totalPages}
-									</Button>
-								{/if}
-							</div>
+							<span class="text-sm text-muted-foreground px-3">
+								Page {currentPage}
+							</span>
 							<Button
 								variant="outline"
 								size="sm"
 								onclick={nextPage}
-								disabled={currentPage === totalPages || loading}
+								disabled={!hasMore || loading}
 							>
 								Next
 								<ChevronRight class="w-4 h-4" />
@@ -1024,6 +931,6 @@
 
 <ExportLogsDialog
 	bind:open={exportDialogOpen}
-	totalLogs={total}
+	totalLogs={logs.length}
 	filters={exportFilters}
 />
