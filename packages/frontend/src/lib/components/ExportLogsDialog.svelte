@@ -145,14 +145,11 @@
 					offset,
 				});
 
-				// Update actual total based on API response
-				actualTotal = Math.min(exportLimit, response.total);
-
 				allLogs.push(...response.logs);
-				exportProgress = { current: allLogs.length, total: actualTotal };
+				exportProgress = { current: allLogs.length, total: exportLimit };
 
-				// Stop if we've fetched all available logs or got empty response
-				if (response.logs.length === 0 || allLogs.length >= response.total) {
+				// Stop if we got fewer logs than requested (no more data)
+				if (response.logs.length === 0 || response.logs.length < limit) {
 					break;
 				}
 			}

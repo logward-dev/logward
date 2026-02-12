@@ -14,7 +14,8 @@ interface LogEntry {
 
 interface LogsResponse {
   logs: LogEntry[];
-  total: number;
+  total: number; // -1 when exact count not available (performance optimization)
+  hasMore?: boolean; // true if there are more pages
   limit: number;
   offset: number;
   nextCursor?: string;

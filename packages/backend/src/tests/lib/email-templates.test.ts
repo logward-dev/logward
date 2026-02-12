@@ -17,6 +17,7 @@ import {
   generateErrorEmail,
   generateIncidentEmail,
   generateSigmaDetectionEmail,
+  generateInvitationEmail,
 } from '../../lib/email-templates.js';
 
 describe('Email Templates - Helpers', () => {
@@ -492,6 +493,219 @@ describe('Email Templates - Sigma Detection Email', () => {
     });
 
     expect(result.html).toContain('malicious activity');
+  });
+});
+
+describe('Email Templates - Invitation Email', () => {
+  it('should generate HTML and text versions', () => {
+    const result = generateInvitationEmail({
+      email: 'new@example.com',
+      token: 'invite-token-123',
+      organizationName: 'Acme Corp',
+      inviterName: 'John Doe',
+      role: 'member',
+    });
+
+    expect(result.html).toBeDefined();
+    expect(result.text).toBeDefined();
+    expect(result.html.length).toBeGreaterThan(0);
+    expect(result.text.length).toBeGreaterThan(0);
+  });
+
+  it('should include organization name', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Mega Corp',
+      inviterName: 'Jane',
+      role: 'admin',
+    });
+
+    expect(result.html).toContain('Mega Corp');
+    expect(result.text).toContain('Mega Corp');
+  });
+
+  it('should include inviter name', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Alice Smith',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('Alice Smith');
+    expect(result.text).toContain('Alice Smith');
+  });
+
+  it('should include correct invite URL with token', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'my-special-token',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('https://app.logtide.dev/invite/my-special-token');
+    expect(result.text).toContain('https://app.logtide.dev/invite/my-special-token');
+  });
+
+  it('should display correct role label for member', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('Member');
+    expect(result.text).toContain('Member');
+  });
+
+  it('should display correct role label for admin', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'admin',
+    });
+
+    expect(result.html).toContain('Admin');
+    expect(result.text).toContain('Admin');
+  });
+
+  it('should display correct role label for owner', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'owner',
+    });
+
+    expect(result.html).toContain('Owner');
+    expect(result.text).toContain('Owner');
+  });
+
+  it('should include email address', () => {
+    const result = generateInvitationEmail({
+      email: 'specific@example.org',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('specific@example.org');
+    expect(result.text).toContain('specific@example.org');
+  });
+
+  it('should include expiration notice', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('7 days');
+    expect(result.text).toContain('7 days');
+  });
+
+  it('should include logo', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('https://logtide.dev/logo/dark.png');
+  });
+
+  it('should have proper HTML structure', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('<!DOCTYPE html>');
+    expect(result.html).toContain('<html');
+    expect(result.html).toContain('</html>');
+  });
+
+  it('should include preheader text', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Cool Org',
+      inviterName: 'Charlie',
+      role: 'member',
+    });
+
+    expect(result.html).toContain('Charlie invited you to join Cool Org');
+  });
+
+  it('should handle unknown role gracefully', () => {
+    const result = generateInvitationEmail({
+      email: 'user@test.com',
+      token: 'abc',
+      organizationName: 'Org',
+      inviterName: 'Bob',
+      role: 'custom_role',
+    });
+
+    // Should use the raw role as fallback
+    expect(result.html).toContain('custom_role');
+  });
+});
+
+describe('Email Templates - Baseline Alert Email', () => {
+  it('should generate rate-of-change email with baseline metadata', () => {
+    const result = generateAlertEmail({
+      ruleName: 'Volume Spike',
+      logCount: 500,
+      threshold: 100,
+      timeWindow: 60,
+      baselineMetadata: {
+        baseline_value: 100,
+        current_value: 500,
+        deviation_ratio: 5,
+        baseline_type: 'same_time_yesterday',
+      },
+    });
+
+    expect(result.html).toContain('Volume Spike');
+    expect(result.html).toContain('5x');
+    expect(result.html).toContain('above normal');
+    expect(result.text).toContain('5x');
+    expect(result.text).toContain('ANOMALY');
+  });
+
+  it('should display correct baseline type labels', () => {
+    const result = generateAlertEmail({
+      ruleName: 'Test',
+      logCount: 100,
+      threshold: 10,
+      timeWindow: 5,
+      baselineMetadata: {
+        baseline_value: 50,
+        current_value: 200,
+        deviation_ratio: 4,
+        baseline_type: 'rolling_7d_avg',
+      },
+    });
+
+    expect(result.html).toContain('7-day rolling average');
+    expect(result.text).toContain('7-day rolling average');
   });
 });
 

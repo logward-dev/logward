@@ -1,5 +1,6 @@
 import { db } from '../../database/index.js';
 import { sql } from 'kysely';
+import { CacheManager, CACHE_TTL } from '../../utils/cache.js';
 
 export interface DashboardStats {
   totalLogsToday: {
@@ -62,6 +63,14 @@ class DashboardService {
    * - Throughput (logs/sec in last hour - real-time)
    */
   async getStats(organizationId: string): Promise<DashboardStats> {
+    // Try cache first (dashboard stats don't need to be real-time)
+    const cacheKey = CacheManager.statsKey(organizationId, 'dashboard-stats');
+    const cached = await CacheManager.get<DashboardStats>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     // Get all project IDs for this organization
     const projects = await db
       .selectFrom('projects')
@@ -87,8 +96,9 @@ class DashboardService {
     const prevHourStart = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
     // Try continuous aggregate first (10-50x faster)
+    let result: DashboardStats;
     try {
-      return await this.getStatsFromAggregate(
+      result = await this.getStatsFromAggregate(
         projectIds,
         todayStart,
         yesterdayStart,
@@ -97,7 +107,7 @@ class DashboardService {
       );
     } catch {
       // Fallback to raw logs if aggregate not available
-      return await this.getStatsFromRawLogs(
+      result = await this.getStatsFromRawLogs(
         projectIds,
         todayStart,
         yesterdayStart,
@@ -105,6 +115,10 @@ class DashboardService {
         prevHourStart
       );
     }
+
+    // Cache for 1 minute
+    await CacheManager.set(cacheKey, result, CACHE_TTL.QUERY);
+    return result;
   }
 
   /**
@@ -295,6 +309,14 @@ class DashboardService {
    * This provides 10-50x faster queries for dashboard charts.
    */
   async getTimeseries(organizationId: string): Promise<TimeseriesDataPoint[]> {
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(organizationId, 'dashboard-timeseries');
+    const cached = await CacheManager.get<TimeseriesDataPoint[]>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     // Get all project IDs for this organization
     const projects = await db
       .selectFrom('projects')
@@ -408,7 +430,12 @@ class DashboardService {
       }
     }
 
-    return Array.from(bucketMap.values());
+    const timeseriesResult = Array.from(bucketMap.values());
+
+    // Cache for 1 minute
+    await CacheManager.set(cacheKey, timeseriesResult, CACHE_TTL.QUERY);
+
+    return timeseriesResult;
   }
 
   /**
@@ -418,6 +445,14 @@ class DashboardService {
    * and raw logs only for the most recent day. This provides 10-50x speedup.
    */
   async getTopServices(organizationId: string, limit: number = 5): Promise<Array<{ name: string; count: number; percentage: number }>> {
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(organizationId, 'dashboard-top-services', { limit });
+    const cached = await CacheManager.get<Array<{ name: string; count: number; percentage: number }>>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     const projects = await db
       .selectFrom('projects')
       .select('id')
@@ -434,12 +469,18 @@ class DashboardService {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
+    let result: Array<{ name: string; count: number; percentage: number }>;
     try {
-      return await this.getTopServicesFromAggregate(projectIds, sevenDaysAgo, oneDayAgo, limit);
+      result = await this.getTopServicesFromAggregate(projectIds, sevenDaysAgo, oneDayAgo, limit);
     } catch {
       // Fallback to raw logs
-      return await this.getTopServicesFromRawLogs(projectIds, sevenDaysAgo, limit);
+      result = await this.getTopServicesFromRawLogs(projectIds, sevenDaysAgo, limit);
     }
+
+    // Cache for 5 minutes
+    await CacheManager.set(cacheKey, result, CACHE_TTL.STATS);
+
+    return result;
   }
 
   /**
@@ -676,8 +717,20 @@ class DashboardService {
 
   /**
    * Get recent errors (last 10 error/critical logs)
+   *
+   * PERFORMANCE: Added time filter (last 24h) to use partial index
+   * idx_logs_project_errors instead of scanning the entire table.
+   * Results are cached for 1 minute.
    */
   async getRecentErrors(organizationId: string): Promise<RecentError[]> {
+    // Try cache first
+    const cacheKey = CacheManager.statsKey(organizationId, 'dashboard-recent-errors');
+    const cached = await CacheManager.get<RecentError[]>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     // Get all project IDs for this organization
     const projects = await db
       .selectFrom('projects')
@@ -691,16 +744,21 @@ class DashboardService {
       return [];
     }
 
+    // PERFORMANCE: Add time filter to use partial error index
+    // Without this, PG scans the entire hypertable looking for errors
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const errors = await db
       .selectFrom('logs')
       .select(['time', 'service', 'level', 'message', 'project_id', 'trace_id'])
       .where('project_id', 'in', projectIds)
       .where('level', 'in', ['error', 'critical'])
+      .where('time', '>=', last24h)
       .orderBy('time', 'desc')
       .limit(10)
       .execute();
 
-    return errors.map((e) => ({
+    const result = errors.map((e) => ({
       time: e.time.toISOString(),
       service: e.service,
       level: e.level as 'error' | 'critical',
@@ -708,6 +766,11 @@ class DashboardService {
       projectId: e.project_id || '',
       traceId: e.trace_id || undefined,
     }));
+
+    // Cache for 1 minute
+    await CacheManager.set(cacheKey, result, CACHE_TTL.QUERY);
+
+    return result;
   }
 }
 

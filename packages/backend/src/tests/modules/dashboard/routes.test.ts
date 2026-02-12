@@ -347,4 +347,61 @@ describe('Dashboard Routes', () => {
             expect(body.errors.length).toBe(0);
         });
     });
+
+    // =========================================================================
+    // GET /api/v1/dashboard/timeline-events
+    // =========================================================================
+
+    describe('GET /api/v1/dashboard/timeline-events', () => {
+        it('should return timeline events', async () => {
+            const res = await app.inject({
+                method: 'GET',
+                url: `/api/v1/dashboard/timeline-events?organizationId=${testOrganization.id}`,
+                headers: authHeaders(),
+            });
+
+            expect(res.statusCode).toBe(200);
+            const body = JSON.parse(res.payload);
+            expect(body.events).toBeDefined();
+            expect(Array.isArray(body.events)).toBe(true);
+        });
+
+        it('should return 400 for missing organizationId', async () => {
+            const res = await app.inject({
+                method: 'GET',
+                url: '/api/v1/dashboard/timeline-events',
+                headers: authHeaders(),
+            });
+
+            expect(res.statusCode).toBe(400);
+        });
+
+        it('should return 403 when user is not a member', async () => {
+            const otherUser = await db
+                .insertInto('users')
+                .values({ email: 'tl@test.com', name: 'TL', password_hash: 'h' })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+            const session = await createTestSession(otherUser.id);
+
+            const res = await app.inject({
+                method: 'GET',
+                url: `/api/v1/dashboard/timeline-events?organizationId=${testOrganization.id}`,
+                headers: { Authorization: `Bearer ${session.token}` },
+            });
+
+            expect(res.statusCode).toBe(403);
+        });
+
+        it('should return empty events for org with no alerts or detections', async () => {
+            const res = await app.inject({
+                method: 'GET',
+                url: `/api/v1/dashboard/timeline-events?organizationId=${testOrganization.id}`,
+                headers: authHeaders(),
+            });
+
+            const body = JSON.parse(res.payload);
+            expect(body.events.length).toBe(0);
+        });
+    });
 });

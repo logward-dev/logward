@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, beforeAll } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { db } from '../../../database/index.js';
-import { sql } from 'kysely';
 import { sigmaRoutes } from '../../../modules/sigma/routes.js';
 import { createTestContext, createTestSigmaRule } from '../../helpers/factories.js';
 import crypto from 'crypto';

@@ -498,7 +498,7 @@ export class PiiMaskingService {
       if (!dbRule.regex_pattern) continue;
 
       try {
-        const regex = new RegExp(dbRule.regex_pattern, 'gi');
+        const regex = new RegExp(dbRule.regex_pattern, 'gi'); // lgtm[js/regex-injection] - validated by isSafeRegex at creation time
         contentRules.push({
           name,
           regex,
@@ -731,7 +731,7 @@ export class PiiMaskingService {
     }
 
     try {
-      new RegExp(pattern, 'gi');
+      new RegExp(pattern, 'gi'); // lgtm[js/regex-injection] - pattern is validated by isSafeRegex above
       return { valid: true };
     } catch {
       return { valid: false, error: 'Invalid regex syntax' };
