@@ -23,9 +23,6 @@ export class StorageEngineFactory {
       case 'clickhouse':
         return new ClickHouseEngine(config, options as ClickHouseEngineOptions);
 
-      case 'clickhouse-fdw':
-        throw new Error('ClickHouse FDW engine not yet implemented');
-
       default: {
         const _exhaustive: never = type;
         throw new Error(`Unsupported engine type: ${_exhaustive}`);

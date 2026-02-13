@@ -8,7 +8,7 @@
 import type { LogLevel } from '@logtide/shared';
 export type { LogLevel };
 
-export type EngineType = 'timescale' | 'clickhouse' | 'clickhouse-fdw';
+export type EngineType = 'timescale' | 'clickhouse';
 
 export type StorageTier = 'hot' | 'warm' | 'cold' | 'archive';
 
@@ -194,6 +194,8 @@ export interface CountParams {
   traceId?: string;
   from: Date;
   to: Date;
+  fromExclusive?: boolean;
+  toExclusive?: boolean;
   search?: string;
   searchMode?: SearchMode;
   filters?: Filter[];
@@ -215,6 +217,8 @@ export interface DistinctParams {
   hostname?: string | string[];
   from: Date;
   to: Date;
+  fromExclusive?: boolean;
+  toExclusive?: boolean;
   filters?: Filter[];
   limit?: number;
 }
@@ -235,6 +239,8 @@ export interface TopValuesParams {
   hostname?: string | string[];
   from: Date;
   to: Date;
+  fromExclusive?: boolean;
+  toExclusive?: boolean;
   limit?: number;
 }
 

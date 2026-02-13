@@ -129,9 +129,9 @@ describe('TimescaleEngine', () => {
       const calls = mockQuery.mock.calls.map((c) => (c[0] as string).trim());
       expect(calls.some((q) => q.includes('CREATE SCHEMA IF NOT EXISTS public'))).toBe(true);
       expect(calls.some((q) => q.includes('CREATE TABLE IF NOT EXISTS public.logs'))).toBe(true);
-      expect(calls.some((q) => q.includes('idx_logs_project_time'))).toBe(true);
       expect(calls.some((q) => q.includes('idx_logs_fulltext'))).toBe(true);
       expect(calls.some((q) => q.includes('idx_logs_composite'))).toBe(true);
+      expect(calls.some((q) => q.includes('idx_logs_span_id'))).toBe(true);
     });
 
     it('skips initialization when skipInitialize is set', async () => {
@@ -157,7 +157,8 @@ describe('TimescaleEngine', () => {
 
       const insertCall = mockQuery.mock.calls[0];
       expect((insertCall[0] as string)).toContain('INSERT INTO public.logs');
-      expect((insertCall[1] as unknown[]).length).toBe(16); // 8 columns * 2 rows
+      expect((insertCall[0] as string)).toContain('UNNEST');
+      expect((insertCall[1] as unknown[]).length).toBe(8); // 8 column arrays
     });
 
     it('returns empty result for empty batch', async () => {
@@ -177,9 +178,9 @@ describe('TimescaleEngine', () => {
       await engine.ingest([log]);
 
       const params = mockQuery.mock.calls[0][1] as unknown[];
-      // message is at index 4 (0-based: time, proj, service, level, message)
-      expect(params[4]).toBe('helloworld');
-      expect(params[2]).toBe('apitest');
+      // UNNEST arrays: [times, projectIds, services, levels, messages, ...]
+      expect((params[4] as string[])[0]).toBe('helloworld');
+      expect((params[2] as string[])[0]).toBe('apitest');
     });
 
     it('handles insert errors', async () => {

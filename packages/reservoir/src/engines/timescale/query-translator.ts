@@ -38,32 +38,27 @@ export class TimescaleQueryTranslator extends QueryTranslator {
   }
 
   translateQuery(params: QueryParams): NativeQuery {
+    this.validatePagination(params.limit, params.offset);
+
     const conditions: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    // organization_id (optional - logs-explorer doesn't have it in logs table)
     if (params.organizationId !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'organization_id', params.organizationId);
     }
-
-    // project_id
     if (params.projectId !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'project_id', params.projectId);
     }
-
-    // service
     if (params.service !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'service', params.service);
     }
-
-    // level
     if (params.level !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'level', params.level);
     }
 
-    // hostname (stored in metadata jsonb)
     if (params.hostname !== undefined) {
+      this.validateArrayFilter('hostname', params.hostname);
       if (Array.isArray(params.hostname)) {
         conditions.push(`metadata->>'hostname' = ANY($${idx})`);
         values.push(params.hostname);
@@ -75,14 +70,12 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       }
     }
 
-    // trace_id
     if (params.traceId !== undefined) {
       conditions.push(`trace_id = $${idx}`);
       values.push(params.traceId);
       idx++;
     }
 
-    // time range (support exclusive bounds for getLogContext)
     conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx}`);
     values.push(params.from);
     idx++;
@@ -90,7 +83,6 @@ export class TimescaleQueryTranslator extends QueryTranslator {
     values.push(params.to);
     idx++;
 
-    // search
     if (params.search) {
       if (params.searchMode === 'substring') {
         conditions.push(`message ILIKE $${idx}`);
@@ -103,7 +95,6 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       }
     }
 
-    // cursor-based pagination: (time, id) < ($N, $N) for DESC ordering
     if (params.cursor) {
       try {
         const decoded = Buffer.from(params.cursor, 'base64').toString('utf-8');
@@ -119,7 +110,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
           }
         }
       } catch {
-        // invalid cursor format - skip silently
+        // invalid cursor - skip
       }
     }
 
@@ -150,15 +141,12 @@ export class TimescaleQueryTranslator extends QueryTranslator {
     values.push(interval);
     idx++;
 
-    // organization_id (optional)
     if (params.organizationId !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'organization_id', params.organizationId);
     }
-
     if (params.projectId !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'project_id', params.projectId);
     }
-
     if (params.service !== undefined) {
       idx = this.pushFilter(conditions, values, idx, 'service', params.service);
     }
@@ -195,6 +183,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       idx = this.pushFilter(conditions, values, idx, 'level', params.level);
     }
     if (params.hostname !== undefined) {
+      this.validateArrayFilter('hostname', params.hostname);
       if (Array.isArray(params.hostname)) {
         conditions.push(`metadata->>'hostname' = ANY($${idx})`);
         values.push(params.hostname);
@@ -210,10 +199,10 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       values.push(params.traceId);
       idx++;
     }
-    conditions.push(`time >= $${idx}`);
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx}`);
     values.push(params.from);
     idx++;
-    conditions.push(`time <= $${idx}`);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} $${idx}`);
     values.push(params.to);
 
     if (params.search) {
@@ -234,6 +223,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
 
   translateDistinct(params: DistinctParams): NativeQuery {
     this.validateFieldName(params.field);
+    this.validatePagination(params.limit);
 
     const conditions: string[] = [];
     const values: unknown[] = [];
@@ -252,6 +242,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       idx = this.pushFilter(conditions, values, idx, 'level', params.level);
     }
     if (params.hostname !== undefined) {
+      this.validateArrayFilter('hostname', params.hostname);
       if (Array.isArray(params.hostname)) {
         conditions.push(`metadata->>'hostname' = ANY($${idx})`);
         values.push(params.hostname);
@@ -263,14 +254,13 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       }
     }
 
-    conditions.push(`time >= $${idx}`);
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx}`);
     values.push(params.from);
     idx++;
-    conditions.push(`time <= $${idx}`);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} $${idx}`);
     values.push(params.to);
     idx++;
 
-    // Resolve the SELECT expression for the field
     let selectExpr: string;
     if (params.field.startsWith('metadata.')) {
       const jsonKey = params.field.slice('metadata.'.length);
@@ -295,6 +285,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
 
   translateTopValues(params: TopValuesParams): NativeQuery {
     this.validateFieldName(params.field);
+    this.validatePagination(params.limit);
 
     const conditions: string[] = [];
     const values: unknown[] = [];
@@ -313,6 +304,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       idx = this.pushFilter(conditions, values, idx, 'level', params.level);
     }
     if (params.hostname !== undefined) {
+      this.validateArrayFilter('hostname', params.hostname);
       if (Array.isArray(params.hostname)) {
         conditions.push(`metadata->>'hostname' = ANY($${idx})`);
         values.push(params.hostname);
@@ -324,14 +316,13 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       }
     }
 
-    conditions.push(`time >= $${idx}`);
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx}`);
     values.push(params.from);
     idx++;
-    conditions.push(`time <= $${idx}`);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} $${idx}`);
     values.push(params.to);
     idx++;
 
-    // Resolve field expression
     let selectExpr: string;
     if (params.field.startsWith('metadata.')) {
       const jsonKey = params.field.slice('metadata.'.length);
@@ -360,6 +351,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
     let idx = 1;
 
     if (Array.isArray(params.projectId)) {
+      this.validateArrayFilter('project_id', params.projectId);
       conditions.push(`project_id = ANY($${idx})`);
       values.push(params.projectId);
     } else {
@@ -394,6 +386,7 @@ export class TimescaleQueryTranslator extends QueryTranslator {
     column: string,
     value: string | string[],
   ): number {
+    this.validateArrayFilter(column, value);
     if (Array.isArray(value)) {
       conditions.push(`${column} = ANY($${idx})`);
       values.push(value);

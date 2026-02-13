@@ -65,9 +65,14 @@ export class ClickHouseEngine extends StorageEngine {
       username: this.config.username,
       password: this.config.password,
       database: this.config.database,
-      max_open_connections: this.config.poolSize ?? 10,
+      max_open_connections: this.config.poolSize ?? 50,
       request_timeout: this.config.connectionTimeoutMs ?? 30_000,
       compression: { request: true, response: true },
+      keep_alive: { enabled: true },
+      clickhouse_settings: {
+        async_insert: 1,
+        wait_for_async_insert: 1,
+      },
     });
   }
 
@@ -109,7 +114,7 @@ export class ClickHouseEngine extends StorageEngine {
         CREATE TABLE IF NOT EXISTS ${t} (
           id UUID DEFAULT generateUUIDv4(),
           time DateTime64(3) NOT NULL,
-          project_id LowCardinality(String) NOT NULL,
+          project_id String NOT NULL,
           service LowCardinality(String) NOT NULL,
           level LowCardinality(String) NOT NULL,
           message String NOT NULL,
@@ -120,24 +125,30 @@ export class ClickHouseEngine extends StorageEngine {
         )
         ENGINE = MergeTree()
         PARTITION BY toYYYYMM(time)
-        ORDER BY (project_id, time, id)
+        ORDER BY (project_id, time)
         SETTINGS index_granularity = 8192
       `,
     });
 
-    // Full-text bloom filter index on message
     try {
       await client.command({
-        query: `ALTER TABLE ${t} ADD INDEX IF NOT EXISTS idx_message_fulltext message TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1`,
+        query: `ALTER TABLE ${t} ADD INDEX IF NOT EXISTS idx_message_fulltext message TYPE ngrambf_v1(3, 32768, 3, 0) GRANULARITY 1`,
       });
     } catch {
       // index may already exist
     }
 
-    // Index on trace_id for correlation queries
     try {
       await client.command({
         query: `ALTER TABLE ${t} ADD INDEX IF NOT EXISTS idx_trace_id trace_id TYPE bloom_filter(0.01) GRANULARITY 1`,
+      });
+    } catch {
+      // index may already exist
+    }
+
+    try {
+      await client.command({
+        query: `ALTER TABLE ${t} ADD INDEX IF NOT EXISTS idx_span_id span_id TYPE bloom_filter(0.01) GRANULARITY 1`,
       });
     } catch {
       // index may already exist

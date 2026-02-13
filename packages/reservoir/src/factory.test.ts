@@ -23,11 +23,6 @@ describe('StorageEngineFactory', () => {
     expect(engine).toBeInstanceOf(ClickHouseEngine);
   });
 
-  it('throws for clickhouse-fdw type (not implemented)', () => {
-    expect(() => StorageEngineFactory.create('clickhouse-fdw', validConfig))
-      .toThrow('ClickHouse FDW engine not yet implemented');
-  });
-
   it('throws for missing host', () => {
     expect(() => StorageEngineFactory.create('timescale', { ...validConfig, host: '' }))
       .toThrow('host is required');

@@ -31,7 +31,7 @@ import { TimescaleQueryTranslator } from './query-translator.js';
 const { Pool } = pg;
 
 function sanitizeNull(value: string): string {
-  return value.replace(/\0/g, '');
+  return value.includes('\0') ? value.replace(/\0/g, '') : value;
 }
 
 export interface TimescaleEngineOptions {
@@ -70,7 +70,7 @@ export class TimescaleEngine extends StorageEngine {
   }
 
   async connect(): Promise<void> {
-    if (this.pool) return; // already connected (injected pool)
+    if (this.pool) return;
     this.pool = new Pool({
       host: this.config.host,
       port: this.config.port,
@@ -81,6 +81,11 @@ export class TimescaleEngine extends StorageEngine {
       connectionTimeoutMillis: this.config.connectionTimeoutMs ?? 5000,
       ssl: this.config.ssl ? { rejectUnauthorized: false } : undefined,
     });
+    if (typeof this.pool.on === 'function') {
+      this.pool.on('error', (err) => {
+        console.error('[TimescaleEngine] Pool error:', err.message);
+      });
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -142,12 +147,19 @@ export class TimescaleEngine extends StorageEngine {
       // not a TimescaleDB instance or already a hypertable
     }
 
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_project_time ON ${s}.${t} (project_id, time DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_service_time ON ${s}.${t} (service, time DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_level_time ON ${s}.${t} (level, time DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_trace_id ON ${s}.${t} (trace_id) WHERE trace_id IS NOT NULL`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_span_id ON ${s}.${t} (span_id) WHERE span_id IS NOT NULL`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_fulltext ON ${s}.${t} USING GIN (to_tsvector('english', message))`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_composite ON ${s}.${t} (project_id, time DESC, id DESC)`);
+
+    try {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_message_trgm ON ${s}.${t} USING GIN (message gin_trgm_ops)`);
+    } catch {
+      // pg_trgm not available
+    }
 
     // compression policy (ignore error if not supported)
     try {
@@ -365,33 +377,35 @@ export class TimescaleEngine extends StorageEngine {
   }
 
   private buildInsertQuery(logs: LogRecord[], returning = false): { query: string; values: unknown[] } {
-    const columns = ['time', 'project_id', 'service', 'level', 'message', 'metadata', 'trace_id', 'span_id'];
-    const values: unknown[] = [];
-    const rows: string[] = [];
+    const s = this.schema;
+    const t = this.tableName;
 
-    for (let i = 0; i < logs.length; i++) {
-      const log = logs[i];
-      const base = i * columns.length;
-      const placeholders = columns.map((_, j) => `$${base + j + 1}`);
-      rows.push(`(${placeholders.join(', ')})`);
-      values.push(
-        log.time,
-        sanitizeNull(log.projectId),
-        sanitizeNull(log.service),
-        log.level,
-        sanitizeNull(log.message),
-        log.metadata ? JSON.stringify(log.metadata) : null,
-        log.traceId ?? null,
-        log.spanId ?? null,
-      );
+    const times: Date[] = [];
+    const projectIds: string[] = [];
+    const services: string[] = [];
+    const levels: string[] = [];
+    const messages: string[] = [];
+    const metadatas: (string | null)[] = [];
+    const traceIds: (string | null)[] = [];
+    const spanIds: (string | null)[] = [];
+
+    for (const log of logs) {
+      times.push(log.time);
+      projectIds.push(sanitizeNull(log.projectId));
+      services.push(sanitizeNull(log.service));
+      levels.push(log.level);
+      messages.push(sanitizeNull(log.message));
+      metadatas.push(log.metadata ? JSON.stringify(log.metadata) : null);
+      traceIds.push(log.traceId ?? null);
+      spanIds.push(log.spanId ?? null);
     }
 
-    let query = `INSERT INTO ${this.schema}.${this.tableName} (${columns.join(', ')}) VALUES ${rows.join(', ')}`;
+    let query = `INSERT INTO ${s}.${t} (time, project_id, service, level, message, metadata, trace_id, span_id) SELECT * FROM UNNEST($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::jsonb[], $7::text[], $8::text[])`;
     if (returning) {
       query += ' RETURNING *';
     }
 
-    return { query, values };
+    return { query, values: [times, projectIds, services, levels, messages, metadatas, traceIds, spanIds] };
   }
 }
 
