@@ -4,7 +4,7 @@
  * Fetches Sigma rules from https://github.com/SigmaHQ/sigma
  */
 
-import { connection as redis, isRedisAvailable } from '../../queue/connection.js';
+import { getConnection, isRedisAvailable } from '../../queue/connection.js';
 
 // Cache TTLs (in seconds)
 const CACHE_TTL = {
@@ -15,11 +15,13 @@ const CACHE_TTL = {
 
 // Cache helper functions (handle Redis unavailability)
 async function cacheGet(key: string): Promise<string | null> {
+  const redis = getConnection();
   if (!isRedisAvailable() || !redis) return null;
   return redis.get(key);
 }
 
 async function cacheSet(key: string, ttl: number, value: string): Promise<void> {
+  const redis = getConnection();
   if (!isRedisAvailable() || !redis) return;
   await redis.setex(key, ttl, value);
 }

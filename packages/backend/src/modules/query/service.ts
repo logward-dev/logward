@@ -1,5 +1,6 @@
-import { sql } from 'kysely';
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
+import type { TimeBucket, StoredLogRecord } from '@logtide/reservoir';
 import { CacheManager, CACHE_TTL } from '../../utils/cache.js';
 import type { LogLevel } from '@logtide/shared';
 
@@ -46,7 +47,6 @@ export class QueryService {
     } = params;
 
     // PERFORMANCE: Default to last 24h if no time filter provided
-    // This prevents full table scans on datasets with millions of logs
     const effectiveFrom = from || new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Generate deterministic cache key
@@ -67,7 +67,6 @@ export class QueryService {
     const cached = await CacheManager.get<any>(cacheKey);
 
     if (cached) {
-      // Convert date strings back to Date objects
       return {
         ...cached,
         logs: cached.logs.map((log: any) => ({
@@ -77,148 +76,43 @@ export class QueryService {
       };
     }
 
-    let query = db.selectFrom('logs').selectAll();
+    // Delegate to reservoir (raw parametrized SQL, no Kysely overhead)
+    const queryResult = await reservoir.query({
+      projectId,
+      service,
+      level,
+      hostname,
+      traceId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+      search: q,
+      searchMode,
+      limit,
+      offset,
+      cursor,
+    });
 
-    // Project filter - support single or multiple projects
-    if (Array.isArray(projectId)) {
-      query = query.where('project_id', 'in', projectId);
-    } else {
-      query = query.where('project_id', '=', projectId);
-    }
-
-    // Apply cursor filter if present
-    if (cursor) {
-      try {
-        const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
-        const [cursorTimeStr, cursorId] = decoded.split(',');
-        const cursorTime = new Date(cursorTimeStr);
-
-        // Validate cursor components - skip if invalid
-        if (!cursorId || isNaN(cursorTime.getTime())) {
-          console.warn('Invalid cursor format', cursor);
-        } else {
-          // WHERE (time, id) < (cursorTime, cursorId) for DESC order
-          query = query.where((eb) => eb.or([
-            eb('time', '<', cursorTime),
-            eb.and([
-              eb('time', '=', cursorTime),
-              eb('id', '<', cursorId)
-            ])
-          ]));
-        }
-      } catch (e) {
-        console.warn('Invalid cursor format', cursor);
-      }
-    }
-
-    // Apply filters
-    if (service) {
-      if (Array.isArray(service)) {
-        // Multiple services - use IN clause
-        query = query.where('service', 'in', service);
-      } else {
-        // Single service
-        query = query.where('service', '=', service);
-      }
-    }
-
-    if (level) {
-      if (Array.isArray(level)) {
-        // Multiple levels - use IN clause
-        query = query.where('level', 'in', level);
-      } else {
-        // Single level
-        query = query.where('level', '=', level);
-      }
-    }
-
-    // Filter by hostname (stored in metadata JSONB)
-    if (hostname) {
-      if (Array.isArray(hostname)) {
-        // Multiple hostnames - use IN clause with JSONB operator
-        query = query.where(sql`metadata->>'hostname'`, 'in', hostname);
-      } else {
-        // Single hostname
-        query = query.where(sql`metadata->>'hostname'`, '=', hostname);
-      }
-    }
-
-    if (traceId) {
-      query = query.where('trace_id', '=', traceId);
-    }
-
-    // PERFORMANCE: Always apply time filter (effectiveFrom has default of 24h)
-    query = query.where('time', '>=', effectiveFrom);
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    // Search on message - support both fulltext and substring modes
-    if (q) {
-      if (searchMode === 'substring') {
-        // Substring search using ILIKE with trigram index (pg_trgm)
-        // This finds text anywhere in the message, unlike fulltext which is word-based
-        // Escape special LIKE characters (%, _, \) to prevent pattern manipulation
-        // Backslash must be escaped first to avoid double-escaping
-        const escapedQuery = q.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
-        // Build the pattern and pass it as a parameter to Kysely
-        const pattern = `%${escapedQuery}%`;
-        query = query.where(
-          sql<boolean>`message ILIKE ${pattern}`
-        );
-      } else {
-        // Full-text search (default) - word-based with stemming
-        // Uses GIN index on to_tsvector('english', message)
-        query = query.where(
-          sql<boolean>`to_tsvector('english', message) @@ plainto_tsquery('english', ${q})`
-        );
-      }
-    }
-
-    // PERFORMANCE: Skip expensive COUNT(*) - it scans all matching rows and is the main
-    // bottleneck on large datasets (was causing 12s+ response times).
-    // Use limit+1 pattern to detect "has more" without counting everything.
-    const fetchLimit = limit + 1;
-
-    const dbLogs = await query
-      .orderBy('time', 'desc')
-      .orderBy('id', 'desc') // Deterministic sort
-      .limit(fetchLimit)
-      .offset(offset) // Keep offset support if cursor not used
-      .execute();
-
-    const hasMore = dbLogs.length > limit;
-    const logsToReturn = hasMore ? dbLogs.slice(0, limit) : dbLogs;
-
-    let nextCursor: string | undefined;
-    if (hasMore) {
-      const lastLog = logsToReturn[logsToReturn.length - 1];
-      nextCursor = Buffer.from(`${lastLog.time.toISOString()},${lastLog.id}`).toString('base64');
-    }
-
-    // Map database fields (snake_case) to API format (camelCase)
-    const logs = logsToReturn.map(log => ({
+    // Map reservoir StoredLogRecord to API format
+    const logs = queryResult.logs.map((log: StoredLogRecord) => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     }));
 
     const result = {
       logs,
-      total: -1, // Exact count removed for performance - use hasMore/nextCursor instead
-      hasMore,
-      limit,
-      offset,
-      nextCursor,
+      total: -1,
+      hasMore: queryResult.hasMore,
+      limit: queryResult.limit,
+      offset: queryResult.offset,
+      nextCursor: queryResult.nextCursor,
     };
 
-    // Cache result using CacheManager
     await CacheManager.set(cacheKey, result, CACHE_TTL.QUERY);
 
     return result;
@@ -228,12 +122,7 @@ export class QueryService {
    * Get a single log by ID
    */
   async getLogById(logId: string, projectId: string) {
-    const log = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('id', '=', logId)
-      .where('project_id', '=', projectId)
-      .executeTakeFirst();
+    const log = await reservoir.getById({ id: logId, projectId });
 
     if (!log) {
       return null;
@@ -242,12 +131,12 @@ export class QueryService {
     return {
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     };
   }
 
@@ -267,23 +156,25 @@ export class QueryService {
       }));
     }
 
-    const logs = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('trace_id', '=', traceId)
-      .orderBy('time', 'asc')
-      .execute();
+    // Query through reservoir (works with any engine)
+    const queryResult = await reservoir.query({
+      projectId,
+      traceId,
+      from: new Date(0), // All time - trace correlation needs all logs
+      to: new Date(),
+      sortOrder: 'asc',
+      limit: 1000,
+    });
 
-    const result = logs.map(log => ({
+    const result = queryResult.logs.map(log => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     }));
 
     // Cache for longer since trace data is immutable
@@ -303,50 +194,49 @@ export class QueryService {
   }) {
     const { projectId, time, before = 10, after = 10 } = params;
 
-    // Get logs before the timestamp (ordered descending, then reverse)
-    const logsBefore = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '<', time)
-      .orderBy('time', 'desc')
-      .limit(before)
-      .execute();
+    const [beforeResult, afterResult, currentResult] = await Promise.all([
+      // Logs before (exclusive, descending → then reverse)
+      reservoir.query({
+        projectId,
+        from: new Date(0),
+        to: time,
+        toExclusive: true,
+        sortOrder: 'desc',
+        limit: before,
+      }),
+      // Logs after (exclusive, ascending) — no upper bound needed
+      reservoir.query({
+        projectId,
+        from: time,
+        fromExclusive: true,
+        to: new Date('9999-12-31T23:59:59.999Z'),
+        sortOrder: 'asc',
+        limit: after,
+      }),
+      // Current log at exact time
+      reservoir.query({
+        projectId,
+        from: time,
+        to: time,
+        limit: 1,
+      }),
+    ]);
 
-    // Get logs after the timestamp (ordered ascending)
-    const logsAfter = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '>', time)
-      .orderBy('time', 'asc')
-      .limit(after)
-      .execute();
-
-    // Get the current log at the exact timestamp (if exists)
-    const currentLog = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '=', time)
-      .executeTakeFirst();
-
-    // Map to API format
-    const mapLog = (log: any) => ({
+    const mapLog = (log: StoredLogRecord) => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     });
 
     return {
-      before: logsBefore.reverse().map(mapLog), // Reverse to chronological order
-      current: currentLog ? mapLog(currentLog) : null,
-      after: logsAfter.map(mapLog),
+      before: beforeResult.logs.reverse().map(mapLog),
+      current: currentResult.logs.length > 0 ? mapLog(currentResult.logs[0]) : null,
+      after: afterResult.logs.map(mapLog),
     };
   }
 
@@ -362,51 +252,22 @@ export class QueryService {
   }) {
     const { projectId, service, from, to, interval } = params;
 
-    // Map interval to PostgreSQL interval
-    const intervalMap = {
-      '1m': '1 minute',
-      '5m': '5 minutes',
-      '1h': '1 hour',
-      '1d': '1 day',
-    };
+    const aggResult = await reservoir.aggregate({
+      projectId,
+      service,
+      from,
+      to,
+      interval,
+    });
 
-    let query = db
-      .selectFrom('logs')
-      .select([
-        sql<Date>`time_bucket('${sql.raw(intervalMap[interval])}', time)`.as('bucket'),
-        db.fn.count('time').as('total'),
-        'level',
-      ])
-      .where('project_id', '=', projectId)
-      .where('time', '>=', from)
-      .where('time', '<=', to)
-      .groupBy(['bucket', 'level'])
-      .orderBy('bucket', 'asc');
+    // Map reservoir format (byLevel) to existing API format (by_level)
+    const timeseries = aggResult.timeseries.map((bucket: TimeBucket) => ({
+      bucket: bucket.bucket,
+      total: bucket.total,
+      by_level: bucket.byLevel ?? {},
+    }));
 
-    if (service) {
-      query = query.where('service', '=', service);
-    }
-
-    const results = await query.execute();
-
-    // Group by bucket
-    const timeseries = results.reduce((acc, row) => {
-      const bucketKey = row.bucket.toISOString();
-      if (!acc[bucketKey]) {
-        acc[bucketKey] = {
-          bucket: row.bucket,
-          total: 0,
-          by_level: {} as Record<string, number>,
-        };
-      }
-      acc[bucketKey].total += Number(row.total);
-      acc[bucketKey].by_level[row.level] = Number(row.total);
-      return acc;
-    }, {} as Record<string, any>);
-
-    return {
-      timeseries: Object.values(timeseries),
-    };
+    return { timeseries };
   }
 
   /**
@@ -435,11 +296,13 @@ export class QueryService {
     let result: Array<{ service: string; count: string | number | bigint }>;
 
     try {
-      // Fast path: use continuous aggregate
+      if (reservoir.getEngineType() !== 'timescale') throw new Error('skip aggregate');
+
+      // Fast path: use continuous aggregate (TimescaleDB only)
+      const { sql } = await import('kysely');
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       const [historicalServices, recentServices] = await Promise.all([
-        // Historical data from daily aggregate
         db
           .selectFrom('logs_daily_stats')
           .select(['service', sql<string>`SUM(log_count)`.as('count')])
@@ -448,24 +311,22 @@ export class QueryService {
           .where('bucket', '<', oneDayAgo)
           .groupBy('service')
           .execute(),
-        // Recent data from raw logs (last 24h, not yet in daily aggregate)
-        db
-          .selectFrom('logs')
-          .select(['service', sql<string>`COUNT(*)`.as('count')])
-          .where('project_id', '=', projectId)
-          .where('time', '>=', oneDayAgo)
-          .groupBy('service')
-          .execute(),
+        reservoir.topValues({
+          field: 'service',
+          projectId,
+          from: oneDayAgo,
+          to: to ?? new Date(),
+          limit: 100,
+        }),
       ]);
 
-      // Merge counts
       const serviceMap = new Map<string, number>();
       for (const row of historicalServices) {
         serviceMap.set(row.service, Number(row.count ?? 0));
       }
-      for (const row of recentServices) {
-        const existing = serviceMap.get(row.service) ?? 0;
-        serviceMap.set(row.service, existing + Number(row.count ?? 0));
+      for (const row of recentServices.values) {
+        const existing = serviceMap.get(row.value) ?? 0;
+        serviceMap.set(row.value, existing + row.count);
       }
 
       result = Array.from(serviceMap.entries())
@@ -473,24 +334,15 @@ export class QueryService {
         .sort((a, b) => Number(b.count) - Number(a.count))
         .slice(0, limit);
     } catch {
-      // Fallback: raw logs query
-      let query = db
-        .selectFrom('logs')
-        .select([
-          'service',
-          db.fn.count('time').as('count'),
-        ])
-        .where('project_id', '=', projectId)
-        .where('time', '>=', effectiveFrom)
-        .groupBy('service')
-        .orderBy('count', 'desc')
-        .limit(limit);
-
-      if (to) {
-        query = query.where('time', '<=', to);
-      }
-
-      result = await query.execute();
+      // Fallback: reservoir topValues (works on any engine)
+      const topResult = await reservoir.topValues({
+        field: 'service',
+        projectId,
+        from: effectiveFrom,
+        to: to ?? new Date(),
+        limit,
+      });
+      result = topResult.values.map(v => ({ service: v.value, count: v.count }));
     }
 
     // Cache aggregation results
@@ -532,12 +384,13 @@ export class QueryService {
     let services: string[];
 
     try {
-      // Fast path: combine aggregate (historical) + raw logs (recent)
+      if (reservoir.getEngineType() !== 'timescale') throw new Error('skip aggregate');
+
+      // Fast path: combine aggregate (historical) + reservoir distinct (recent)
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const projectFilter = Array.isArray(projectId) ? projectId : [projectId];
 
       const [aggResults, recentResults] = await Promise.all([
-        // Historical from daily aggregate
         db
           .selectFrom('logs_daily_stats')
           .select('service')
@@ -549,47 +402,27 @@ export class QueryService {
           .where('bucket', '<', oneDayAgo)
           .$if(!!to, (qb) => qb.where('bucket', '<=', to!))
           .execute(),
-        // Recent from raw logs (last 24h, not yet in daily aggregate)
-        db
-          .selectFrom('logs')
-          .select('service')
-          .distinct()
-          .where('service', 'is not', null)
-          .where('service', '!=', '')
-          .where('project_id', 'in', projectFilter)
-          .where('time', '>=', oneDayAgo)
-          .$if(!!to, (qb) => qb.where('time', '<=', to!))
-          .execute(),
+        reservoir.distinct({
+          field: 'service',
+          projectId,
+          from: oneDayAgo,
+          to: to ?? new Date(),
+        }),
       ]);
 
-      // Merge and deduplicate
       const serviceSet = new Set<string>();
       for (const r of aggResults) serviceSet.add(r.service);
-      for (const r of recentResults) serviceSet.add(r.service);
+      for (const v of recentResults.values) serviceSet.add(v);
       services = Array.from(serviceSet).sort();
     } catch {
-      // Fallback: raw logs query
-      let query = db
-        .selectFrom('logs')
-        .select('service')
-        .distinct()
-        .where('service', 'is not', null)
-        .where('service', '!=', '')
-        .where('time', '>=', effectiveFrom)
-        .orderBy('service', 'asc');
-
-      if (Array.isArray(projectId)) {
-        query = query.where('project_id', 'in', projectId);
-      } else {
-        query = query.where('project_id', '=', projectId);
-      }
-
-      if (to) {
-        query = query.where('time', '<=', to);
-      }
-
-      const results = await query.execute();
-      services = results.map((r) => r.service);
+      // Fallback: reservoir distinct (works on any engine)
+      const result = await reservoir.distinct({
+        field: 'service',
+        projectId,
+        from: effectiveFrom,
+        to: to ?? new Date(),
+      });
+      services = result.values;
     }
 
     // Cache for 5 minutes
@@ -603,18 +436,15 @@ export class QueryService {
    * Hostnames are extracted from metadata.hostname field.
    * Cached for performance - used for filter dropdowns.
    *
-   * PERFORMANCE: Defaults to last 6 hours. JSONB extraction (metadata->>'hostname')
-   * requires scanning raw rows and expression indexes don't help on TimescaleDB
-   * hypertables. Keeping the window short is the most effective optimization.
-   * With 5-minute cache, most requests are served from cache.
+   * PERFORMANCE: Defaults to last 6 hours. Metadata extraction is expensive
+   * on large windows. With 5-minute cache, most requests are served from cache.
    */
   async getDistinctHostnames(
     projectId: string | string[],
     from?: Date,
     to?: Date
   ): Promise<string[]> {
-    // PERFORMANCE: Default to last 6 hours (JSONB extraction is expensive on large windows)
-    // 6h window on prod: ~350ms vs 7d: ~3s+ (11M rows scanned)
+    // PERFORMANCE: Default to last 6 hours
     const effectiveFrom = from || new Date(Date.now() - 6 * 60 * 60 * 1000);
 
     // Try cache first
@@ -632,31 +462,15 @@ export class QueryService {
       return cached;
     }
 
-    // Query distinct hostnames from metadata JSONB field
-    let query = db
-      .selectFrom('logs')
-      .select(sql<string>`metadata->>'hostname'`.as('hostname'))
-      .distinct()
-      .where(sql`metadata->>'hostname'`, 'is not', null)
-      .where(sql`metadata->>'hostname'`, '!=', '')
-      .where('time', '>=', effectiveFrom)
-      .orderBy(sql`metadata->>'hostname'`, 'asc');
+    // Query through reservoir (works with any engine - handles JSONB vs JSON extraction)
+    const result = await reservoir.distinct({
+      field: 'metadata.hostname',
+      projectId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+    });
 
-    // Project filter - support single or multiple projects
-    if (Array.isArray(projectId)) {
-      query = query.where('project_id', 'in', projectId);
-    } else {
-      query = query.where('project_id', '=', projectId);
-    }
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const results = await query.execute();
-    const hostnames = results
-      .map((r) => r.hostname)
-      .filter((h): h is string => h !== null && h !== undefined);
+    const hostnames = result.values;
 
     // Cache for 5 minutes
     await CacheManager.set(cacheKey, hostnames, CACHE_TTL.STATS);
@@ -689,24 +503,15 @@ export class QueryService {
       return cached;
     }
 
-    let query = db
-      .selectFrom('logs')
-      .select([
-        'message',
-        db.fn.count('time').as('count'),
-      ])
-      .where('project_id', '=', projectId)
-      .where('level', 'in', ['error', 'critical'])
-      .where('time', '>=', effectiveFrom)
-      .groupBy('message')
-      .orderBy('count', 'desc')
-      .limit(limit);
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const result = await query.execute();
+    const topResult = await reservoir.topValues({
+      field: 'message',
+      projectId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+      level: ['error', 'critical'],
+      limit,
+    });
+    const result = topResult.values.map(v => ({ message: v.value, count: v.count }));
 
     // Cache aggregation results
     await CacheManager.set(cacheKey, result, CACHE_TTL.STATS);

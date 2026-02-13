@@ -57,7 +57,7 @@ const poolConfig = {
   application_name: `logtide-${process.env.NODE_ENV || 'development'}`,
 };
 
-const pool = new Pool(poolConfig);
+export const pool = new Pool(poolConfig);
 
 // Pool event handlers for monitoring
 pool.on('connect', () => {

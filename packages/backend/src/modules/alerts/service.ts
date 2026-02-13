@@ -1,8 +1,8 @@
 import { db } from '../../database/connection.js';
-import { sql } from 'kysely';
 import type { LogLevel } from '@logtide/shared';
 import type { AlertType, BaselineType, BaselineMetadata } from '../../database/types.js';
 import { baselineCalculator } from './baseline-calculator.js';
+import { reservoir } from '../../database/reservoir.js';
 
 // Preview types
 export type { LogLevel } from '@logtide/shared';
@@ -343,41 +343,29 @@ export class AlertsService {
       ? new Date(Math.max(new Date(lastTrigger.triggered_at).getTime(), timeWindow.getTime()))
       : timeWindow;
 
-    // Count NEW logs (after last trigger or within time window)
-    let query = db
-      .selectFrom('logs')
-      .select((eb) => eb.fn.count('time').as('count'))
-      .where('time', '>', fromTime) // Use > to exclude the exact trigger time
-      .where('level', 'in', rule.level);
-
-    // Service filter: treat "unknown" as wildcard (matches any service filter)
-    if (rule.service) {
-      query = query.where((eb) =>
-        eb.or([
-          eb('service', '=', rule.service),
-          eb('service', '=', 'unknown'),
-        ])
-      );
-    }
-
-    // Filter logs by project_id if rule is project-scoped
+    // Determine project scope
+    let projectId: string | string[];
     if (rule.project_id) {
-      query = query.where('project_id', '=', rule.project_id);
+      projectId = rule.project_id;
     } else {
-      // Security: For organization-wide rules, filter by organization's projects
-      // Use pre-fetched mapping instead of querying per rule (N+1 fix)
       const projectIds = orgProjectsMap.get(rule.organization_id) || [];
-
-      if (projectIds.length > 0) {
-        query = query.where('project_id', 'in', projectIds);
-      } else {
-        // No projects in organization, skip
-        return null;
-      }
+      if (projectIds.length === 0) return null;
+      projectId = projectIds;
     }
 
-    const result = await query.executeTakeFirst();
-    const count = Number(result?.count || 0);
+    // Count NEW logs (after last trigger or within time window)
+    // Use fromTime + 1ms to simulate exclusive bound (time > fromTime)
+    const serviceFilter = rule.service ? [rule.service, 'unknown'] : undefined;
+    const exclusiveFrom = new Date(fromTime.getTime() + 1);
+
+    const countResult = await reservoir.count({
+      projectId,
+      from: exclusiveFrom,
+      to: new Date(),
+      level: rule.level,
+      service: serviceFilter,
+    });
+    const count = countResult.count;
 
     if (count >= rule.threshold) {
       // Record alert trigger
@@ -761,29 +749,44 @@ export class AlertsService {
     levels: LogLevel[],
     service?: string | null
   ): Promise<Array<{ bucket: Date; count: number }>> {
-    let query = db
-      .selectFrom('logs')
-      .select([
-        sql<Date>`time_bucket(${sql.lit(bucketInterval)}, time)`.as('bucket'),
-        sql<string>`count(*)::int`.as('count'),
-      ])
-      .where('time', '>=', from)
-      .where('time', '<=', to)
-      .where('level', 'in', levels)
-      .where('project_id', 'in', projectIds);
+    // Map bucket interval string to reservoir AggregationInterval
+    const intervalMap: Record<string, '5m' | '15m' | '1h'> = {
+      '5 minutes': '5m',
+      '15 minutes': '15m',
+      '1 hour': '1h',
+    };
+    const interval = intervalMap[bucketInterval] ?? '1h';
+    const serviceFilter = service ? [service, 'unknown'] : undefined;
 
-    if (service) {
-      query = query.where((eb) =>
-        eb.or([eb('service', '=', service), eb('service', '=', 'unknown')])
-      );
+    const aggResult = await reservoir.aggregate({
+      projectId: projectIds,
+      from,
+      to,
+      interval,
+      service: serviceFilter,
+    });
+
+    // Filter by level client-side (aggregate returns all levels)
+    // and flatten to simple bucket+count
+    const levelSet = new Set(levels);
+    const bucketMap = new Map<string, number>();
+
+    for (const bucket of aggResult.timeseries) {
+      let count = 0;
+      if (bucket.byLevel) {
+        for (const [lvl, n] of Object.entries(bucket.byLevel)) {
+          if (levelSet.has(lvl as LogLevel)) count += n;
+        }
+      }
+      if (count > 0) {
+        const key = bucket.bucket.toISOString();
+        bucketMap.set(key, (bucketMap.get(key) ?? 0) + count);
+      }
     }
 
-    const results = await query.groupBy('bucket').orderBy('bucket', 'asc').execute();
-
-    return results.map((r) => ({
-      bucket: new Date(r.bucket),
-      count: Number(r.count),
-    }));
+    return Array.from(bucketMap.entries())
+      .map(([key, count]) => ({ bucket: new Date(key), count }))
+      .sort((a, b) => a.bucket.getTime() - b.bucket.getTime());
   }
 
   /**
@@ -858,28 +861,24 @@ export class AlertsService {
     levels: LogLevel[],
     service?: string | null
   ): Promise<PreviewIncident['sampleLogs']> {
-    let query = db
-      .selectFrom('logs')
-      .select(['time', 'service', 'level', 'message', 'trace_id'])
-      .where('time', '>=', from)
-      .where('time', '<=', to)
-      .where('project_id', 'in', projectIds)
-      .where('level', 'in', levels);
+    const serviceFilter = service ? [service, 'unknown'] : undefined;
 
-    if (service) {
-      query = query.where((eb) =>
-        eb.or([eb('service', '=', service), eb('service', '=', 'unknown')])
-      );
-    }
+    const result = await reservoir.query({
+      projectId: projectIds,
+      from,
+      to,
+      level: levels,
+      service: serviceFilter,
+      limit: 5,
+      sortOrder: 'desc',
+    });
 
-    const logs = await query.orderBy('time', 'desc').limit(5).execute();
-
-    return logs.map((log) => ({
-      time: new Date(log.time),
+    return result.logs.map((log) => ({
+      time: log.time,
       service: log.service,
       level: log.level,
       message: log.message,
-      traceId: log.trace_id || undefined,
+      traceId: log.traceId || undefined,
     }));
   }
 
@@ -893,23 +892,18 @@ export class AlertsService {
     levels: LogLevel[],
     serviceFilter?: string | null
   ): Promise<string[]> {
-    let query = db
-      .selectFrom('logs')
-      .select('service')
-      .distinct()
-      .where('time', '>=', from)
-      .where('time', '<=', to)
-      .where('project_id', 'in', projectIds)
-      .where('level', 'in', levels);
+    const svcFilter = serviceFilter ? [serviceFilter, 'unknown'] : undefined;
 
-    if (serviceFilter) {
-      query = query.where((eb) =>
-        eb.or([eb('service', '=', serviceFilter), eb('service', '=', 'unknown')])
-      );
-    }
+    const result = await reservoir.distinct({
+      field: 'service',
+      projectId: projectIds,
+      from,
+      to,
+      level: levels,
+      service: svcFilter,
+    });
 
-    const services = await query.execute();
-    return services.map((s) => s.service).filter((s) => s !== 'unknown');
+    return result.values.filter((s) => s !== 'unknown');
   }
 
   /**

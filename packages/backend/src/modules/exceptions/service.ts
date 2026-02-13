@@ -7,6 +7,7 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { Database } from '../../database/types.js';
+import { reservoir } from '../../database/reservoir.js';
 import type {
   CreateExceptionParams,
   ErrorGroup,
@@ -444,44 +445,48 @@ export class ExceptionService {
     limit?: number;
     offset?: number;
   }): Promise<{ logs: Array<{ id: string; time: Date; service: string; message: string }>; total: number }> {
-    // Add 1-day buffer to time bounds: logs.time may differ from exceptions.created_at
-    // (e.g. batch ingestion, clock skew). Still enables TimescaleDB chunk pruning.
-    const timeLower = new Date(params.firstSeen.getTime() - 24 * 60 * 60 * 1000);
-    const timeUpper = new Date(params.lastSeen.getTime() + 24 * 60 * 60 * 1000);
+    const limit = params.limit || 10;
+    const offset = params.offset || 0;
 
+    // Step 1: Get log_ids from exceptions table (always in PG)
     let query = this.db
       .selectFrom('exceptions')
-      .innerJoin('logs', 'exceptions.log_id', 'logs.id')
-      .select([
-        'logs.id',
-        'logs.time',
-        'logs.service',
-        'logs.message',
-      ])
-      .where('exceptions.fingerprint', '=', params.fingerprint)
-      .where('exceptions.organization_id', '=', params.organizationId)
-      .where('logs.time', '>=', timeLower)
-      .where('logs.time', '<=', timeUpper)
-      .orderBy('logs.time', 'desc')
-      .limit(params.limit || 10);
+      .select('log_id')
+      .where('fingerprint', '=', params.fingerprint)
+      .where('organization_id', '=', params.organizationId)
+      .orderBy('created_at', 'desc')
+      .limit(limit)
+      .offset(offset);
 
     if (params.projectId) {
-      query = query.where('exceptions.project_id', '=', params.projectId);
+      query = query.where('project_id', '=', params.projectId);
     }
 
-    if (params.offset) {
-      query = query.offset(params.offset);
+    const exceptions = await query.execute();
+    const logIds = exceptions.map(e => e.log_id);
+
+    if (logIds.length === 0) {
+      return { logs: [], total: params.occurrenceCount };
     }
 
-    const results = await query.execute();
+    // Step 2: Fetch logs via reservoir (works with any engine)
+    const projectId = params.projectId || '';
+    const storedLogs = await reservoir.getByIds({ ids: logIds, projectId });
+
+    // Build lookup map and return in the same order
+    const logMap = new Map(storedLogs.map(l => [l.id, l]));
+    const logs = logIds
+      .map(id => logMap.get(id))
+      .filter(Boolean)
+      .map(l => ({
+        id: l!.id,
+        time: l!.time,
+        service: l!.service,
+        message: l!.message,
+      }));
 
     return {
-      logs: results.map((r) => ({
-        id: r.id,
-        time: r.time,
-        service: r.service,
-        message: r.message,
-      })),
+      logs,
       total: params.occurrenceCount,
     };
   }

@@ -50,46 +50,56 @@ console.log(`[Queue] Backend: ${backend} (Redis ${hasRedis ? 'available' : 'not 
 
 // Legacy Redis connections for backwards compatibility
 // These are used by cache.ts, rate limiting, and other code that directly uses Redis
+// Created lazily to avoid unnecessary connections in the worker process
 let connection: Redis | null = null;
 let publisher: Redis | null = null;
 
-if (hasRedis && config.REDIS_URL) {
-  const redisUrl = config.REDIS_URL;
-  const redisOptions = {
-    maxRetriesPerRequest: null as null,
-    retryStrategy: (times: number) => {
-      const maxDelay = 30000;
-      const delay = Math.min(times * 1000, maxDelay);
-      console.log(`[Redis] Reconnecting... attempt ${times}, waiting ${delay}ms`);
-      return delay;
-    },
-    reconnectOnError: (err: Error) => {
-      const targetErrors = ['READONLY', 'ECONNRESET', 'ECONNREFUSED'];
-      if (targetErrors.some((e) => err.message.includes(e))) {
-        console.log(`[Redis] Reconnecting due to error: ${err.message}`);
-        return true;
-      }
-      return false;
-    },
-    enableOfflineQueue: true,
-    connectTimeout: 10000,
-    keepAlive: 10000,
-  };
+const redisOptions = {
+  maxRetriesPerRequest: null as null,
+  retryStrategy: (times: number) => {
+    const maxDelay = 30000;
+    const delay = Math.min(times * 1000, maxDelay);
+    console.log(`[Redis] Reconnecting... attempt ${times}, waiting ${delay}ms`);
+    return delay;
+  },
+  reconnectOnError: (err: Error) => {
+    const targetErrors = ['READONLY', 'ECONNRESET', 'ECONNREFUSED'];
+    if (targetErrors.some((e) => err.message.includes(e))) {
+      console.log(`[Redis] Reconnecting due to error: ${err.message}`);
+      return true;
+    }
+    return false;
+  },
+  enableOfflineQueue: true,
+  connectTimeout: 10000,
+  keepAlive: 10000,
+};
 
-  function setupRedisEventHandlers(redis: Redis, name: string) {
-    redis.on('connect', () => console.log(`[Redis:${name}] Connected`));
-    redis.on('ready', () => console.log(`[Redis:${name}] Ready`));
-    redis.on('error', (err) => console.error(`[Redis:${name}] Error:`, err.message));
-    redis.on('close', () => console.log(`[Redis:${name}] Connection closed`));
-    redis.on('reconnecting', () => console.log(`[Redis:${name}] Reconnecting...`));
-    redis.on('end', () => console.log(`[Redis:${name}] Connection ended`));
+function setupRedisEventHandlers(redis: Redis, name: string) {
+  redis.on('connect', () => console.log(`[Redis:${name}] Connected`));
+  redis.on('ready', () => console.log(`[Redis:${name}] Ready`));
+  redis.on('error', (err) => console.error(`[Redis:${name}] Error:`, err.message));
+  redis.on('close', () => console.log(`[Redis:${name}] Connection closed`));
+  redis.on('reconnecting', () => console.log(`[Redis:${name}] Reconnecting...`));
+  redis.on('end', () => console.log(`[Redis:${name}] Connection ended`));
+}
+
+function getConnection(): Redis | null {
+  if (!hasRedis || !config.REDIS_URL) return null;
+  if (!connection) {
+    connection = new Redis(config.REDIS_URL, redisOptions);
+    setupRedisEventHandlers(connection, 'main');
   }
+  return connection;
+}
 
-  connection = new Redis(redisUrl, redisOptions);
-  setupRedisEventHandlers(connection, 'main');
-
-  publisher = new Redis(redisUrl, redisOptions);
-  setupRedisEventHandlers(publisher, 'publisher');
+function getPublisher(): Redis | null {
+  if (!hasRedis || !config.REDIS_URL) return null;
+  if (!publisher) {
+    publisher = new Redis(config.REDIS_URL, redisOptions);
+    setupRedisEventHandlers(publisher, 'publisher');
+  }
+  return publisher;
 }
 
 /**
@@ -153,10 +163,11 @@ export function isRedisAvailable(): boolean {
  * Get Redis connection for caching and rate limiting
  *
  * Returns null if Redis is not configured.
+ * Lazily created on first access to avoid unused connections (e.g. in worker).
  *
  * @deprecated Prefer using queue abstraction. This is for backwards compatibility.
  */
-export { connection, publisher };
+export { getConnection, getPublisher };
 
 /**
  * Close all connections
@@ -166,8 +177,10 @@ export async function closeConnections(): Promise<void> {
 
   if (connection) {
     await connection.quit();
+    connection = null;
   }
   if (publisher) {
     await publisher.quit();
+    publisher = null;
   }
 }

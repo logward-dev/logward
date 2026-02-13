@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { config, isRedisConfigured } from './config/index.js';
-import { connection } from './queue/connection.js';
+import { getConnection } from './queue/connection.js';
 import { notificationManager } from './modules/streaming/index.js';
 import authPlugin from './modules/auth/plugin.js';
 import { ingestionRoutes } from './modules/ingestion/index.js';
@@ -37,6 +37,7 @@ import { initializeInternalLogging, shutdownInternalLogging } from './utils/inte
 import websocketPlugin from './plugins/websocket.js';
 import websocketRoutes from './modules/query/websocket.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
+import { validateStorageConfig } from './database/storage-config.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -125,12 +126,13 @@ export async function build(opts = {}) {
     crossOriginEmbedderPolicy: false,
   });
 
-  if (isRedisConfigured() && connection) {
+  const redisConn = getConnection();
+  if (isRedisConfigured() && redisConn) {
     await fastify.register(rateLimit, {
       max: config.RATE_LIMIT_MAX,
       timeWindow: config.RATE_LIMIT_WINDOW,
       keyGenerator: (request) => request.ip,
-      redis: connection,
+      redis: redisConn,
     });
     console.log('[RateLimit] Using Redis store (distributed rate limiting)');
   } else {
@@ -191,6 +193,8 @@ export async function build(opts = {}) {
 }
 
 async function start() {
+  validateStorageConfig();
+
   await bootstrapService.runInitialBootstrap();
   await initializeInternalLogging();
   await enrichmentService.initialize();

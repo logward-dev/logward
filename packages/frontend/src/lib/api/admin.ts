@@ -121,10 +121,15 @@ export interface RedisStats {
 }
 
 export interface HealthStats {
+    storageEngine: 'timescale' | 'clickhouse';
     database: {
         status: 'healthy' | 'degraded' | 'down';
         latency: number;
         connections: number;
+    };
+    clickhouse?: {
+        status: 'healthy' | 'degraded' | 'down';
+        latency: number;
     };
     redis: {
         status: 'healthy' | 'degraded' | 'down' | 'not_configured';

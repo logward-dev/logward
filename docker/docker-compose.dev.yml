@@ -36,10 +36,35 @@ services:
     networks:
       - logtide-network
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: logtide-clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-logtide}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_PORT:-8123}:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - clickhouse
+    networks:
+      - logtide-network
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  clickhouse_data:
     driver: local
 
 networks:

@@ -494,8 +494,10 @@ describe('Correlation Routes', () => {
     });
 
     describe('GET /v1/logs/:logId/identifiers access control', () => {
-        it('should return 403 when user has no access to log project', async () => {
+        it('should return 404 when user has no access to log project', async () => {
             // Create another user without org membership
+            // User has no accessible projects, so the log is not discoverable → 404
+            // (more secure than 403 which would confirm log existence)
             const otherUser = await db
                 .insertInto('users')
                 .values({
@@ -519,7 +521,7 @@ describe('Correlation Routes', () => {
                 },
             });
 
-            expect(response.statusCode).toBe(403);
+            expect(response.statusCode).toBe(404);
         });
     });
 });

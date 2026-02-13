@@ -1,5 +1,6 @@
 import { db } from '../../database/connection.js';
 import { sql } from 'kysely';
+import { reservoir } from '../../database/reservoir.js';
 import { getInternalLogger } from '../../utils/internal-logger.js';
 
 // ============================================================================
@@ -141,32 +142,18 @@ export class RetentionService {
       };
     }
 
-    // Get oldest log time
-    const oldestLog = await db
-      .selectFrom('logs')
-      .select('time')
-      .where('project_id', 'in', projectIds)
-      .orderBy('time', 'asc')
-      .limit(1)
-      .executeTakeFirst();
-
-    // Get total logs count
-    const totalLogsResult = await db
-      .selectFrom('logs')
-      .select(sql<number>`COUNT(*)::int`.as('count'))
-      .where('project_id', 'in', projectIds)
-      .executeTakeFirst();
-
-    // Get count of logs that would be deleted
     const cutoffDate = new Date(Date.now() - org.retention_days * 24 * 60 * 60 * 1000);
-    const toDeleteResult = await db
-      .selectFrom('logs')
-      .select(sql<number>`COUNT(*)::int`.as('count'))
-      .where('project_id', 'in', projectIds)
-      .where('time', '<', cutoffDate)
-      .executeTakeFirst();
+    const now = new Date();
+
+    // Reservoir: oldest log, total count, to-delete count (works with any engine)
+    const [oldestResult, totalLogsResult, toDeleteResult] = await Promise.all([
+      reservoir.query({ projectId: projectIds, from: new Date(0), to: now, limit: 1, sortOrder: 'asc' }),
+      reservoir.count({ projectId: projectIds, from: new Date(0), to: now }),
+      reservoir.count({ projectId: projectIds, from: new Date(0), to: cutoffDate }),
+    ]);
 
     // Calculate when logs will start being deleted (oldest log time + retention days)
+    const oldestLog = oldestResult.logs.length > 0 ? oldestResult.logs[0] : null;
     let estimatedDeletionDate: Date | null = null;
     if (oldestLog?.time) {
       const oldestTime = new Date(oldestLog.time);
@@ -182,8 +169,8 @@ export class RetentionService {
       organizationName: org.name,
       retentionDays: org.retention_days,
       oldestLogTime: oldestLog?.time ? new Date(oldestLog.time) : null,
-      totalLogs: totalLogsResult?.count || 0,
-      logsToDelete: toDeleteResult?.count || 0,
+      totalLogs: totalLogsResult.count,
+      logsToDelete: toDeleteResult.count,
       estimatedDeletionDate,
     };
   }
@@ -193,29 +180,27 @@ export class RetentionService {
 
   /**
    * Delete logs for given project IDs older than cutoffDate using daily time windows.
-   * Each window deletes at most 1 day of data per transaction, keeping CPU/memory bounded.
-   * Works with compressed chunks without needing ctid or unlimited decompression.
+   * Each window deletes at most 1 day of data, keeping CPU/memory bounded.
+   * Uses reservoir.deleteByTimeRange() — works with any engine.
+   *
+   * Note: On ClickHouse, mutations are async so `result.deleted` returns 0
+   * immediately. The actual deletion happens in the background.
    */
   private async batchDeleteLogs(projectIds: string[], cutoffDate: Date, rangeStart: Date): Promise<number> {
     let totalDeleted = 0;
     const windowMs = RetentionService.BATCH_WINDOW_MS;
-    const projectArray = sql.raw(`ARRAY[${projectIds.map(id => `'${id}'::uuid`).join(',')}]`);
 
     let windowStart = rangeStart;
     while (windowStart < cutoffDate) {
       const windowEnd = new Date(Math.min(windowStart.getTime() + windowMs, cutoffDate.getTime()));
 
-      const result = await db.transaction().execute(async (trx) => {
-        await sql`SET LOCAL statement_timeout = '2min'`.execute(trx);
-        return sql`
-          DELETE FROM logs
-          WHERE project_id = ANY(${projectArray})
-            AND time >= ${windowStart}
-            AND time < ${windowEnd}
-        `.execute(trx);
+      const result = await reservoir.deleteByTimeRange({
+        projectId: projectIds,
+        from: windowStart,
+        to: windowEnd,
       });
 
-      totalDeleted += Number(result.numAffectedRows || 0);
+      totalDeleted += result.deleted;
       windowStart = windowEnd;
     }
 
@@ -255,19 +240,18 @@ export class RetentionService {
 
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-      // Find oldest log to know where to start the batch window
-      const oldestLog = await db
-        .selectFrom('logs')
-        .select('time')
-        .where('project_id', 'in', projectIds)
-        .where('time', '<', cutoffDate)
-        .orderBy('time', 'asc')
-        .limit(1)
-        .executeTakeFirst();
+      // Find oldest log to know where to start the batch window (reservoir: works with any engine)
+      const oldestResult = await reservoir.query({
+        projectId: projectIds,
+        from: new Date(0),
+        to: cutoffDate,
+        limit: 1,
+        sortOrder: 'asc',
+      });
 
       let totalDeleted = 0;
-      if (oldestLog?.time) {
-        totalDeleted = await this.batchDeleteLogs(projectIds, cutoffDate, new Date(oldestLog.time));
+      if (oldestResult.logs.length > 0) {
+        totalDeleted = await this.batchDeleteLogs(projectIds, cutoffDate, new Date(oldestResult.logs[0].time));
       }
       const executionTimeMs = Date.now() - startTime;
 
@@ -347,26 +331,29 @@ export class RetentionService {
     const maxRetention = Math.max(...organizations.map(o => o.retention_days));
     const maxCutoff = new Date(Date.now() - maxRetention * 24 * 60 * 60 * 1000);
 
-    // Step 1: drop_chunks older than max retention (instant, no decompression)
+    // Step 1: drop_chunks older than max retention (TimescaleDB only — instant, no decompression)
+    // For ClickHouse, TTL policies handle this natively or deleteByTimeRange in step 3
     let chunksDropped = 0;
-    try {
-      const dropResult = await sql`
-        SELECT drop_chunks('logs', older_than => ${maxCutoff}::timestamptz)
-      `.execute(db);
-      chunksDropped = dropResult.rows.length;
+    if (reservoir.getEngineType() === 'timescale') {
+      try {
+        const dropResult = await sql`
+          SELECT drop_chunks('logs', older_than => ${maxCutoff}::timestamptz)
+        `.execute(db);
+        chunksDropped = dropResult.rows.length;
 
-      if (chunksDropped > 0 && logger) {
-        logger.info('retention-drop-chunks', `Dropped ${chunksDropped} chunks older than ${maxRetention} days`, {
-          maxRetentionDays: maxRetention,
-          cutoffDate: maxCutoff.toISOString(),
-          chunksDropped,
-        });
-      }
-    } catch (err) {
-      // drop_chunks may fail if no chunks to drop — that's fine
-      if (logger) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.debug('retention-drop-chunks-skip', `drop_chunks: ${msg}`);
+        if (chunksDropped > 0 && logger) {
+          logger.info('retention-drop-chunks', `Dropped ${chunksDropped} chunks older than ${maxRetention} days`, {
+            maxRetentionDays: maxRetention,
+            cutoffDate: maxCutoff.toISOString(),
+            chunksDropped,
+          });
+        }
+      } catch (err) {
+        // drop_chunks may fail if no chunks to drop — that's fine
+        if (logger) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.debug('retention-drop-chunks-skip', `drop_chunks: ${msg}`);
+        }
       }
     }
 
@@ -406,17 +393,16 @@ export class RetentionService {
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
       try {
-        // Find oldest log in this group to know where to start batching
-        const oldestLog = await db
-          .selectFrom('logs')
-          .select('time')
-          .where('project_id', 'in', group.projectIds)
-          .where('time', '<', cutoffDate)
-          .orderBy('time', 'asc')
-          .limit(1)
-          .executeTakeFirst();
+        // Find oldest log in this group to know where to start batching (reservoir: works with any engine)
+        const oldestResult = await reservoir.query({
+          projectId: group.projectIds,
+          from: new Date(0),
+          to: cutoffDate,
+          limit: 1,
+          sortOrder: 'asc',
+        });
 
-        if (!oldestLog?.time) {
+        if (oldestResult.logs.length === 0) {
           // No logs to delete in this group
           for (const org of group.orgs) {
             results.push({
@@ -430,7 +416,7 @@ export class RetentionService {
           continue;
         }
 
-        const deleted = await this.batchDeleteLogs(group.projectIds, cutoffDate, new Date(oldestLog.time));
+        const deleted = await this.batchDeleteLogs(group.projectIds, cutoffDate, new Date(oldestResult.logs[0].time));
         const groupTime = Date.now() - groupStart;
         totalDeleted += deleted;
 

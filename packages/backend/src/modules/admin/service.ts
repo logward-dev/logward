@@ -1,6 +1,7 @@
 import { db, getPoolStats } from '../../database/index.js';
 import { sql } from 'kysely';
-import { connection as redis, isRedisAvailable } from '../../queue/connection.js';
+import { reservoir } from '../../database/reservoir.js';
+import { getConnection, isRedisAvailable } from '../../queue/connection.js';
 import { CacheManager, type CacheStats, isCacheEnabled } from '../../utils/cache.js';
 import { settingsService, type UpdateChannel } from '../settings/service.js';
 import { readFileSync } from 'fs';
@@ -156,10 +157,15 @@ export interface RedisStats {
 
 // Health check
 export interface HealthStats {
+    storageEngine: 'timescale' | 'clickhouse';
     database: {
         status: 'healthy' | 'degraded' | 'down';
         latency: number; // milliseconds
         connections: number;
+    };
+    clickhouse?: {
+        status: 'healthy' | 'degraded' | 'down';
+        latency: number;
     };
     redis: {
         status: 'healthy' | 'degraded' | 'down' | 'not_configured';
@@ -259,6 +265,15 @@ export class AdminService {
      * approximate_row_count for logs hypertable, and runs queries in parallel.
      */
     async getDatabaseStats(): Promise<DatabaseStats> {
+        const isClickHouse = reservoir.getEngineType() !== 'timescale';
+
+        // PG tables to query — skip logs/spans/traces when they live in ClickHouse
+        const pgTableNames = isClickHouse
+            ? ['users', 'organizations', 'projects', 'alert_rules', 'alert_history', 'api_keys', 'sessions', 'notifications', 'sigma_rules']
+            : ['users', 'organizations', 'projects', 'logs', 'alert_rules', 'alert_history', 'api_keys', 'sessions', 'notifications', 'sigma_rules'];
+
+        const pgTableList = pgTableNames.map(t => `'${t}'`).join(', ');
+
         const [tables, rowEstimates, totalSizeResult] = await Promise.all([
             // Table sizes (no COUNT subquery - uses pg catalog only)
             db.executeQuery<{
@@ -273,21 +288,34 @@ export class AdminService {
                         pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) AS indexes_size
                     FROM pg_tables
                     WHERE schemaname = 'public'
-                    AND tablename IN ('users', 'organizations', 'projects', 'logs', 'alert_rules', 'alert_history', 'api_keys', 'sessions', 'notifications', 'sigma_rules')
+                    AND tablename IN (${sql.raw(pgTableList)})
                     ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
                 `.compile(db)
             ),
 
-            // Row estimates: approximate_row_count for hypertables, reltuples for regular tables
-            db.executeQuery<{ name: string; rows: number }>(
-                sql`
-                    SELECT 'logs' AS name, approximate_row_count('logs')::int AS rows
-                    UNION ALL
-                    SELECT relname AS name, GREATEST(reltuples, 0)::int AS rows
-                    FROM pg_class
-                    WHERE relname IN ('users', 'organizations', 'projects', 'alert_rules', 'alert_history')
-                `.compile(db)
-            ),
+            // Row estimates: approximate_row_count for hypertables (TimescaleDB), reservoir for others
+            (async () => {
+                const regularRows = await db.executeQuery<{ name: string; rows: number }>(
+                    sql`
+                        SELECT relname AS name, GREATEST(reltuples, 0)::int AS rows
+                        FROM pg_class
+                        WHERE relname IN ('users', 'organizations', 'projects', 'alert_rules', 'alert_history')
+                    `.compile(db)
+                );
+
+                let logsCount = 0;
+                if (!isClickHouse) {
+                    const r = await db.executeQuery<{ count: number }>(
+                        sql`SELECT approximate_row_count('logs')::int AS count`.compile(db)
+                    );
+                    logsCount = r.rows[0]?.count ?? 0;
+                } else {
+                    const r = await reservoir.count({ from: new Date(0), to: new Date() });
+                    logsCount = r.count;
+                }
+
+                return { rows: [{ name: 'logs', rows: logsCount }, ...regularRows.rows] };
+            })(),
 
             // Total database size
             db.executeQuery<{ size: string }>(
@@ -306,6 +334,21 @@ export class AdminService {
             };
         });
 
+        // Add ClickHouse table stats when using that engine
+        if (isClickHouse) {
+            try {
+                const chTables = await this.getClickHouseTableStats();
+                tablesWithCounts.unshift(...chTables);
+                // Update logs row count from ClickHouse stats
+                const chLogs = chTables.find(t => t.name === 'clickhouse.logs');
+                if (chLogs) {
+                    rowsMap.set('logs', chLogs.rows);
+                }
+            } catch (e) {
+                console.error('[AdminService] Failed to get ClickHouse table stats:', (e as Error).message);
+            }
+        }
+
         const totalRows = tablesWithCounts.reduce((sum, t) => sum + t.rows, 0);
 
         return {
@@ -313,6 +356,50 @@ export class AdminService {
             totalSize: totalSizeResult.rows[0]?.size || '0 bytes',
             totalRows,
         };
+    }
+
+    /**
+     * Get ClickHouse table sizes and row counts
+     */
+    private async getClickHouseTableStats(): Promise<Array<{ name: string; size: string; indexes_size: string; rows: number }>> {
+        try {
+            const engine = (reservoir as unknown as { engine: { client?: { query: (opts: { query: string; format: string }) => Promise<{ json: <T>() => Promise<T[]> }> } } }).engine;
+            if (!engine.client) return [];
+
+            const resultSet = await engine.client.query({
+                query: `
+                    SELECT
+                        table,
+                        formatReadableSize(sum(bytes)) AS size,
+                        formatReadableSize(sum(primary_key_bytes_in_memory)) AS indexes_size,
+                        sum(rows) AS row_count
+                    FROM system.parts
+                    WHERE database = currentDatabase()
+                      AND table IN ('logs', 'spans', 'traces')
+                      AND active = 1
+                    GROUP BY table
+                    ORDER BY sum(bytes) DESC
+                `,
+                format: 'JSONEachRow',
+            });
+
+            const rows = await resultSet.json<{
+                table: string;
+                size: string;
+                indexes_size: string;
+                row_count: string;
+            }>();
+
+            return rows.map(r => ({
+                name: `clickhouse.${r.table}`,
+                size: r.size,
+                indexes_size: r.indexes_size,
+                rows: Number(r.row_count),
+            }));
+        } catch (e) {
+            console.error('[AdminService] Error fetching ClickHouse table stats:', (e as Error).message);
+            return [];
+        }
     }
 
     /**
@@ -328,14 +415,26 @@ export class AdminService {
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-        // Run all queries in parallel - uses continuous aggregates for heavy queries
+        if (reservoir.getEngineType() === 'timescale') {
+            return this.getLogsStatsFromAggregate(now, thirtyDaysAgo, oneDayAgo, oneHourAgo);
+        }
+        return this.getLogsStatsFromReservoir(now, thirtyDaysAgo, oneDayAgo, oneHourAgo);
+    }
+
+    /**
+     * Fast path: uses continuous aggregates + approximate_row_count (TimescaleDB)
+     */
+    private async getLogsStatsFromAggregate(
+        now: Date,
+        thirtyDaysAgo: Date,
+        oneDayAgo: Date,
+        oneHourAgo: Date,
+    ): Promise<LogsStats> {
         const [totalLogs, logsPerDay, topOrgs, topProjects, logsLastHour, logsLastDay] = await Promise.all([
-            // Approximate total logs (avoids full table scan on hypertable)
             db.executeQuery<{ count: number }>(
                 sql`SELECT approximate_row_count('logs')::int AS count`.compile(db)
             ).then(r => r.rows[0] ?? { count: 0 }),
 
-            // Logs per day from continuous aggregate (43ms vs 5.9s on raw)
             db.executeQuery<{ date: string; count: number }>(
                 sql`
                     SELECT
@@ -349,7 +448,6 @@ export class AdminService {
                 `.compile(db)
             ),
 
-            // Top organizations from continuous aggregate (31ms vs 37s on raw)
             db.executeQuery<{ organizationId: string; organizationName: string; count: number }>(
                 sql`
                     SELECT
@@ -366,7 +464,6 @@ export class AdminService {
                 `.compile(db)
             ),
 
-            // Top projects from continuous aggregate (37ms vs 16s on raw)
             db.executeQuery<{ projectId: string; projectName: string; organizationName: string; count: number }>(
                 sql`
                     SELECT
@@ -384,19 +481,11 @@ export class AdminService {
                 `.compile(db)
             ),
 
-            // Logs in last hour (uses chunk pruning on time column, ~160ms)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', oneHourAgo)
-                .executeTakeFirstOrThrow(),
+            reservoir.count({ from: oneHourAgo, to: now })
+                .then(r => ({ count: r.count })),
 
-            // Logs in last day (uses chunk pruning on time column)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', oneDayAgo)
-                .executeTakeFirstOrThrow(),
+            reservoir.count({ from: oneDayAgo, to: now })
+                .then(r => ({ count: r.count })),
         ]);
 
         return {
@@ -424,50 +513,154 @@ export class AdminService {
     }
 
     /**
+     * Fallback: uses reservoir for all log queries (ClickHouse / any engine)
+     */
+    private async getLogsStatsFromReservoir(
+        now: Date,
+        thirtyDaysAgo: Date,
+        oneDayAgo: Date,
+        oneHourAgo: Date,
+    ): Promise<LogsStats> {
+        // Get all projects with their org info for topOrgs/topProjects
+        const allProjects = await db
+            .selectFrom('projects')
+            .innerJoin('organizations', 'organizations.id', 'projects.organization_id')
+            .select([
+                'projects.id',
+                'projects.name as project_name',
+                'organizations.id as org_id',
+                'organizations.name as org_name',
+            ])
+            .execute();
+
+        const projectIds = allProjects.map(p => p.id);
+
+        const [totalResult, logsPerDayResult, logsLastHour, logsLastDay] = await Promise.all([
+            // Total logs (count is fast on ClickHouse MergeTree)
+            reservoir.count({ from: new Date(0), to: now }),
+
+            // Logs per day via reservoir aggregate
+            reservoir.aggregate({
+                projectId: projectIds.length > 0 ? projectIds : ['__none__'],
+                from: thirtyDaysAgo,
+                to: now,
+                interval: '1d',
+            }),
+
+            reservoir.count({ from: oneHourAgo, to: now }),
+            reservoir.count({ from: oneDayAgo, to: now }),
+        ]);
+
+        // Per-day counts from aggregate
+        const perDay = logsPerDayResult.timeseries
+            .map(b => ({
+                date: b.bucket.toISOString().split('T')[0],
+                count: b.total,
+            }))
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .slice(0, 30);
+
+        // Top orgs/projects: count per project via reservoir, then aggregate by org
+        let topOrganizations: LogsStats['topOrganizations'] = [];
+        let topProjects: LogsStats['topProjects'] = [];
+
+        if (projectIds.length > 0) {
+            const projectCounts = await Promise.all(
+                allProjects.map(async (p) => {
+                    const r = await reservoir.count({ projectId: p.id, from: thirtyDaysAgo, to: now });
+                    return { ...p, count: r.count };
+                })
+            );
+
+            // Aggregate by org
+            const orgMap = new Map<string, { name: string; count: number }>();
+            for (const pc of projectCounts) {
+                const existing = orgMap.get(pc.org_id);
+                if (existing) {
+                    existing.count += pc.count;
+                } else {
+                    orgMap.set(pc.org_id, { name: pc.org_name, count: pc.count });
+                }
+            }
+
+            topOrganizations = Array.from(orgMap.entries())
+                .map(([id, v]) => ({ organizationId: id, organizationName: v.name, count: v.count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10);
+
+            topProjects = projectCounts
+                .map(pc => ({
+                    projectId: pc.id,
+                    projectName: pc.project_name,
+                    organizationName: pc.org_name,
+                    count: pc.count,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10);
+        }
+
+        return {
+            total: totalResult.count,
+            perDay,
+            topOrganizations,
+            topProjects,
+            growth: {
+                logsPerHour: logsLastHour.count,
+                logsPerDay: logsLastDay.count,
+            },
+        };
+    }
+
+    /**
      * Get performance statistics
      *
      * PERFORMANCE: Uses `time` column (hypertable partition key) for chunk pruning
      * instead of `created_at` which scans all chunks. Runs queries in parallel.
      */
     async getPerformanceStats(): Promise<PerformanceStats> {
-        const [logsLastHour, logsSize, avgLatencyResult, compressionRatio] = await Promise.all([
-            // Logs in last hour - use `time` for chunk pruning (160ms vs 793ms with created_at)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', new Date(Date.now() - 60 * 60 * 1000))
-                .executeTakeFirstOrThrow(),
+        const now = new Date();
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-            // Logs table size (pg catalog, instant)
-            db.executeQuery<{ size: string }>(
-                sql`SELECT pg_size_pretty(pg_total_relation_size('logs')) AS size`.compile(db)
-            ),
+        const logsLastHour = await reservoir.count({ from: oneHourAgo, to: now });
+        const throughput = logsLastHour.count / 3600;
 
-            // Average latency from recent ingestion
-            db.executeQuery<{ avg_latency: number }>(
-                sql`
-                    SELECT AVG(EXTRACT(EPOCH FROM (NOW() - time)) * 1000)::int AS avg_latency
-                    FROM logs
-                    WHERE time > NOW() - INTERVAL '5 minutes'
-                    AND time <= NOW()
-                `.compile(db)
-            ),
+        if (reservoir.getEngineType() === 'timescale') {
+            const [logsSize, avgLatencyResult, compressionRatio] = await Promise.all([
+                db.executeQuery<{ size: string }>(
+                    sql`SELECT pg_size_pretty(pg_total_relation_size('logs')) AS size`.compile(db)
+                ),
+                db.executeQuery<{ avg_latency: number }>(
+                    sql`
+                        SELECT AVG(EXTRACT(EPOCH FROM (NOW() - time)) * 1000)::int AS avg_latency
+                        FROM logs
+                        WHERE time > NOW() - INTERVAL '5 minutes'
+                        AND time <= NOW()
+                    `.compile(db)
+                ),
+                this.getCompressionRatio(),
+            ]);
 
-            // Compression ratio
-            this.getCompressionRatio(),
-        ]);
+            return {
+                ingestion: {
+                    throughput,
+                    avgLatency: avgLatencyResult.rows[0]?.avg_latency || 0,
+                },
+                storage: {
+                    logsSize: logsSize.rows[0]?.size || '0 bytes',
+                    compressionRatio,
+                },
+            };
+        }
 
-        const throughput = logsLastHour.count / 3600; // logs per second
-        const avgLatency = avgLatencyResult.rows[0]?.avg_latency || 0;
-
+        // ClickHouse / other engines: no pg catalog or compression stats available
         return {
             ingestion: {
                 throughput,
-                avgLatency,
+                avgLatency: 0,
             },
             storage: {
-                logsSize: logsSize.rows[0]?.size || '0 bytes',
-                compressionRatio,
+                logsSize: 'N/A',
+                compressionRatio: 0,
             },
         };
     }
@@ -516,6 +709,10 @@ export class AdminService {
      * - Space saved
      */
     async getCompressionStats(): Promise<CompressionStats[]> {
+        if (reservoir.getEngineType() !== 'timescale') {
+            return this.getClickHouseCompressionStats();
+        }
+
         try {
             // Get all hypertables and their compression stats using the function
             const stats = await db.executeQuery<{
@@ -570,6 +767,65 @@ export class AdminService {
     }
 
     /**
+     * ClickHouse compression stats from system.parts
+     */
+    private async getClickHouseCompressionStats(): Promise<CompressionStats[]> {
+        try {
+            // Access the ClickHouse client through reservoir's engine
+            const engine = (reservoir as unknown as { engine: { client?: { query: (opts: { query: string; format: string }) => Promise<{ json: <T>() => Promise<T[]> }> } } }).engine;
+            if (!engine.client) return [];
+
+            const resultSet = await engine.client.query({
+                query: `
+                    SELECT
+                        table,
+                        count() AS total_chunks,
+                        countIf(rows > 0) AS compressed_chunks,
+                        sum(data_uncompressed_bytes) AS uncompressed_bytes,
+                        sum(bytes) AS compressed_bytes,
+                        formatReadableSize(sum(data_uncompressed_bytes) - sum(bytes)) AS space_saved
+                    FROM system.parts
+                    WHERE database = currentDatabase()
+                      AND table IN ('logs', 'spans', 'traces')
+                      AND active = 1
+                    GROUP BY table
+                    ORDER BY uncompressed_bytes DESC
+                `,
+                format: 'JSONEachRow',
+            });
+
+            const rows = await resultSet.json<{
+                table: string;
+                total_chunks: string;
+                compressed_chunks: string;
+                uncompressed_bytes: string;
+                compressed_bytes: string;
+                space_saved: string;
+            }>();
+
+            return rows.map((row) => {
+                const uncompressed = BigInt(row.uncompressed_bytes || '0');
+                const compressed = BigInt(row.compressed_bytes || '0');
+                const ratio = compressed > 0n ? Number(uncompressed) / Number(compressed) : 0;
+
+                return {
+                    hypertable: row.table,
+                    totalChunks: Number(row.total_chunks),
+                    compressedChunks: Number(row.compressed_chunks),
+                    uncompressedSizeBytes: Number(uncompressed),
+                    compressedSizeBytes: Number(compressed),
+                    compressionRatio: parseFloat(ratio.toFixed(2)),
+                    spaceSavedBytes: Number(uncompressed - compressed),
+                    spaceSavedPretty: row.space_saved,
+                };
+            });
+        } catch (error) {
+            console.error('[AdminService] Error fetching ClickHouse compression stats:', error);
+            return [];
+        }
+    }
+
+    /**
      * Get continuous aggregate health and refresh status
      *
      * Returns information about all continuous aggregates including:
@@ -578,6 +834,11 @@ export class AdminService {
      * - Row counts
      */
     async getAggregateStats(): Promise<AggregateStats[]> {
+        // Continuous aggregates are TimescaleDB-only
+        if (reservoir.getEngineType() !== 'timescale') {
+            return [];
+        }
+
         try {
             // Get continuous aggregate info
             const aggregates = await db.executeQuery<{
@@ -739,6 +1000,7 @@ export class AdminService {
      */
     async getRedisStats(): Promise<RedisStats> {
         // Return empty stats if Redis is not configured
+        const redis = getConnection();
         if (!isRedisAvailable() || !redis) {
             return {
                 memory: {
@@ -824,6 +1086,7 @@ export class AdminService {
      * Get health check statistics
      */
     async getHealthStats(): Promise<HealthStats> {
+        const storageEngine = reservoir.getEngineType();
         // Get application-level pool stats
         const poolStats = getPoolStats();
 
@@ -841,14 +1104,31 @@ export class AdminService {
             );
             const dbConnections = connResult.rows[0]?.count || 0;
 
+            // ClickHouse health (only when using ClickHouse engine)
+            let clickhouseHealth: { status: 'healthy' | 'degraded' | 'down'; latency: number } | undefined;
+            if (storageEngine === 'clickhouse') {
+                try {
+                    const chHealth = await reservoir.healthCheck();
+                    clickhouseHealth = {
+                        status: chHealth.status === 'unhealthy' ? 'down'
+                            : chHealth.status === 'degraded' ? 'degraded'
+                            : 'healthy',
+                        latency: chHealth.responseTimeMs,
+                    };
+                } catch {
+                    clickhouseHealth = { status: 'down', latency: -1 };
+                }
+            }
+
             // Redis health (only if configured)
             const redisStart = Date.now();
             let redisStatus: 'healthy' | 'degraded' | 'down' | 'not_configured' = 'not_configured';
             let redisLatency = 0;
 
-            if (isRedisAvailable() && redis) {
+            const redisConn = getConnection();
+            if (isRedisAvailable() && redisConn) {
                 try {
-                    await redis.ping();
+                    await redisConn.ping();
                     redisLatency = Date.now() - redisStart;
                     redisStatus = redisLatency > 100 ? 'degraded' : 'healthy';
                 } catch {
@@ -866,19 +1146,24 @@ export class AdminService {
             // Redis is not required - only affects overall status if configured and down
             const redisHealthy = redisStatus === 'healthy' || redisStatus === 'not_configured';
 
+            // ClickHouse health affects overall when it's the storage engine
+            const chHealthy = !clickhouseHealth || clickhouseHealth.status === 'healthy';
+
             const overall: 'healthy' | 'degraded' | 'down' =
-                dbStatus === 'healthy' && redisHealthy && poolHealthy
-                    ? 'healthy'
-                    : dbStatus === 'down' || redisStatus === 'down'
-                        ? 'down'
+                dbStatus === 'down' || redisStatus === 'down' || clickhouseHealth?.status === 'down'
+                    ? 'down'
+                    : dbStatus === 'healthy' && redisHealthy && poolHealthy && chHealthy
+                        ? 'healthy'
                         : 'degraded';
 
             return {
+                storageEngine,
                 database: {
                     status: dbStatus,
                     latency: dbLatency,
                     connections: dbConnections,
                 },
+                ...(clickhouseHealth ? { clickhouse: clickhouseHealth } : {}),
                 redis: {
                     status: redisStatus,
                     latency: redisLatency,
@@ -892,11 +1177,13 @@ export class AdminService {
             };
         } catch (error) {
             return {
+                storageEngine,
                 database: {
                     status: 'down',
                     latency: -1,
                     connections: 0,
                 },
+                ...(storageEngine === 'clickhouse' ? { clickhouse: { status: 'down' as const, latency: -1 } } : {}),
                 redis: {
                     status: 'down',
                     latency: -1,
@@ -1284,16 +1571,17 @@ export class AdminService {
         // Get all project IDs for batch lookup
         const projectIds = projects.map((p) => p.id);
 
-        // PERFORMANCE: Single query for logs counts (last 30 days only to avoid full scan)
+        // PERFORMANCE: Count logs per project (last 30 days only to avoid full scan)
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const now = new Date();
         const [logsCounts, apiKeysCounts, alertRulesCounts] = await Promise.all([
-            db
-                .selectFrom('logs')
-                .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
-                .where('project_id', 'in', projectIds)
-                .where('time', '>=', thirtyDaysAgo)
-                .groupBy('project_id')
-                .execute(),
+            // Reservoir: count per project in parallel (works with any engine)
+            Promise.all(
+                projectIds.map(async (pid) => {
+                    const r = await reservoir.count({ projectId: pid, from: thirtyDaysAgo, to: now });
+                    return { project_id: pid, count: r.count };
+                })
+            ),
             db
                 .selectFrom('api_keys')
                 .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
@@ -1392,29 +1680,28 @@ export class AdminService {
             .orderBy('created_at', 'desc')
             .execute();
 
-        // Get logs count
-        const logsCount = await db
-            .selectFrom('logs')
-            .select(({ fn }) => [fn.count<number>('id').as('count')])
-            .where('project_id', '=', projectId)
-            .executeTakeFirst();
+        // Get logs count (reservoir: works with any engine)
+        const logsCountResult = await reservoir.count({
+            projectId,
+            from: new Date(0),
+            to: new Date(),
+        });
 
-        // Get recent logs timestamp
-        const recentLog = await db
-            .selectFrom('logs')
-            .select('time')
-            .where('project_id', '=', projectId)
-            .orderBy('time', 'desc')
-            .limit(1)
-            .executeTakeFirst();
+        // Get recent logs timestamp (reservoir: works with any engine)
+        const recentLogResult = await reservoir.query({
+            projectId,
+            from: new Date(0),
+            to: new Date(),
+            limit: 1,
+        });
 
         return {
             ...project,
-            logsCount: Number(logsCount?.count || 0),
+            logsCount: logsCountResult.count,
             apiKeys,
             alertRules,
             sigmaRules,
-            lastLogTime: recentLog?.time || null,
+            lastLogTime: recentLogResult.logs.length > 0 ? recentLogResult.logs[0].time : null,
         };
     }
 
@@ -1464,10 +1751,13 @@ export class AdminService {
      */
     async getPlatformTimeline(hours: number = 24): Promise<PlatformTimeline> {
         const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const now = new Date();
 
-        const [logsTimeline, detectionsTimeline, spansTimeline] = await Promise.all([
-            // Logs per hour from continuous aggregate
-            db.executeQuery<{ bucket: string; count: number }>(
+        // Logs timeline: use reservoir aggregate for any engine, continuous aggregate for TimescaleDB
+        let logsTimeline: { rows: Array<{ bucket: string; count: number }> };
+
+        if (reservoir.getEngineType() === 'timescale') {
+            logsTimeline = await db.executeQuery<{ bucket: string; count: number }>(
                 sql`
                     SELECT
                         bucket::text AS bucket,
@@ -1477,23 +1767,48 @@ export class AdminService {
                     GROUP BY bucket
                     ORDER BY bucket ASC
                 `.compile(db)
-            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
+            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> }));
+        } else {
+            // ClickHouse / other: use reservoir aggregate
+            const allProjects = await db.selectFrom('projects').select('id').execute();
+            const projectIds = allProjects.map(p => p.id);
 
-            // Detection events per hour from continuous aggregate
-            db.executeQuery<{ bucket: string; count: number }>(
-                sql`
-                    SELECT
-                        bucket::text AS bucket,
-                        SUM(detection_count)::int AS count
-                    FROM detection_events_hourly_stats
-                    WHERE bucket >= ${sql.lit(since)}
-                    GROUP BY bucket
-                    ORDER BY bucket ASC
-                `.compile(db)
-            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
+            if (projectIds.length > 0) {
+                const aggResult = await reservoir.aggregate({
+                    projectId: projectIds,
+                    from: since,
+                    to: now,
+                    interval: '1h',
+                });
+                logsTimeline = {
+                    rows: aggResult.timeseries.map(b => ({
+                        bucket: b.bucket.toISOString(),
+                        count: b.total,
+                    })),
+                };
+            } else {
+                logsTimeline = { rows: [] };
+            }
+        }
 
-            // Spans per hour from continuous aggregate
-            db.executeQuery<{ bucket: string; count: number }>(
+        // Detection events: always in PG (TimescaleDB always present)
+        const detectionsTimeline = await db.executeQuery<{ bucket: string; count: number }>(
+            sql`
+                SELECT
+                    bucket::text AS bucket,
+                    SUM(detection_count)::int AS count
+                FROM detection_events_hourly_stats
+                WHERE bucket >= ${sql.lit(since)}
+                GROUP BY bucket
+                ORDER BY bucket ASC
+            `.compile(db)
+        ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> }));
+
+        // Spans timeline: continuous aggregate for TimescaleDB, reservoir aggregate for ClickHouse
+        let spansTimeline: { rows: Array<{ bucket: string; count: number }> };
+
+        if (reservoir.getEngineType() === 'timescale') {
+            spansTimeline = await db.executeQuery<{ bucket: string; count: number }>(
                 sql`
                     SELECT
                         bucket::text AS bucket,
@@ -1503,8 +1818,43 @@ export class AdminService {
                     GROUP BY bucket
                     ORDER BY bucket ASC
                 `.compile(db)
-            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> })),
-        ]);
+            ).catch(() => ({ rows: [] as Array<{ bucket: string; count: number }> }));
+        } else {
+            // ClickHouse: query spans via reservoir
+            try {
+                const allProjects = await db.selectFrom('projects').select('id').execute();
+                const projectIds = allProjects.map(p => p.id);
+
+                if (projectIds.length > 0) {
+                    // Use querySpans with time range and aggregate in app layer
+                    const spansResult = await reservoir.queryTraces({
+                        projectId: projectIds[0],
+                        from: since,
+                        to: now,
+                        limit: 100000,
+                    });
+
+                    // Bucket traces by hour
+                    const bucketMap = new Map<string, number>();
+                    for (const trace of spansResult.traces) {
+                        const bucketDate = new Date(trace.startTime);
+                        bucketDate.setMinutes(0, 0, 0);
+                        const key = bucketDate.toISOString();
+                        bucketMap.set(key, (bucketMap.get(key) || 0) + trace.spanCount);
+                    }
+
+                    spansTimeline = {
+                        rows: Array.from(bucketMap.entries())
+                            .map(([bucket, count]) => ({ bucket, count }))
+                            .sort((a, b) => a.bucket.localeCompare(b.bucket)),
+                    };
+                } else {
+                    spansTimeline = { rows: [] };
+                }
+            } catch {
+                spansTimeline = { rows: [] };
+            }
+        }
 
         // Merge all timelines into a single array by bucket
         const bucketMap = new Map<string, {

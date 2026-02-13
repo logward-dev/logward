@@ -1,21 +1,21 @@
 # LogTide Docker Compose Configuration
 #
-# Quick Start (basic):
+# Quick Start (basic - TimescaleDB only):
 #   docker compose up -d
 #
-# With Docker log collection (requires additional config files):
-#   # Download fluent-bit config files first:
-#   curl -O https://raw.githubusercontent.com/logtide-dev/logtide/main/docker/fluent-bit.conf
-#   curl -O https://raw.githubusercontent.com/logtide-dev/logtide/main/docker/parsers.conf
-#   curl -O https://raw.githubusercontent.com/logtide-dev/logtide/main/docker/extract_container_id.lua
-#   curl -O https://raw.githubusercontent.com/logtide-dev/logtide/main/docker/map_syslog_level.lua
-#   curl -O https://raw.githubusercontent.com/logtide-dev/logtide/main/docker/wrap_logs.lua
-#   # Then start with logging profile:
+# With ClickHouse (high-volume logs/spans/traces storage):
+#   docker compose --profile clickhouse up -d
+#
+# With Docker log collection:
 #   docker compose --profile logging up -d
+#
+# Combine profiles:
+#   docker compose --profile clickhouse --profile logging up -d
 #
 # IMPORTANT: Check .env configuration before starting!
 # - API_KEY_SECRET must be at least 32 characters
 # - DB_PASSWORD, REDIS_PASSWORD should be secure values
+# - Set STORAGE_ENGINE=clickhouse in .env when using the clickhouse profile
 
 services:
   postgres:
@@ -108,6 +108,12 @@ services:
       INTERNAL_LOGGING_ENABLED: ${INTERNAL_LOGGING_ENABLED:-false}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       SERVICE_NAME: logtide-backend
+      STORAGE_ENGINE: ${STORAGE_ENGINE:-timescale}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-8123}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-logtide}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,6 +150,12 @@ services:
       INTERNAL_LOGGING_ENABLED: ${INTERNAL_LOGGING_ENABLED:-false}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       SERVICE_NAME: logtide-worker
+      STORAGE_ENGINE: ${STORAGE_ENGINE:-timescale}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-8123}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-logtide}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     depends_on:
       backend:
         condition: service_healthy
@@ -163,6 +175,30 @@ services:
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
     depends_on:
       - backend
+    restart: unless-stopped
+    networks:
+      - logtide-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: logtide-clickhouse
+    profiles:
+      - clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-logtide}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_PORT:-8123}:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - logtide-network
@@ -200,6 +236,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  clickhouse_data:
     driver: local
 
 networks:

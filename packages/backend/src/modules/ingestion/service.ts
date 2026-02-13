@@ -1,4 +1,6 @@
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
+import type { LogLevel as ReservoirLogLevel } from '@logtide/reservoir';
 import type { LogInput } from '@logtide/shared';
 import { createQueue } from '../../queue/connection.js';
 import type { LogEntry } from '../sigma/detection-engine.js';
@@ -73,24 +75,32 @@ export class IngestionService {
       }
     }
 
-    // Convert logs to database format (sanitize to remove \u0000 which PostgreSQL doesn't support)
-    const dbLogs = logs.map((log) => ({
+    // Convert logs to reservoir LogRecord format
+    // Note: reservoir handles null byte sanitization internally
+    const records = logs.map((log) => ({
       time: typeof log.time === 'string' ? new Date(log.time) : log.time,
-      project_id: projectId,
+      projectId,
       service: sanitizeForPostgres(log.service),
-      level: log.level,
+      level: log.level as ReservoirLogLevel,
       message: sanitizeForPostgres(log.message),
-      metadata: sanitizeForPostgres(log.metadata) || null,
-      trace_id: sanitizeForPostgres(log.trace_id) || null,
-      span_id: sanitizeForPostgres((log as { span_id?: string }).span_id) || null,
+      metadata: sanitizeForPostgres(log.metadata) || undefined,
+      traceId: sanitizeForPostgres(log.trace_id) || undefined,
+      spanId: sanitizeForPostgres((log as { span_id?: string }).span_id) || undefined,
     }));
 
-    // Insert logs in batch and return IDs
-    const insertedLogs = await db
-      .insertInto('logs')
-      .values(dbLogs)
-      .returningAll()
-      .execute();
+    // Insert via reservoir (raw parametrized SQL with RETURNING *)
+    const ingestResult = await reservoir.ingestReturning(records);
+    const insertedLogs = ingestResult.rows.map((row) => ({
+      id: row.id,
+      time: row.time,
+      project_id: row.projectId,
+      service: row.service,
+      level: row.level,
+      message: row.message,
+      metadata: row.metadata,
+      trace_id: row.traceId,
+      span_id: row.spanId,
+    }));
 
     // Store extracted identifiers (async, non-blocking)
     if (identifiersByLog.size > 0) {
@@ -259,35 +269,28 @@ export class IngestionService {
   }
 
   /**
-   * Get log statistics
+   * Get log statistics (reservoir: works with any engine)
    */
   async getStats(projectId: string, from?: Date, to?: Date) {
-    let query = db
-      .selectFrom('logs')
-      .select([
-        db.fn.count('time').as('total'),
-        'level',
-      ])
-      .where('project_id', '=', projectId)
-      .groupBy('level');
+    const effectiveFrom = from || new Date(0);
+    const effectiveTo = to || new Date();
 
-    if (from) {
-      query = query.where('time', '>=', from);
+    const topResult = await reservoir.topValues({
+      field: 'level',
+      projectId,
+      from: effectiveFrom,
+      to: effectiveTo,
+      limit: 20, // enough for all log levels
+    });
+
+    const byLevel: Record<string, number> = {};
+    let total = 0;
+    for (const v of topResult.values) {
+      byLevel[v.value] = v.count;
+      total += v.count;
     }
 
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const results = await query.execute();
-
-    return {
-      total: results.reduce((sum, r) => sum + Number(r.total), 0),
-      by_level: results.reduce((acc, r) => {
-        acc[r.level] = Number(r.total);
-        return acc;
-      }, {} as Record<string, number>),
-    };
+    return { total, by_level: byLevel };
   }
 }
 
