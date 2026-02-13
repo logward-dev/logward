@@ -43,8 +43,13 @@ describe('StorageEngineFactory', () => {
       .toThrow('username is required');
   });
 
-  it('throws for missing password', () => {
+  it('allows empty password (ClickHouse default)', () => {
     expect(() => StorageEngineFactory.create('timescale', { ...validConfig, password: '' }))
+      .not.toThrow();
+  });
+
+  it('throws for null password', () => {
+    expect(() => StorageEngineFactory.create('timescale', { ...validConfig, password: null as unknown as string }))
       .toThrow('password is required');
   });
 

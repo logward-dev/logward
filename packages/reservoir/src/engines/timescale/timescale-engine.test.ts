@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { StorageConfig, LogRecord } from '../../core/types.js';
+import type { StorageConfig, LogRecord, SpanRecord, TraceRecord } from '../../core/types.js';
 
 const mockQuery = vi.fn();
 const mockEnd = vi.fn();
@@ -505,6 +505,394 @@ describe('TimescaleEngine', () => {
     it('is a no-op placeholder', async () => {
       await engine.connect();
       await expect(engine.migrate('1')).resolves.toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Span & Trace Operations
+  // =========================================================================
+
+  describe('ingestSpans', () => {
+    const makeSpan = (overrides: Partial<SpanRecord> = {}): SpanRecord => ({
+      time: new Date('2024-01-01T00:00:00Z'),
+      spanId: 'span-1',
+      traceId: 'trace-1',
+      projectId: 'proj-1',
+      serviceName: 'api',
+      operationName: 'GET /users',
+      startTime: new Date('2024-01-01T00:00:00Z'),
+      endTime: new Date('2024-01-01T00:00:01Z'),
+      durationMs: 1000,
+      ...overrides,
+    });
+
+    it('inserts a batch of spans', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      const spans = [makeSpan(), makeSpan({ spanId: 'span-2', operationName: 'POST /orders' })];
+      const result = await engine.ingestSpans(spans);
+
+      expect(result.ingested).toBe(2);
+      expect(result.failed).toBe(0);
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('INSERT INTO public.spans');
+      expect(sql).toContain('UNNEST');
+      expect((mockQuery.mock.calls[0][1] as unknown[]).length).toBe(18);
+    });
+
+    it('returns empty result for empty batch', async () => {
+      await engine.connect();
+      const result = await engine.ingestSpans([]);
+      expect(result.ingested).toBe(0);
+      expect(result.failed).toBe(0);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('handles insert errors', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('table not found'));
+      await engine.connect();
+
+      const result = await engine.ingestSpans([makeSpan()]);
+      expect(result.ingested).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.errors![0].error).toBe('table not found');
+    });
+
+    it('passes optional fields as null when missing', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      await engine.ingestSpans([makeSpan()]);
+
+      const params = mockQuery.mock.calls[0][1] as unknown[];
+      // parentSpanIds (index 3)
+      expect((params[3] as (string | null)[])[0]).toBeNull();
+      // orgIds (index 4)
+      expect((params[4] as (string | null)[])[0]).toBeNull();
+      // kinds (index 11)
+      expect((params[11] as (string | null)[])[0]).toBeNull();
+    });
+  });
+
+  describe('upsertTrace', () => {
+    const makeTrace = (overrides: Partial<TraceRecord> = {}): TraceRecord => ({
+      traceId: 'trace-1',
+      projectId: 'proj-1',
+      serviceName: 'api',
+      startTime: new Date('2024-01-01T00:00:00Z'),
+      endTime: new Date('2024-01-01T00:00:05Z'),
+      durationMs: 5000,
+      spanCount: 3,
+      error: false,
+      ...overrides,
+    });
+
+    it('inserts a new trace when none exists', async () => {
+      // First query: SELECT existing → empty
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      // Second query: INSERT
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      await engine.upsertTrace(makeTrace());
+
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      const selectSql = mockQuery.mock.calls[0][0] as string;
+      expect(selectSql).toContain('SELECT trace_id');
+      expect(selectSql).toContain('FROM public.traces');
+
+      const insertSql = mockQuery.mock.calls[1][0] as string;
+      expect(insertSql).toContain('INSERT INTO public.traces');
+    });
+
+    it('updates an existing trace merging times and span count', async () => {
+      // First query: SELECT existing
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          trace_id: 'trace-1',
+          start_time: new Date('2024-01-01T00:00:01Z'),
+          end_time: new Date('2024-01-01T00:00:04Z'),
+          span_count: 2,
+          error: false,
+        }],
+      });
+      // Second query: UPDATE
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      await engine.upsertTrace(makeTrace({
+        startTime: new Date('2024-01-01T00:00:00Z'),
+        endTime: new Date('2024-01-01T00:00:05Z'),
+        spanCount: 1,
+      }));
+
+      const updateSql = mockQuery.mock.calls[1][0] as string;
+      expect(updateSql).toContain('UPDATE public.traces');
+
+      const updateParams = mockQuery.mock.calls[1][1] as unknown[];
+      // start_time should be min (00:00:00)
+      expect((updateParams[0] as Date).toISOString()).toBe('2024-01-01T00:00:00.000Z');
+      // end_time should be max (00:00:05)
+      expect((updateParams[1] as Date).toISOString()).toBe('2024-01-01T00:00:05.000Z');
+      // span_count increment
+      expect(updateParams[3]).toBe(1);
+    });
+  });
+
+  describe('querySpans', () => {
+    it('queries spans with filters and pagination', async () => {
+      // COUNT query
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 15 }] });
+      // SELECT query
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          time: new Date('2024-01-01T00:00:00Z'),
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          parent_span_id: null,
+          organization_id: null,
+          project_id: 'proj-1',
+          service_name: 'api',
+          operation_name: 'GET /users',
+          start_time: new Date('2024-01-01T00:00:00Z'),
+          end_time: new Date('2024-01-01T00:00:01Z'),
+          duration_ms: 1000,
+          kind: 'server',
+          status_code: 'ok',
+          status_message: null,
+          attributes: null,
+          events: null,
+          links: null,
+          resource_attributes: null,
+        }],
+      });
+      await engine.connect();
+
+      const result = await engine.querySpans({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        limit: 10,
+      });
+
+      expect(result.spans).toHaveLength(1);
+      expect(result.spans[0].spanId).toBe('span-1');
+      expect(result.spans[0].serviceName).toBe('api');
+      expect(result.total).toBe(15);
+      expect(result.hasMore).toBe(true);
+      expect(result.limit).toBe(10);
+
+      const countSql = mockQuery.mock.calls[0][0] as string;
+      expect(countSql).toContain('COUNT(*)');
+      expect(countSql).toContain('public.spans');
+
+      const selectSql = mockQuery.mock.calls[1][0] as string;
+      expect(selectSql).toContain('FROM public.spans');
+      expect(selectSql).toContain('project_id = ANY');
+      expect(selectSql).toContain('LIMIT');
+      expect(selectSql).toContain('OFFSET');
+    });
+
+    it('applies service and kind filters', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 0 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      await engine.querySpans({
+        projectId: 'proj-1',
+        serviceName: 'api',
+        kind: 'client',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+      });
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('service_name = ANY');
+      expect(sql).toContain('kind = ANY');
+    });
+  });
+
+  describe('getSpansByTraceId', () => {
+    it('fetches all spans for a trace ordered by start_time', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { time: new Date(), span_id: 'span-1', trace_id: 'trace-1', parent_span_id: null, organization_id: null, project_id: 'proj-1', service_name: 'api', operation_name: 'op1', start_time: new Date('2024-01-01T00:00:00Z'), end_time: new Date('2024-01-01T00:00:01Z'), duration_ms: 1000, kind: null, status_code: null, status_message: null, attributes: null, events: null, links: null, resource_attributes: null },
+          { time: new Date(), span_id: 'span-2', trace_id: 'trace-1', parent_span_id: 'span-1', organization_id: null, project_id: 'proj-1', service_name: 'db', operation_name: 'query', start_time: new Date('2024-01-01T00:00:00.500Z'), end_time: new Date('2024-01-01T00:00:00.800Z'), duration_ms: 300, kind: null, status_code: null, status_message: null, attributes: null, events: null, links: null, resource_attributes: null },
+        ],
+      });
+      await engine.connect();
+
+      const spans = await engine.getSpansByTraceId('trace-1', 'proj-1');
+
+      expect(spans).toHaveLength(2);
+      expect(spans[0].spanId).toBe('span-1');
+      expect(spans[1].parentSpanId).toBe('span-1');
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('trace_id = $1');
+      expect(sql).toContain('project_id = $2');
+      expect(sql).toContain('ORDER BY start_time ASC');
+    });
+  });
+
+  describe('queryTraces', () => {
+    it('queries traces with filters', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 1 }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          trace_id: 'trace-1',
+          organization_id: null,
+          project_id: 'proj-1',
+          service_name: 'api',
+          root_service_name: 'api',
+          root_operation_name: 'GET /users',
+          start_time: new Date('2024-01-01T00:00:00Z'),
+          end_time: new Date('2024-01-01T00:00:05Z'),
+          duration_ms: 5000,
+          span_count: 3,
+          error: false,
+        }],
+      });
+      await engine.connect();
+
+      const result = await engine.queryTraces({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        error: false,
+        minDurationMs: 1000,
+      });
+
+      expect(result.traces).toHaveLength(1);
+      expect(result.traces[0].traceId).toBe('trace-1');
+      expect(result.traces[0].durationMs).toBe(5000);
+      expect(result.total).toBe(1);
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('public.traces');
+      expect(sql).toContain('error = $');
+      expect(sql).toContain('duration_ms >= $');
+    });
+  });
+
+  describe('getTraceById', () => {
+    it('returns trace when found', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          trace_id: 'trace-1',
+          organization_id: null,
+          project_id: 'proj-1',
+          service_name: 'api',
+          root_service_name: 'api',
+          root_operation_name: 'GET /users',
+          start_time: new Date('2024-01-01T00:00:00Z'),
+          end_time: new Date('2024-01-01T00:00:05Z'),
+          duration_ms: 5000,
+          span_count: 3,
+          error: false,
+        }],
+      });
+      await engine.connect();
+
+      const trace = await engine.getTraceById('trace-1', 'proj-1');
+
+      expect(trace).not.toBeNull();
+      expect(trace!.traceId).toBe('trace-1');
+      expect(trace!.spanCount).toBe(3);
+    });
+
+    it('returns null when not found', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      const trace = await engine.getTraceById('nonexistent', 'proj-1');
+      expect(trace).toBeNull();
+    });
+  });
+
+  describe('getServiceDependencies', () => {
+    it('returns nodes and edges from span relationships', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { source_service: 'api', target_service: 'db', call_count: 10 },
+          { source_service: 'api', target_service: 'cache', call_count: 5 },
+        ],
+      });
+      await engine.connect();
+
+      const result = await engine.getServiceDependencies(
+        'proj-1',
+        new Date('2024-01-01'),
+        new Date('2024-01-02'),
+      );
+
+      expect(result.edges).toHaveLength(2);
+      expect(result.edges[0]).toEqual({ source: 'api', target: 'db', callCount: 10 });
+      expect(result.edges[1]).toEqual({ source: 'api', target: 'cache', callCount: 5 });
+
+      expect(result.nodes).toHaveLength(3);
+      const apiNode = result.nodes.find(n => n.name === 'api');
+      expect(apiNode!.callCount).toBe(15);
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('INNER JOIN');
+      expect(sql).toContain('parent_span_id = parent.span_id');
+      expect(sql).toContain('service_name <> parent.service_name');
+    });
+
+    it('returns empty result when no dependencies', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      const result = await engine.getServiceDependencies('proj-1');
+      expect(result.nodes).toHaveLength(0);
+      expect(result.edges).toHaveLength(0);
+    });
+  });
+
+  describe('deleteSpansByTimeRange', () => {
+    it('deletes spans and orphaned traces', async () => {
+      // DELETE spans
+      mockQuery.mockResolvedValueOnce({ rowCount: 5 });
+      // DELETE orphaned traces
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+      await engine.connect();
+
+      const result = await engine.deleteSpansByTimeRange({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+      });
+
+      expect(result.deleted).toBe(5);
+
+      const deleteSql = mockQuery.mock.calls[0][0] as string;
+      expect(deleteSql).toContain('DELETE FROM public.spans');
+      expect(deleteSql).toContain('project_id = ANY');
+      expect(deleteSql).toContain('time >= $2');
+      expect(deleteSql).toContain('time <= $3');
+
+      const orphanSql = mockQuery.mock.calls[1][0] as string;
+      expect(orphanSql).toContain('DELETE FROM public.traces');
+      expect(orphanSql).toContain('NOT EXISTS');
+    });
+
+    it('applies service filter when provided', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 2 });
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
+      await engine.connect();
+
+      await engine.deleteSpansByTimeRange({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        serviceName: 'api',
+      });
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('service_name = ANY');
     });
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { ClickHouseEngine } from './clickhouse-engine.js';
-import type { LogRecord, StorageConfig, LogLevel } from '../../core/types.js';
+import type { LogRecord, SpanRecord, TraceRecord, StorageConfig, LogLevel } from '../../core/types.js';
 
 const TEST_CONFIG: StorageConfig = {
   host: 'localhost',
@@ -572,6 +572,379 @@ describe('ClickHouseEngine (integration)', () => {
       expect(caps.supportsFullTextSearch).toBe(true);
       expect(caps.supportsTransactions).toBe(false);
       expect(caps.maxBatchSize).toBe(100_000);
+    });
+  });
+
+  // =========================================================================
+  // Span & Trace Operations
+  // =========================================================================
+
+  function makeSpan(overrides: Partial<SpanRecord> = {}): SpanRecord {
+    return {
+      time: new Date('2025-01-15T12:00:00Z'),
+      spanId: `span-${Math.random().toString(36).slice(2, 10)}`,
+      traceId: 'trace-abc',
+      projectId: 'proj-1',
+      serviceName: 'api',
+      operationName: 'GET /users',
+      startTime: new Date('2025-01-15T12:00:00Z'),
+      endTime: new Date('2025-01-15T12:00:01Z'),
+      durationMs: 1000,
+      ...overrides,
+    };
+  }
+
+  function makeTrace(overrides: Partial<TraceRecord> = {}): TraceRecord {
+    return {
+      traceId: 'trace-abc',
+      projectId: 'proj-1',
+      serviceName: 'api',
+      startTime: new Date('2025-01-15T12:00:00Z'),
+      endTime: new Date('2025-01-15T12:00:05Z'),
+      durationMs: 5000,
+      spanCount: 3,
+      error: false,
+      ...overrides,
+    };
+  }
+
+  describe('ingestSpans', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
+    });
+
+    it('ingests a batch of spans', async () => {
+      const spans = [
+        makeSpan({ spanId: 'span-1' }),
+        makeSpan({ spanId: 'span-2', operationName: 'POST /orders' }),
+      ];
+      const result = await engine.ingestSpans(spans);
+
+      expect(result.ingested).toBe(2);
+      expect(result.failed).toBe(0);
+      expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('returns empty result for empty batch', async () => {
+      const result = await engine.ingestSpans([]);
+      expect(result.ingested).toBe(0);
+      expect(result.failed).toBe(0);
+    });
+
+    it('ingests spans with all optional fields', async () => {
+      const span = makeSpan({
+        spanId: 'span-full',
+        parentSpanId: 'span-parent',
+        kind: 'server',
+        statusCode: 'ok',
+        statusMessage: 'all good',
+        attributes: { 'http.method': 'GET' },
+        events: [{ name: 'exception', timestamp: '2025-01-15T12:00:00.500Z' }],
+        links: [{ traceId: 'other-trace', spanId: 'other-span' }],
+        resourceAttributes: { 'service.version': '1.0.0' },
+      });
+      const result = await engine.ingestSpans([span]);
+      expect(result.ingested).toBe(1);
+
+      await new Promise((r) => setTimeout(r, 500));
+
+      const spans = await engine.getSpansByTraceId('trace-abc', 'proj-1');
+      expect(spans).toHaveLength(1);
+      expect(spans[0].kind).toBe('server');
+      expect(spans[0].statusCode).toBe('ok');
+      expect(spans[0].parentSpanId).toBe('span-parent');
+      expect(spans[0].attributes).toEqual({ 'http.method': 'GET' });
+    });
+  });
+
+  describe('upsertTrace', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
+    });
+
+    it('inserts a new trace', async () => {
+      await engine.upsertTrace(makeTrace({ traceId: 'trace-new' }));
+      await new Promise((r) => setTimeout(r, 500));
+
+      const trace = await engine.getTraceById('trace-new', 'proj-1');
+      expect(trace).not.toBeNull();
+      expect(trace!.traceId).toBe('trace-new');
+      expect(trace!.spanCount).toBe(3);
+      expect(trace!.error).toBe(false);
+    });
+
+    it('merges times and span count on update', async () => {
+      await engine.upsertTrace(makeTrace({
+        traceId: 'trace-merge',
+        startTime: new Date('2025-01-15T12:00:01Z'),
+        endTime: new Date('2025-01-15T12:00:04Z'),
+        spanCount: 2,
+      }));
+      await new Promise((r) => setTimeout(r, 500));
+
+      await engine.upsertTrace(makeTrace({
+        traceId: 'trace-merge',
+        startTime: new Date('2025-01-15T12:00:00Z'),
+        endTime: new Date('2025-01-15T12:00:05Z'),
+        spanCount: 1,
+      }));
+      await new Promise((r) => setTimeout(r, 500));
+
+      const trace = await engine.getTraceById('trace-merge', 'proj-1');
+      expect(trace).not.toBeNull();
+      expect(trace!.spanCount).toBe(3);
+      // Duration should cover the wider range
+      expect(trace!.durationMs).toBeGreaterThanOrEqual(4000);
+    });
+  });
+
+  describe('querySpans', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
+
+      const spans = [
+        makeSpan({ spanId: 'span-q1', time: new Date('2025-01-15T10:00:00Z'), startTime: new Date('2025-01-15T10:00:00Z'), serviceName: 'api', kind: 'server' }),
+        makeSpan({ spanId: 'span-q2', time: new Date('2025-01-15T11:00:00Z'), startTime: new Date('2025-01-15T11:00:00Z'), serviceName: 'db', kind: 'client' }),
+        makeSpan({ spanId: 'span-q3', time: new Date('2025-01-15T12:00:00Z'), startTime: new Date('2025-01-15T12:00:00Z'), serviceName: 'api', kind: 'server', projectId: 'proj-2' }),
+      ];
+      await engine.ingestSpans(spans);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('queries all spans for a project', async () => {
+      const result = await engine.querySpans({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.spans).toHaveLength(2);
+      expect(result.total).toBe(2);
+    });
+
+    it('filters by service name', async () => {
+      const result = await engine.querySpans({
+        projectId: 'proj-1',
+        serviceName: 'db',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.spans).toHaveLength(1);
+      expect(result.spans[0].serviceName).toBe('db');
+    });
+
+    it('filters by kind', async () => {
+      const result = await engine.querySpans({
+        projectId: 'proj-1',
+        kind: 'server',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.spans).toHaveLength(1);
+      expect(result.spans[0].kind).toBe('server');
+    });
+
+    it('supports limit and hasMore', async () => {
+      const result = await engine.querySpans({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+        limit: 1,
+      });
+
+      expect(result.spans).toHaveLength(1);
+      expect(result.hasMore).toBe(true);
+    });
+  });
+
+  describe('getSpansByTraceId', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+
+      await engine.ingestSpans([
+        makeSpan({ spanId: 'root', traceId: 'trace-t1', startTime: new Date('2025-01-15T12:00:00Z') }),
+        makeSpan({ spanId: 'child', traceId: 'trace-t1', parentSpanId: 'root', startTime: new Date('2025-01-15T12:00:00.500Z') }),
+        makeSpan({ spanId: 'other', traceId: 'trace-t2' }),
+      ]);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('returns spans for specific trace ordered by start_time', async () => {
+      const spans = await engine.getSpansByTraceId('trace-t1', 'proj-1');
+
+      expect(spans).toHaveLength(2);
+      expect(spans[0].spanId).toBe('root');
+      expect(spans[1].spanId).toBe('child');
+      // Ordered by start_time ASC
+      expect(spans[0].startTime.getTime()).toBeLessThanOrEqual(spans[1].startTime.getTime());
+    });
+
+    it('returns empty for non-existent trace', async () => {
+      const spans = await engine.getSpansByTraceId('nonexistent', 'proj-1');
+      expect(spans).toHaveLength(0);
+    });
+  });
+
+  describe('queryTraces', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
+
+      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt1', durationMs: 1000, error: false }));
+      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt2', durationMs: 5000, error: true }));
+      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt3', durationMs: 200, error: false, projectId: 'proj-2' }));
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('queries traces for a project', async () => {
+      const result = await engine.queryTraces({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.traces).toHaveLength(2);
+      expect(result.total).toBe(2);
+    });
+
+    it('filters by error status', async () => {
+      const result = await engine.queryTraces({
+        projectId: 'proj-1',
+        error: true,
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.traces).toHaveLength(1);
+      expect(result.traces[0].traceId).toBe('trace-qt2');
+      expect(result.traces[0].error).toBe(true);
+    });
+
+    it('filters by minimum duration', async () => {
+      const result = await engine.queryTraces({
+        projectId: 'proj-1',
+        minDurationMs: 2000,
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.traces).toHaveLength(1);
+      expect(result.traces[0].durationMs).toBeGreaterThanOrEqual(2000);
+    });
+  });
+
+  describe('getTraceById', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
+
+      await engine.upsertTrace(makeTrace({ traceId: 'trace-get1' }));
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('returns trace when found', async () => {
+      const trace = await engine.getTraceById('trace-get1', 'proj-1');
+
+      expect(trace).not.toBeNull();
+      expect(trace!.traceId).toBe('trace-get1');
+      expect(trace!.serviceName).toBe('api');
+    });
+
+    it('returns null for non-existent trace', async () => {
+      const trace = await engine.getTraceById('nonexistent', 'proj-1');
+      expect(trace).toBeNull();
+    });
+
+    it('returns null for wrong project', async () => {
+      const trace = await engine.getTraceById('trace-get1', 'wrong-project');
+      expect(trace).toBeNull();
+    });
+  });
+
+  describe('getServiceDependencies', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+
+      // api -> db (parent -> child)
+      await engine.ingestSpans([
+        makeSpan({ spanId: 'parent-1', traceId: 'trace-dep', serviceName: 'api', startTime: new Date('2025-01-15T12:00:00Z') }),
+        makeSpan({ spanId: 'child-1', traceId: 'trace-dep', parentSpanId: 'parent-1', serviceName: 'db', startTime: new Date('2025-01-15T12:00:00.100Z') }),
+        makeSpan({ spanId: 'child-2', traceId: 'trace-dep', parentSpanId: 'parent-1', serviceName: 'cache', startTime: new Date('2025-01-15T12:00:00.200Z') }),
+      ]);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('returns service dependency graph', async () => {
+      const result = await engine.getServiceDependencies(
+        'proj-1',
+        new Date('2025-01-15T00:00:00Z'),
+        new Date('2025-01-16T00:00:00Z'),
+      );
+
+      expect(result.edges).toHaveLength(2);
+
+      const dbEdge = result.edges.find(e => e.target === 'db');
+      expect(dbEdge).toBeDefined();
+      expect(dbEdge!.source).toBe('api');
+      expect(dbEdge!.callCount).toBe(1);
+
+      const cacheEdge = result.edges.find(e => e.target === 'cache');
+      expect(cacheEdge).toBeDefined();
+      expect(cacheEdge!.source).toBe('api');
+
+      expect(result.nodes.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('returns empty when no cross-service calls', async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+      // Spans from same service (no cross-service calls)
+      await engine.ingestSpans([
+        makeSpan({ spanId: 'p1', traceId: 'trace-same', serviceName: 'api' }),
+        makeSpan({ spanId: 'c1', traceId: 'trace-same', parentSpanId: 'p1', serviceName: 'api' }),
+      ]);
+      await new Promise((r) => setTimeout(r, 500));
+
+      const result = await engine.getServiceDependencies('proj-1');
+      expect(result.edges).toHaveLength(0);
+      expect(result.nodes).toHaveLength(0);
+    });
+  });
+
+  describe('deleteSpansByTimeRange', () => {
+    beforeEach(async () => {
+      await client.command({ query: 'TRUNCATE TABLE IF EXISTS spans' });
+
+      await engine.ingestSpans([
+        makeSpan({ spanId: 'old-span', time: new Date('2025-01-10T12:00:00Z'), startTime: new Date('2025-01-10T12:00:00Z') }),
+        makeSpan({ spanId: 'new-span', time: new Date('2025-01-15T12:00:00Z'), startTime: new Date('2025-01-15T12:00:00Z') }),
+      ]);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('issues delete mutation for spans', async () => {
+      const result = await engine.deleteSpansByTimeRange({
+        projectId: 'proj-1',
+        from: new Date('2025-01-01T00:00:00Z'),
+        to: new Date('2025-01-12T00:00:00Z'),
+      });
+
+      // ClickHouse mutations are async
+      expect(result.executionTimeMs).toBeGreaterThanOrEqual(0);
+
+      await new Promise((r) => setTimeout(r, 2000));
+
+      // Verify old span deleted, new span remains
+      const remaining = await engine.querySpans({
+        projectId: 'proj-1',
+        from: new Date('2025-01-01T00:00:00Z'),
+        to: new Date('2025-01-20T00:00:00Z'),
+      });
+
+      expect(remaining.spans).toHaveLength(1);
+      expect(remaining.spans[0].spanId).toBe('new-span');
     });
   });
 });
