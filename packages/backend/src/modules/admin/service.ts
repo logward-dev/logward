@@ -1,5 +1,6 @@
 import { db, getPoolStats } from '../../database/index.js';
 import { sql } from 'kysely';
+import { reservoir } from '../../database/reservoir.js';
 import { connection as redis, isRedisAvailable } from '../../queue/connection.js';
 import { CacheManager, type CacheStats, isCacheEnabled } from '../../utils/cache.js';
 import { settingsService, type UpdateChannel } from '../settings/service.js';
@@ -384,19 +385,13 @@ export class AdminService {
                 `.compile(db)
             ),
 
-            // Logs in last hour (uses chunk pruning on time column, ~160ms)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', oneHourAgo)
-                .executeTakeFirstOrThrow(),
+            // Logs in last hour (reservoir: works with any engine)
+            reservoir.count({ from: oneHourAgo, to: now })
+                .then(r => ({ count: r.count })),
 
-            // Logs in last day (uses chunk pruning on time column)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', oneDayAgo)
-                .executeTakeFirstOrThrow(),
+            // Logs in last day (reservoir: works with any engine)
+            reservoir.count({ from: oneDayAgo, to: now })
+                .then(r => ({ count: r.count })),
         ]);
 
         return {
@@ -431,12 +426,9 @@ export class AdminService {
      */
     async getPerformanceStats(): Promise<PerformanceStats> {
         const [logsLastHour, logsSize, avgLatencyResult, compressionRatio] = await Promise.all([
-            // Logs in last hour - use `time` for chunk pruning (160ms vs 793ms with created_at)
-            db
-                .selectFrom('logs')
-                .select(sql<number>`COUNT(*)::int`.as('count'))
-                .where('time', '>=', new Date(Date.now() - 60 * 60 * 1000))
-                .executeTakeFirstOrThrow(),
+            // Logs in last hour (reservoir: works with any engine)
+            reservoir.count({ from: new Date(Date.now() - 60 * 60 * 1000), to: new Date() })
+                .then(r => ({ count: r.count })),
 
             // Logs table size (pg catalog, instant)
             db.executeQuery<{ size: string }>(
@@ -1284,16 +1276,17 @@ export class AdminService {
         // Get all project IDs for batch lookup
         const projectIds = projects.map((p) => p.id);
 
-        // PERFORMANCE: Single query for logs counts (last 30 days only to avoid full scan)
+        // PERFORMANCE: Count logs per project (last 30 days only to avoid full scan)
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const now = new Date();
         const [logsCounts, apiKeysCounts, alertRulesCounts] = await Promise.all([
-            db
-                .selectFrom('logs')
-                .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
-                .where('project_id', 'in', projectIds)
-                .where('time', '>=', thirtyDaysAgo)
-                .groupBy('project_id')
-                .execute(),
+            // Reservoir: count per project in parallel (works with any engine)
+            Promise.all(
+                projectIds.map(async (pid) => {
+                    const r = await reservoir.count({ projectId: pid, from: thirtyDaysAgo, to: now });
+                    return { project_id: pid, count: r.count };
+                })
+            ),
             db
                 .selectFrom('api_keys')
                 .select(['project_id', sql<number>`COUNT(*)::int`.as('count')])
@@ -1392,29 +1385,28 @@ export class AdminService {
             .orderBy('created_at', 'desc')
             .execute();
 
-        // Get logs count
-        const logsCount = await db
-            .selectFrom('logs')
-            .select(({ fn }) => [fn.count<number>('id').as('count')])
-            .where('project_id', '=', projectId)
-            .executeTakeFirst();
+        // Get logs count (reservoir: works with any engine)
+        const logsCountResult = await reservoir.count({
+            projectId,
+            from: new Date(0),
+            to: new Date(),
+        });
 
-        // Get recent logs timestamp
-        const recentLog = await db
-            .selectFrom('logs')
-            .select('time')
-            .where('project_id', '=', projectId)
-            .orderBy('time', 'desc')
-            .limit(1)
-            .executeTakeFirst();
+        // Get recent logs timestamp (reservoir: works with any engine)
+        const recentLogResult = await reservoir.query({
+            projectId,
+            from: new Date(0),
+            to: new Date(),
+            limit: 1,
+        });
 
         return {
             ...project,
-            logsCount: Number(logsCount?.count || 0),
+            logsCount: logsCountResult.count,
             apiKeys,
             alertRules,
             sigmaRules,
-            lastLogTime: recentLog?.time || null,
+            lastLogTime: recentLogResult.logs.length > 0 ? recentLogResult.logs[0].time : null,
         };
     }
 

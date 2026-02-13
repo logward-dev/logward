@@ -1,4 +1,3 @@
-import { sql } from 'kysely';
 import { db } from '../../database/index.js';
 import { reservoir } from '../../database/reservoir.js';
 import type { TimeBucket, StoredLogRecord } from '@logtide/reservoir';
@@ -195,50 +194,49 @@ export class QueryService {
   }) {
     const { projectId, time, before = 10, after = 10 } = params;
 
-    // Get logs before the timestamp (ordered descending, then reverse)
-    const logsBefore = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '<', time)
-      .orderBy('time', 'desc')
-      .limit(before)
-      .execute();
+    const [beforeResult, afterResult, currentResult] = await Promise.all([
+      // Logs before (exclusive, descending → then reverse)
+      reservoir.query({
+        projectId,
+        from: new Date(0),
+        to: time,
+        toExclusive: true,
+        sortOrder: 'desc',
+        limit: before,
+      }),
+      // Logs after (exclusive, ascending)
+      reservoir.query({
+        projectId,
+        from: time,
+        fromExclusive: true,
+        to: new Date(),
+        sortOrder: 'asc',
+        limit: after,
+      }),
+      // Current log at exact time
+      reservoir.query({
+        projectId,
+        from: time,
+        to: time,
+        limit: 1,
+      }),
+    ]);
 
-    // Get logs after the timestamp (ordered ascending)
-    const logsAfter = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '>', time)
-      .orderBy('time', 'asc')
-      .limit(after)
-      .execute();
-
-    // Get the current log at the exact timestamp (if exists)
-    const currentLog = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('time', '=', time)
-      .executeTakeFirst();
-
-    // Map to API format
-    const mapLog = (log: any) => ({
+    const mapLog = (log: StoredLogRecord) => ({
       id: log.id,
       time: log.time,
-      projectId: log.project_id,
+      projectId: log.projectId,
       service: log.service,
       level: log.level,
       message: log.message,
       metadata: log.metadata,
-      traceId: log.trace_id,
+      traceId: log.traceId,
     });
 
     return {
-      before: logsBefore.reverse().map(mapLog), // Reverse to chronological order
-      current: currentLog ? mapLog(currentLog) : null,
-      after: logsAfter.map(mapLog),
+      before: beforeResult.logs.reverse().map(mapLog),
+      current: currentResult.logs.length > 0 ? mapLog(currentResult.logs[0]) : null,
+      after: afterResult.logs.map(mapLog),
     };
   }
 
@@ -298,11 +296,13 @@ export class QueryService {
     let result: Array<{ service: string; count: string | number | bigint }>;
 
     try {
-      // Fast path: use continuous aggregate
+      if (reservoir.getEngineType() !== 'timescale') throw new Error('skip aggregate');
+
+      // Fast path: use continuous aggregate (TimescaleDB only)
+      const { sql } = await import('kysely');
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       const [historicalServices, recentServices] = await Promise.all([
-        // Historical data from daily aggregate
         db
           .selectFrom('logs_daily_stats')
           .select(['service', sql<string>`SUM(log_count)`.as('count')])
@@ -311,24 +311,22 @@ export class QueryService {
           .where('bucket', '<', oneDayAgo)
           .groupBy('service')
           .execute(),
-        // Recent data from raw logs (last 24h, not yet in daily aggregate)
-        db
-          .selectFrom('logs')
-          .select(['service', sql<string>`COUNT(*)`.as('count')])
-          .where('project_id', '=', projectId)
-          .where('time', '>=', oneDayAgo)
-          .groupBy('service')
-          .execute(),
+        reservoir.topValues({
+          field: 'service',
+          projectId,
+          from: oneDayAgo,
+          to: to ?? new Date(),
+          limit: 100,
+        }),
       ]);
 
-      // Merge counts
       const serviceMap = new Map<string, number>();
       for (const row of historicalServices) {
         serviceMap.set(row.service, Number(row.count ?? 0));
       }
-      for (const row of recentServices) {
-        const existing = serviceMap.get(row.service) ?? 0;
-        serviceMap.set(row.service, existing + Number(row.count ?? 0));
+      for (const row of recentServices.values) {
+        const existing = serviceMap.get(row.value) ?? 0;
+        serviceMap.set(row.value, existing + row.count);
       }
 
       result = Array.from(serviceMap.entries())
@@ -336,24 +334,15 @@ export class QueryService {
         .sort((a, b) => Number(b.count) - Number(a.count))
         .slice(0, limit);
     } catch {
-      // Fallback: raw logs query
-      let query = db
-        .selectFrom('logs')
-        .select([
-          'service',
-          db.fn.count('time').as('count'),
-        ])
-        .where('project_id', '=', projectId)
-        .where('time', '>=', effectiveFrom)
-        .groupBy('service')
-        .orderBy('count', 'desc')
-        .limit(limit);
-
-      if (to) {
-        query = query.where('time', '<=', to);
-      }
-
-      result = await query.execute();
+      // Fallback: reservoir topValues (works on any engine)
+      const topResult = await reservoir.topValues({
+        field: 'service',
+        projectId,
+        from: effectiveFrom,
+        to: to ?? new Date(),
+        limit,
+      });
+      result = topResult.values.map(v => ({ service: v.value, count: v.count }));
     }
 
     // Cache aggregation results
@@ -395,12 +384,13 @@ export class QueryService {
     let services: string[];
 
     try {
-      // Fast path: combine aggregate (historical) + raw logs (recent)
+      if (reservoir.getEngineType() !== 'timescale') throw new Error('skip aggregate');
+
+      // Fast path: combine aggregate (historical) + reservoir distinct (recent)
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const projectFilter = Array.isArray(projectId) ? projectId : [projectId];
 
       const [aggResults, recentResults] = await Promise.all([
-        // Historical from daily aggregate
         db
           .selectFrom('logs_daily_stats')
           .select('service')
@@ -412,47 +402,27 @@ export class QueryService {
           .where('bucket', '<', oneDayAgo)
           .$if(!!to, (qb) => qb.where('bucket', '<=', to!))
           .execute(),
-        // Recent from raw logs (last 24h, not yet in daily aggregate)
-        db
-          .selectFrom('logs')
-          .select('service')
-          .distinct()
-          .where('service', 'is not', null)
-          .where('service', '!=', '')
-          .where('project_id', 'in', projectFilter)
-          .where('time', '>=', oneDayAgo)
-          .$if(!!to, (qb) => qb.where('time', '<=', to!))
-          .execute(),
+        reservoir.distinct({
+          field: 'service',
+          projectId,
+          from: oneDayAgo,
+          to: to ?? new Date(),
+        }),
       ]);
 
-      // Merge and deduplicate
       const serviceSet = new Set<string>();
       for (const r of aggResults) serviceSet.add(r.service);
-      for (const r of recentResults) serviceSet.add(r.service);
+      for (const v of recentResults.values) serviceSet.add(v);
       services = Array.from(serviceSet).sort();
     } catch {
-      // Fallback: raw logs query
-      let query = db
-        .selectFrom('logs')
-        .select('service')
-        .distinct()
-        .where('service', 'is not', null)
-        .where('service', '!=', '')
-        .where('time', '>=', effectiveFrom)
-        .orderBy('service', 'asc');
-
-      if (Array.isArray(projectId)) {
-        query = query.where('project_id', 'in', projectId);
-      } else {
-        query = query.where('project_id', '=', projectId);
-      }
-
-      if (to) {
-        query = query.where('time', '<=', to);
-      }
-
-      const results = await query.execute();
-      services = results.map((r) => r.service);
+      // Fallback: reservoir distinct (works on any engine)
+      const result = await reservoir.distinct({
+        field: 'service',
+        projectId,
+        from: effectiveFrom,
+        to: to ?? new Date(),
+      });
+      services = result.values;
     }
 
     // Cache for 5 minutes
@@ -533,24 +503,15 @@ export class QueryService {
       return cached;
     }
 
-    let query = db
-      .selectFrom('logs')
-      .select([
-        'message',
-        db.fn.count('time').as('count'),
-      ])
-      .where('project_id', '=', projectId)
-      .where('level', 'in', ['error', 'critical'])
-      .where('time', '>=', effectiveFrom)
-      .groupBy('message')
-      .orderBy('count', 'desc')
-      .limit(limit);
-
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const result = await query.execute();
+    const topResult = await reservoir.topValues({
+      field: 'message',
+      projectId,
+      from: effectiveFrom,
+      to: to ?? new Date(),
+      level: ['error', 'critical'],
+      limit,
+    });
+    const result = topResult.values.map(v => ({ message: v.value, count: v.count }));
 
     // Cache aggregation results
     await CacheManager.set(cacheKey, result, CACHE_TTL.STATS);

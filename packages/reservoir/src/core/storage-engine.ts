@@ -17,6 +17,8 @@ import type {
   CountResult,
   DistinctParams,
   DistinctResult,
+  TopValuesParams,
+  TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
 } from './types.js';
@@ -78,6 +80,9 @@ export abstract class StorageEngine {
 
   /** Get distinct values for a field */
   abstract distinct(params: DistinctParams): Promise<DistinctResult>;
+
+  /** Get top values for a field (GROUP BY + COUNT) */
+  abstract topValues(params: TopValuesParams): Promise<TopValuesResult>;
 
   /** Delete logs by time range */
   abstract deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult>;

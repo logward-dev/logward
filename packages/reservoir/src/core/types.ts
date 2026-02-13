@@ -64,6 +64,8 @@ export interface QueryParams {
   traceId?: string;
   from: Date;
   to: Date;
+  fromExclusive?: boolean; // time > from (instead of >=)
+  toExclusive?: boolean;   // time < to (instead of <=)
   search?: string;
   searchMode?: SearchMode;
   filters?: Filter[];
@@ -220,6 +222,25 @@ export interface DistinctParams {
 /** Result of a distinct query */
 export interface DistinctResult {
   values: string[];
+  executionTimeMs?: number;
+}
+
+/** Parameters for top values (GROUP BY field + COUNT) */
+export interface TopValuesParams {
+  field: string;
+  organizationId?: string | string[];
+  projectId?: string | string[];
+  service?: string | string[];
+  level?: LogLevel | LogLevel[];
+  hostname?: string | string[];
+  from: Date;
+  to: Date;
+  limit?: number;
+}
+
+/** Result of a top values query */
+export interface TopValuesResult {
+  values: Array<{ value: string; count: number }>;
   executionTimeMs?: number;
 }
 

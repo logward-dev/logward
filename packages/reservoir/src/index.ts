@@ -26,6 +26,8 @@ export type {
   CountResult,
   DistinctParams,
   DistinctResult,
+  TopValuesParams,
+  TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
 } from './core/types.js';

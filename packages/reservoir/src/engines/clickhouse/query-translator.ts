@@ -6,6 +6,7 @@ import type {
   DeleteByTimeRangeParams,
   DistinctParams,
   QueryParams,
+  TopValuesParams,
 } from '../../core/types.js';
 
 const INTERVAL_MAP: Record<AggregationInterval, string> = {
@@ -63,9 +64,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
       queryParams.p_trace_id = params.traceId;
     }
 
-    conditions.push(`time >= {p_from:DateTime64(3)}`);
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} {p_from:DateTime64(3)}`);
     queryParams.p_from = params.from.getTime() / 1000;
-    conditions.push(`time <= {p_to:DateTime64(3)}`);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} {p_to:DateTime64(3)}`);
     queryParams.p_to = params.to.getTime() / 1000;
 
     if (params.search) {
@@ -236,6 +237,60 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
 
     const where = ` WHERE ${conditions.join(' AND ')}`;
     let query = `SELECT DISTINCT ${selectExpr} AS value FROM ${this.tableName}${where} ORDER BY value ASC`;
+
+    if (params.limit) {
+      query += ` LIMIT {p_limit:UInt32}`;
+      queryParams.p_limit = params.limit;
+    }
+
+    return { query, parameters: [queryParams] };
+  }
+
+  translateTopValues(params: TopValuesParams): NativeQuery {
+    this.validateFieldName(params.field);
+
+    const conditions: string[] = [];
+    const queryParams: Record<string, unknown> = {};
+
+    if (params.organizationId !== undefined) {
+      this.pushClickHouseFilter(conditions, queryParams, 'organization_id', params.organizationId);
+    }
+    if (params.projectId !== undefined) {
+      this.pushClickHouseFilter(conditions, queryParams, 'project_id', params.projectId);
+    }
+    if (params.service !== undefined) {
+      this.pushClickHouseFilter(conditions, queryParams, 'service', params.service);
+    }
+    if (params.level !== undefined) {
+      this.pushClickHouseFilter(conditions, queryParams, 'level', params.level);
+    }
+    if (params.hostname !== undefined) {
+      if (Array.isArray(params.hostname)) {
+        conditions.push(`JSONExtractString(metadata, 'hostname') IN {p_hostname:Array(String)}`);
+        queryParams.p_hostname = params.hostname;
+      } else {
+        conditions.push(`JSONExtractString(metadata, 'hostname') = {p_hostname:String}`);
+        queryParams.p_hostname = params.hostname;
+      }
+    }
+
+    conditions.push(`time >= {p_from:DateTime64(3)}`);
+    queryParams.p_from = params.from.getTime() / 1000;
+    conditions.push(`time <= {p_to:DateTime64(3)}`);
+    queryParams.p_to = params.to.getTime() / 1000;
+
+    let selectExpr: string;
+    if (params.field.startsWith('metadata.')) {
+      const jsonKey = params.field.slice('metadata.'.length);
+      selectExpr = `JSONExtractString(metadata, '${jsonKey}')`;
+    } else {
+      selectExpr = params.field;
+    }
+
+    conditions.push(`${selectExpr} != ''`);
+
+    const where = ` WHERE ${conditions.join(' AND ')}`;
+    let query = `SELECT ${selectExpr} AS value, count() AS count FROM ${this.tableName}${where} GROUP BY value ORDER BY count DESC`;
 
     if (params.limit) {
       query += ` LIMIT {p_limit:UInt32}`;

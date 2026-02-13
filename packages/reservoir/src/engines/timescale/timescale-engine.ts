@@ -21,6 +21,8 @@ import type {
   CountResult,
   DistinctParams,
   DistinctResult,
+  TopValuesParams,
+  TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
 } from '../../core/types.js';
@@ -307,6 +309,20 @@ export class TimescaleEngine extends StorageEngine {
     const result = await pool.query(native.query as string, native.parameters);
     return {
       values: result.rows.map((row: Record<string, unknown>) => row.value as string).filter((v) => v != null),
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async topValues(params: TopValuesParams): Promise<TopValuesResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const native = this.translator.translateTopValues(params);
+    const result = await pool.query(native.query as string, native.parameters);
+    return {
+      values: result.rows.map((row: Record<string, unknown>) => ({
+        value: row.value as string,
+        count: Number(row.count),
+      })),
       executionTimeMs: Date.now() - start,
     };
   }

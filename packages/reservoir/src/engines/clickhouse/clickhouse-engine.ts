@@ -22,6 +22,8 @@ import type {
   CountResult,
   DistinctParams,
   DistinctResult,
+  TopValuesParams,
+  TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
 } from '../../core/types.js';
@@ -337,6 +339,25 @@ export class ClickHouseEngine extends StorageEngine {
     const rows = await resultSet.json() as Record<string, unknown>[];
     return {
       values: rows.map((row) => row.value as string).filter((v) => v != null && v !== ''),
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async topValues(params: TopValuesParams): Promise<TopValuesResult> {
+    const start = Date.now();
+    const client = this.getClient();
+    const native = this.translator.translateTopValues(params);
+    const resultSet = await client.query({
+      query: native.query as string,
+      query_params: (native.parameters as Record<string, unknown>[])[0],
+      format: 'JSONEachRow',
+    });
+    const rows = await resultSet.json() as Record<string, unknown>[];
+    return {
+      values: rows.map((row) => ({
+        value: String(row.value),
+        count: Number(row.count),
+      })),
       executionTimeMs: Date.now() - start,
     };
   }

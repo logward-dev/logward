@@ -6,6 +6,7 @@ import type {
   DeleteByTimeRangeParams,
   DistinctParams,
   QueryParams,
+  TopValuesParams,
 } from '../../core/types.js';
 
 const INTERVAL_MAP: Record<AggregationInterval, string> = {
@@ -81,11 +82,11 @@ export class TimescaleQueryTranslator extends QueryTranslator {
       idx++;
     }
 
-    // time range
-    conditions.push(`time >= $${idx}`);
+    // time range (support exclusive bounds for getLogContext)
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx}`);
     values.push(params.from);
     idx++;
-    conditions.push(`time <= $${idx}`);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} $${idx}`);
     values.push(params.to);
     idx++;
 
@@ -125,8 +126,9 @@ export class TimescaleQueryTranslator extends QueryTranslator {
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
+    const sortOrder = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-    let query = `SELECT * FROM ${this.table}${where} ORDER BY time DESC, id DESC LIMIT $${idx}`;
+    let query = `SELECT * FROM ${this.table}${where} ORDER BY time ${sortOrder}, id ${sortOrder} LIMIT $${idx}`;
     values.push(limit + 1);
     idx++;
 
@@ -282,6 +284,67 @@ export class TimescaleQueryTranslator extends QueryTranslator {
 
     const where = ` WHERE ${conditions.join(' AND ')}`;
     let query = `SELECT DISTINCT ${selectExpr} AS value FROM ${this.table}${where} ORDER BY value ASC`;
+
+    if (params.limit) {
+      query += ` LIMIT $${idx}`;
+      values.push(params.limit);
+    }
+
+    return { query, parameters: values };
+  }
+
+  translateTopValues(params: TopValuesParams): NativeQuery {
+    this.validateFieldName(params.field);
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (params.organizationId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'organization_id', params.organizationId);
+    }
+    if (params.projectId !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'project_id', params.projectId);
+    }
+    if (params.service !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'service', params.service);
+    }
+    if (params.level !== undefined) {
+      idx = this.pushFilter(conditions, values, idx, 'level', params.level);
+    }
+    if (params.hostname !== undefined) {
+      if (Array.isArray(params.hostname)) {
+        conditions.push(`metadata->>'hostname' = ANY($${idx})`);
+        values.push(params.hostname);
+        idx++;
+      } else {
+        conditions.push(`metadata->>'hostname' = $${idx}`);
+        values.push(params.hostname);
+        idx++;
+      }
+    }
+
+    conditions.push(`time >= $${idx}`);
+    values.push(params.from);
+    idx++;
+    conditions.push(`time <= $${idx}`);
+    values.push(params.to);
+    idx++;
+
+    // Resolve field expression
+    let selectExpr: string;
+    if (params.field.startsWith('metadata.')) {
+      const jsonKey = params.field.slice('metadata.'.length);
+      selectExpr = `metadata->>'${jsonKey}'`;
+    } else {
+      selectExpr = params.field;
+    }
+
+    conditions.push(`${selectExpr} IS NOT NULL`);
+    conditions.push(`${selectExpr} != ''`);
+
+    const where = ` WHERE ${conditions.join(' AND ')}`;
+    let query = `SELECT ${selectExpr} AS value, COUNT(*) AS count FROM ${this.table}${where} GROUP BY value ORDER BY count DESC`;
 
     if (params.limit) {
       query += ` LIMIT $${idx}`;

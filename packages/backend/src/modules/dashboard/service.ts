@@ -1,6 +1,7 @@
 import { db } from '../../database/index.js';
 import { sql } from 'kysely';
 import { CacheManager, CACHE_TTL } from '../../utils/cache.js';
+import { reservoir } from '../../database/reservoir.js';
 
 export interface DashboardStats {
   totalLogsToday: {
@@ -131,8 +132,8 @@ class DashboardService {
     lastHourStart: Date,
     prevHourStart: Date
   ): Promise<DashboardStats> {
-    // Query aggregate for historical data (>1 hour old) and raw logs for recent data in parallel
-    const [todayAggregateStats, recentStats, yesterdayAggregateStats, prevHourStats] = await Promise.all([
+    // Query aggregate for historical data (>1 hour old) and reservoir for recent data in parallel
+    const [todayAggregateStats, recentTotal, recentErrors, recentServices, yesterdayAggregateStats, prevHourCount] = await Promise.all([
       // Today's historical stats from aggregate (today start to 1 hour ago)
       db
         .selectFrom('logs_hourly_stats')
@@ -146,17 +147,10 @@ class DashboardService {
         .where('bucket', '<', lastHourStart)
         .executeTakeFirst(),
 
-      // Recent stats from raw logs (last hour - not yet in aggregate)
-      db
-        .selectFrom('logs')
-        .select([
-          sql<string>`COUNT(*)`.as('total'),
-          sql<string>`COUNT(*) FILTER (WHERE level IN ('error', 'critical'))`.as('errors'),
-          sql<string>`COUNT(DISTINCT service)`.as('services'),
-        ])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', lastHourStart)
-        .executeTakeFirst(),
+      // Recent stats from reservoir (last hour)
+      reservoir.count({ projectId: projectIds, from: lastHourStart, to: new Date() }),
+      reservoir.count({ projectId: projectIds, from: lastHourStart, to: new Date(), level: ['error', 'critical'] }),
+      reservoir.distinct({ field: 'service', projectId: projectIds, from: lastHourStart, to: new Date() }),
 
       // Yesterday's stats from aggregate
       db
@@ -171,31 +165,21 @@ class DashboardService {
         .where('bucket', '<', todayStart)
         .executeTakeFirst(),
 
-      // Previous hour stats from raw logs (for throughput trend)
-      db
-        .selectFrom('logs')
-        .select([sql<string>`COUNT(*)`.as('total')])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', prevHourStart)
-        .where('time', '<', lastHourStart)
-        .executeTakeFirst(),
+      // Previous hour from reservoir (for throughput trend)
+      reservoir.count({ projectId: projectIds, from: prevHourStart, to: lastHourStart }),
     ]);
 
     // Combine aggregate + recent stats
-    // Note: SQL results come as strings from Kysely raw sql fragments
-    const todayCount = Number(todayAggregateStats?.total ?? 0) + Number(recentStats?.total ?? 0);
-    const todayErrorCount = Number(todayAggregateStats?.errors ?? 0) + Number(recentStats?.errors ?? 0);
+    const todayCount = Number(todayAggregateStats?.total ?? 0) + recentTotal.count;
+    const todayErrorCount = Number(todayAggregateStats?.errors ?? 0) + recentErrors.count;
     const yesterdayCount = Number(yesterdayAggregateStats?.total ?? 0);
     const yesterdayErrorCount = Number(yesterdayAggregateStats?.errors ?? 0);
 
-    // For services, we add distinct counts from aggregate and recent periods.
-    // This may slightly overcount if the same service appears in both periods,
-    // but provides a reasonable approximation without scanning millions of rows.
-    const todayServiceCount = Number(todayAggregateStats?.services ?? 0) + Number(recentStats?.services ?? 0);
+    // Approximate: aggregate distinct + recent distinct (may overcount)
+    const todayServiceCount = Number(todayAggregateStats?.services ?? 0) + recentServices.values.length;
     const yesterdayServiceCount = Number(yesterdayAggregateStats?.services ?? 0);
 
-    const lastHourCount = Number(recentStats?.total ?? 0);
-    const prevHourCount = Number(prevHourStats?.total ?? 0);
+    const lastHourCount = recentTotal.count;
 
     return this.calculateStats(
       todayCount,
@@ -205,7 +189,7 @@ class DashboardService {
       todayServiceCount,
       yesterdayServiceCount,
       lastHourCount,
-      prevHourCount
+      prevHourCount.count
     );
   }
 
@@ -219,42 +203,28 @@ class DashboardService {
     lastHourStart: Date,
     prevHourStart: Date
   ): Promise<DashboardStats> {
-    const [todayStats, yesterdayStats] = await Promise.all([
-      db
-        .selectFrom('logs')
-        .select([
-          sql<string>`COUNT(*)`.as('total'),
-          sql<string>`COUNT(*) FILTER (WHERE level IN ('error', 'critical'))`.as('errors'),
-          sql<string>`COUNT(DISTINCT service)`.as('services'),
-          sql<string>`COUNT(*) FILTER (WHERE time >= ${lastHourStart})`.as('last_hour'),
-          sql<string>`COUNT(*) FILTER (WHERE time >= ${prevHourStart} AND time < ${lastHourStart})`.as('prev_hour'),
-        ])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', todayStart)
-        .executeTakeFirst(),
+    const now = new Date();
 
-      db
-        .selectFrom('logs')
-        .select([
-          sql<string>`COUNT(*)`.as('total'),
-          sql<string>`COUNT(*) FILTER (WHERE level IN ('error', 'critical'))`.as('errors'),
-          sql<string>`COUNT(DISTINCT service)`.as('services'),
-        ])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', yesterdayStart)
-        .where('time', '<', todayStart)
-        .executeTakeFirst(),
+    const [todayTotal, todayErrors, todayServices, yesterdayTotal, yesterdayErrors, yesterdayServices, lastHour, prevHour] = await Promise.all([
+      reservoir.count({ projectId: projectIds, from: todayStart, to: now }),
+      reservoir.count({ projectId: projectIds, from: todayStart, to: now, level: ['error', 'critical'] }),
+      reservoir.distinct({ field: 'service', projectId: projectIds, from: todayStart, to: now }),
+      reservoir.count({ projectId: projectIds, from: yesterdayStart, to: todayStart }),
+      reservoir.count({ projectId: projectIds, from: yesterdayStart, to: todayStart, level: ['error', 'critical'] }),
+      reservoir.distinct({ field: 'service', projectId: projectIds, from: yesterdayStart, to: todayStart }),
+      reservoir.count({ projectId: projectIds, from: lastHourStart, to: now }),
+      reservoir.count({ projectId: projectIds, from: prevHourStart, to: lastHourStart }),
     ]);
 
     return this.calculateStats(
-      Number(todayStats?.total ?? 0),
-      Number(yesterdayStats?.total ?? 0),
-      Number(todayStats?.errors ?? 0),
-      Number(yesterdayStats?.errors ?? 0),
-      Number(todayStats?.services ?? 0),
-      Number(yesterdayStats?.services ?? 0),
-      Number(todayStats?.last_hour ?? 0),
-      Number(todayStats?.prev_hour ?? 0)
+      todayTotal.count,
+      yesterdayTotal.count,
+      todayErrors.count,
+      yesterdayErrors.count,
+      todayServices.values.length,
+      yesterdayServices.values.length,
+      lastHour.count,
+      prevHour.count
     );
   }
 
@@ -340,7 +310,9 @@ class DashboardService {
     let recentResults: Array<{ bucket: string; level: string; count: string }> = [];
 
     try {
-      // Query pre-computed hourly stats (fast path)
+      if (reservoir.getEngineType() !== 'timescale') throw new Error('skip aggregate');
+
+      // Query pre-computed hourly stats (fast path, TimescaleDB only)
       historicalResults = await db
         .selectFrom('logs_hourly_stats')
         .select([
@@ -355,35 +327,44 @@ class DashboardService {
         .orderBy('bucket', 'asc')
         .execute();
     } catch {
-      // Continuous aggregate not available, fall back to regular query
-      historicalResults = await db
-        .selectFrom('logs')
-        .select([
-          sql<string>`time_bucket('1 hour', time)`.as('bucket'),
-          'level',
-          sql<string>`count(*)`.as('count'),
-        ])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', last24Hours)
-        .where('time', '<', lastHour)
-        .groupBy(['bucket', 'level'])
-        .orderBy('bucket', 'asc')
-        .execute();
+      // Fallback: use reservoir aggregate
+      const aggResult = await reservoir.aggregate({
+        projectId: projectIds,
+        from: last24Hours,
+        to: lastHour,
+        interval: '1h',
+      });
+      historicalResults = aggResult.timeseries.flatMap((bucket) => {
+        const entries: Array<{ bucket: string | Date; level: string; count: string }> = [];
+        if (bucket.byLevel) {
+          for (const [level, count] of Object.entries(bucket.byLevel)) {
+            if (count > 0) {
+              entries.push({ bucket: bucket.bucket, level, count: String(count) });
+            }
+          }
+        }
+        return entries;
+      });
     }
 
-    // Query real-time data for the last hour (not yet aggregated)
-    recentResults = await db
-      .selectFrom('logs')
-      .select([
-        sql<string>`time_bucket('1 hour', time)`.as('bucket'),
-        'level',
-        sql<string>`count(*)`.as('count'),
-      ])
-      .where('project_id', 'in', projectIds)
-      .where('time', '>=', lastHour)
-      .groupBy(['bucket', 'level'])
-      .orderBy('bucket', 'asc')
-      .execute();
+    // Query real-time data for the last hour using reservoir
+    const recentAgg = await reservoir.aggregate({
+      projectId: projectIds,
+      from: lastHour,
+      to: now,
+      interval: '1h',
+    });
+    recentResults = recentAgg.timeseries.flatMap((bucket) => {
+      const entries: Array<{ bucket: string; level: string; count: string }> = [];
+      if (bucket.byLevel) {
+        for (const [level, count] of Object.entries(bucket.byLevel)) {
+          if (count > 0) {
+            entries.push({ bucket: bucket.bucket.toISOString(), level, count: String(count) });
+          }
+        }
+      }
+      return entries;
+    });
 
     // Combine historical and recent results
     const allResults = [...historicalResults, ...recentResults];
@@ -492,7 +473,7 @@ class DashboardService {
     oneDayAgo: Date,
     limit: number
   ): Promise<Array<{ name: string; count: number; percentage: number }>> {
-    // Query historical data from daily aggregate + recent data from raw logs in parallel
+    // Query historical data from daily aggregate + recent data from reservoir
     const [historicalServices, recentServices] = await Promise.all([
       // 7 days ago to 1 day ago (use daily stats)
       db
@@ -504,14 +485,14 @@ class DashboardService {
         .groupBy('service')
         .execute(),
 
-      // Last 24 hours (use raw logs - not yet in daily aggregate)
-      db
-        .selectFrom('logs')
-        .select(['service', sql<string>`COUNT(*)`.as('count')])
-        .where('project_id', 'in', projectIds)
-        .where('time', '>=', oneDayAgo)
-        .groupBy('service')
-        .execute(),
+      // Last 24 hours from reservoir
+      reservoir.topValues({
+        field: 'service',
+        projectId: projectIds,
+        from: oneDayAgo,
+        to: new Date(),
+        limit: 100,
+      }),
     ]);
 
     // Merge service counts
@@ -521,9 +502,9 @@ class DashboardService {
       serviceMap.set(row.service, Number(row.count ?? 0));
     }
 
-    for (const row of recentServices) {
-      const existing = serviceMap.get(row.service) ?? 0;
-      serviceMap.set(row.service, existing + Number(row.count ?? 0));
+    for (const row of recentServices.values) {
+      const existing = serviceMap.get(row.value) ?? 0;
+      serviceMap.set(row.value, existing + row.count);
     }
 
     const total = Array.from(serviceMap.values()).reduce((sum, count) => sum + count, 0);
@@ -551,37 +532,19 @@ class DashboardService {
     sevenDaysAgo: Date,
     limit: number
   ): Promise<Array<{ name: string; count: number; percentage: number }>> {
-    const totalResult = await db
-      .selectFrom('logs')
-      .select(sql<string>`COUNT(*)`.as('total'))
-      .where('project_id', 'in', projectIds)
-      .where('time', '>=', sevenDaysAgo)
-      .executeTakeFirst();
+    const [totalResult, topResult] = await Promise.all([
+      reservoir.count({ projectId: projectIds, from: sevenDaysAgo, to: new Date() }),
+      reservoir.topValues({ field: 'service', projectId: projectIds, from: sevenDaysAgo, to: new Date(), limit }),
+    ]);
 
-    const total = Number(totalResult?.total ?? 0);
+    const total = totalResult.count;
+    if (total === 0) return [];
 
-    if (total === 0) {
-      return [];
-    }
-
-    const services = await db
-      .selectFrom('logs')
-      .select(['service', sql<string>`COUNT(*)`.as('count')])
-      .where('project_id', 'in', projectIds)
-      .where('time', '>=', sevenDaysAgo)
-      .groupBy('service')
-      .orderBy('count', 'desc')
-      .limit(limit)
-      .execute();
-
-    return services.map((s) => {
-      const count = Number(s.count ?? 0);
-      return {
-        name: s.service,
-        count,
-        percentage: Math.round((count / total) * 100),
-      };
-    });
+    return topResult.values.map((s) => ({
+      name: s.value,
+      count: s.count,
+      percentage: Math.round((s.count / total) * 100),
+    }));
   }
 
   /**
@@ -744,27 +707,24 @@ class DashboardService {
       return [];
     }
 
-    // PERFORMANCE: Add time filter to use partial error index
-    // Without this, PG scans the entire hypertable looking for errors
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const errors = await db
-      .selectFrom('logs')
-      .select(['time', 'service', 'level', 'message', 'project_id', 'trace_id'])
-      .where('project_id', 'in', projectIds)
-      .where('level', 'in', ['error', 'critical'])
-      .where('time', '>=', last24h)
-      .orderBy('time', 'desc')
-      .limit(10)
-      .execute();
+    const queryResult = await reservoir.query({
+      projectId: projectIds,
+      level: ['error', 'critical'],
+      from: last24h,
+      to: new Date(),
+      limit: 10,
+      sortOrder: 'desc',
+    });
 
-    const result = errors.map((e) => ({
+    const result = queryResult.logs.map((e) => ({
       time: e.time.toISOString(),
       service: e.service,
       level: e.level as 'error' | 'critical',
       message: e.message,
-      projectId: e.project_id || '',
-      traceId: e.trace_id || undefined,
+      projectId: e.projectId || '',
+      traceId: e.traceId || undefined,
     }));
 
     // Cache for 1 minute

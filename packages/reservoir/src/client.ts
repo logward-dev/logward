@@ -17,6 +17,8 @@ import type {
   CountResult,
   DistinctParams,
   DistinctResult,
+  TopValuesParams,
+  TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
 } from './core/types.js';
@@ -123,9 +125,18 @@ export class Reservoir {
     return this.engine.distinct(params);
   }
 
+  async topValues(params: TopValuesParams): Promise<TopValuesResult> {
+    this.ensureInitialized();
+    return this.engine.topValues(params);
+  }
+
   async deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult> {
     this.ensureInitialized();
     return this.engine.deleteByTimeRange(params);
+  }
+
+  getEngineType(): EngineType {
+    return this.engine.getCapabilities().engine;
   }
 
   async close(): Promise<void> {

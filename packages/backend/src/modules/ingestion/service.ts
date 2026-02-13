@@ -269,35 +269,28 @@ export class IngestionService {
   }
 
   /**
-   * Get log statistics
+   * Get log statistics (reservoir: works with any engine)
    */
   async getStats(projectId: string, from?: Date, to?: Date) {
-    let query = db
-      .selectFrom('logs')
-      .select([
-        db.fn.count('time').as('total'),
-        'level',
-      ])
-      .where('project_id', '=', projectId)
-      .groupBy('level');
+    const effectiveFrom = from || new Date(0);
+    const effectiveTo = to || new Date();
 
-    if (from) {
-      query = query.where('time', '>=', from);
+    const topResult = await reservoir.topValues({
+      field: 'level',
+      projectId,
+      from: effectiveFrom,
+      to: effectiveTo,
+      limit: 20, // enough for all log levels
+    });
+
+    const byLevel: Record<string, number> = {};
+    let total = 0;
+    for (const v of topResult.values) {
+      byLevel[v.value] = v.count;
+      total += v.count;
     }
 
-    if (to) {
-      query = query.where('time', '<=', to);
-    }
-
-    const results = await query.execute();
-
-    return {
-      total: results.reduce((sum, r) => sum + Number(r.total), 0),
-      by_level: results.reduce((acc, r) => {
-        acc[r.level] = Number(r.total);
-        return acc;
-      }, {} as Record<string, number>),
-    };
+    return { total, by_level: byLevel };
   }
 }
 
