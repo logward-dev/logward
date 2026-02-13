@@ -25,6 +25,18 @@ import type {
   TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
+  SpanRecord,
+  TraceRecord,
+  SpanQueryParams,
+  SpanQueryResult,
+  TraceQueryParams,
+  TraceQueryResult,
+  IngestSpansResult,
+  ServiceDependencyResult,
+  ServiceDependency,
+  DeleteSpansByTimeRangeParams,
+  SpanKind,
+  SpanStatusCode,
 } from '../../core/types.js';
 import { TimescaleQueryTranslator } from './query-translator.js';
 
@@ -407,6 +419,373 @@ export class TimescaleEngine extends StorageEngine {
 
     return { query, values: [times, projectIds, services, levels, messages, metadatas, traceIds, spanIds] };
   }
+
+  // =========================================================================
+  // Span & Trace Operations
+  // =========================================================================
+
+  async ingestSpans(spans: SpanRecord[]): Promise<IngestSpansResult> {
+    if (spans.length === 0) return { ingested: 0, failed: 0, durationMs: 0 };
+
+    const start = Date.now();
+    const pool = this.getPool();
+    const s = this.schema;
+
+    const times: Date[] = [];
+    const spanIds: string[] = [];
+    const traceIds: string[] = [];
+    const parentSpanIds: (string | null)[] = [];
+    const orgIds: (string | null)[] = [];
+    const projectIds: string[] = [];
+    const serviceNames: string[] = [];
+    const operationNames: string[] = [];
+    const startTimes: Date[] = [];
+    const endTimes: Date[] = [];
+    const durations: number[] = [];
+    const kinds: (string | null)[] = [];
+    const statusCodes: (string | null)[] = [];
+    const statusMessages: (string | null)[] = [];
+    const attributesJsons: (string | null)[] = [];
+    const eventsJsons: (string | null)[] = [];
+    const linksJsons: (string | null)[] = [];
+    const resourceAttrsJsons: (string | null)[] = [];
+
+    for (const span of spans) {
+      times.push(span.time);
+      spanIds.push(span.spanId);
+      traceIds.push(span.traceId);
+      parentSpanIds.push(span.parentSpanId ?? null);
+      orgIds.push(span.organizationId ?? null);
+      projectIds.push(span.projectId);
+      serviceNames.push(sanitizeNull(span.serviceName));
+      operationNames.push(sanitizeNull(span.operationName));
+      startTimes.push(span.startTime);
+      endTimes.push(span.endTime);
+      durations.push(span.durationMs);
+      kinds.push(span.kind ?? null);
+      statusCodes.push(span.statusCode ?? null);
+      statusMessages.push(span.statusMessage ? sanitizeNull(span.statusMessage) : null);
+      attributesJsons.push(span.attributes ? JSON.stringify(span.attributes) : null);
+      eventsJsons.push(span.events ? JSON.stringify(span.events) : null);
+      linksJsons.push(span.links ? JSON.stringify(span.links) : null);
+      resourceAttrsJsons.push(span.resourceAttributes ? JSON.stringify(span.resourceAttributes) : null);
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO ${s}.spans (
+          time, span_id, trace_id, parent_span_id, organization_id, project_id,
+          service_name, operation_name, start_time, end_time, duration_ms,
+          kind, status_code, status_message, attributes, events, links, resource_attributes
+        )
+        SELECT * FROM UNNEST(
+          $1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::uuid[],
+          $7::text[], $8::text[], $9::timestamptz[], $10::timestamptz[], $11::integer[],
+          $12::text[], $13::text[], $14::text[], $15::jsonb[], $16::jsonb[], $17::jsonb[], $18::jsonb[]
+        )`,
+        [times, spanIds, traceIds, parentSpanIds, orgIds, projectIds,
+         serviceNames, operationNames, startTimes, endTimes, durations,
+         kinds, statusCodes, statusMessages, attributesJsons, eventsJsons, linksJsons, resourceAttrsJsons],
+      );
+      return { ingested: spans.length, failed: 0, durationMs: Date.now() - start };
+    } catch (err) {
+      return {
+        ingested: 0,
+        failed: spans.length,
+        durationMs: Date.now() - start,
+        errors: [{ index: 0, error: err instanceof Error ? err.message : String(err) }],
+      };
+    }
+  }
+
+  async upsertTrace(trace: TraceRecord): Promise<void> {
+    const pool = this.getPool();
+    const s = this.schema;
+
+    const existing = await pool.query(
+      `SELECT trace_id, start_time, end_time, span_count, error FROM ${s}.traces
+       WHERE trace_id = $1 AND project_id = $2`,
+      [trace.traceId, trace.projectId],
+    );
+
+    if (existing.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO ${s}.traces (
+          trace_id, organization_id, project_id, service_name, root_service_name, root_operation_name,
+          start_time, end_time, duration_ms, span_count, error
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [trace.traceId, trace.organizationId ?? null, trace.projectId, trace.serviceName,
+         trace.rootServiceName ?? null, trace.rootOperationName ?? null,
+         trace.startTime, trace.endTime, trace.durationMs, trace.spanCount, trace.error],
+      );
+    } else {
+      const row = existing.rows[0];
+      const existingStart = new Date(row.start_time);
+      const existingEnd = new Date(row.end_time);
+      const newStart = trace.startTime < existingStart ? trace.startTime : existingStart;
+      const newEnd = trace.endTime > existingEnd ? trace.endTime : existingEnd;
+      const newDuration = newEnd.getTime() - newStart.getTime();
+
+      await pool.query(
+        `UPDATE ${s}.traces SET
+          start_time = $1, end_time = $2, duration_ms = $3,
+          span_count = span_count + $4, error = error OR $5,
+          root_service_name = COALESCE($6, root_service_name),
+          root_operation_name = COALESCE($7, root_operation_name)
+        WHERE trace_id = $8 AND project_id = $9`,
+        [newStart, newEnd, newDuration, trace.spanCount, trace.error,
+         trace.rootServiceName ?? null, trace.rootOperationName ?? null,
+         trace.traceId, trace.projectId],
+      );
+    }
+  }
+
+  async querySpans(params: SpanQueryParams): Promise<SpanQueryResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const s = this.schema;
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    // Time range
+    conditions.push(`time ${params.fromExclusive ? '>' : '>='} $${idx++}`);
+    values.push(params.from);
+    conditions.push(`time ${params.toExclusive ? '<' : '<='} $${idx++}`);
+    values.push(params.to);
+
+    // Filters
+    if (params.projectId) {
+      const pids = Array.isArray(params.projectId) ? params.projectId : [params.projectId];
+      conditions.push(`project_id = ANY($${idx++})`);
+      values.push(pids);
+    }
+    if (params.traceId) {
+      const tids = Array.isArray(params.traceId) ? params.traceId : [params.traceId];
+      conditions.push(`trace_id = ANY($${idx++})`);
+      values.push(tids);
+    }
+    if (params.serviceName) {
+      const svc = Array.isArray(params.serviceName) ? params.serviceName : [params.serviceName];
+      conditions.push(`service_name = ANY($${idx++})`);
+      values.push(svc);
+    }
+    if (params.kind) {
+      const k = Array.isArray(params.kind) ? params.kind : [params.kind];
+      conditions.push(`kind = ANY($${idx++})`);
+      values.push(k);
+    }
+    if (params.statusCode) {
+      const sc = Array.isArray(params.statusCode) ? params.statusCode : [params.statusCode];
+      conditions.push(`status_code = ANY($${idx++})`);
+      values.push(sc);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sortBy = params.sortBy ?? 'start_time';
+    const sortOrder = params.sortOrder ?? 'asc';
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM ${s}.spans ${where}`,
+      values,
+    );
+    const total = countResult.rows[0]?.count ?? 0;
+
+    const result = await pool.query(
+      `SELECT * FROM ${s}.spans ${where}
+       ORDER BY ${sortBy} ${sortOrder}
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, limit, offset],
+    );
+
+    return {
+      spans: result.rows.map(mapRowToSpanRecord),
+      total,
+      hasMore: offset + result.rows.length < total,
+      limit,
+      offset,
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async getSpansByTraceId(traceId: string, projectId: string): Promise<SpanRecord[]> {
+    const pool = this.getPool();
+    const s = this.schema;
+    const result = await pool.query(
+      `SELECT * FROM ${s}.spans WHERE trace_id = $1 AND project_id = $2 ORDER BY start_time ASC`,
+      [traceId, projectId],
+    );
+    return result.rows.map(mapRowToSpanRecord);
+  }
+
+  async queryTraces(params: TraceQueryParams): Promise<TraceQueryResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const s = this.schema;
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    conditions.push(`start_time >= $${idx++}`);
+    values.push(params.from);
+    conditions.push(`start_time <= $${idx++}`);
+    values.push(params.to);
+
+    if (params.projectId) {
+      const pids = Array.isArray(params.projectId) ? params.projectId : [params.projectId];
+      conditions.push(`project_id = ANY($${idx++})`);
+      values.push(pids);
+    }
+    if (params.serviceName) {
+      const svc = Array.isArray(params.serviceName) ? params.serviceName : [params.serviceName];
+      conditions.push(`service_name = ANY($${idx++})`);
+      values.push(svc);
+    }
+    if (params.error !== undefined) {
+      conditions.push(`error = $${idx++}`);
+      values.push(params.error);
+    }
+    if (params.minDurationMs !== undefined) {
+      conditions.push(`duration_ms >= $${idx++}`);
+      values.push(params.minDurationMs);
+    }
+    if (params.maxDurationMs !== undefined) {
+      conditions.push(`duration_ms <= $${idx++}`);
+      values.push(params.maxDurationMs);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM ${s}.traces ${where}`,
+      values,
+    );
+    const total = countResult.rows[0]?.count ?? 0;
+
+    const result = await pool.query(
+      `SELECT * FROM ${s}.traces ${where}
+       ORDER BY start_time DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, limit, offset],
+    );
+
+    return {
+      traces: result.rows.map(mapRowToTraceRecord),
+      total,
+      hasMore: offset + result.rows.length < total,
+      limit,
+      offset,
+      executionTimeMs: Date.now() - start,
+    };
+  }
+
+  async getTraceById(traceId: string, projectId: string): Promise<TraceRecord | null> {
+    const pool = this.getPool();
+    const s = this.schema;
+    const result = await pool.query(
+      `SELECT * FROM ${s}.traces WHERE trace_id = $1 AND project_id = $2`,
+      [traceId, projectId],
+    );
+    return result.rows.length > 0 ? mapRowToTraceRecord(result.rows[0]) : null;
+  }
+
+  async getServiceDependencies(
+    projectId: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<ServiceDependencyResult> {
+    const pool = this.getPool();
+    const s = this.schema;
+    const values: unknown[] = [projectId];
+    let idx = 2;
+    let timeFilter = '';
+
+    if (from) {
+      timeFilter += ` AND child.start_time >= $${idx++}`;
+      values.push(from);
+    }
+    if (to) {
+      timeFilter += ` AND child.start_time <= $${idx++}`;
+      values.push(to);
+    }
+
+    const result = await pool.query(
+      `SELECT
+        parent.service_name AS source_service,
+        child.service_name AS target_service,
+        COUNT(child.span_id)::int AS call_count
+      FROM ${s}.spans child
+      INNER JOIN ${s}.spans parent
+        ON child.parent_span_id = parent.span_id
+        AND child.trace_id = parent.trace_id
+      WHERE child.project_id = $1
+        AND child.service_name <> parent.service_name
+        ${timeFilter}
+      GROUP BY parent.service_name, child.service_name`,
+      values,
+    );
+
+    const serviceCallCounts = new Map<string, number>();
+    const edges: ServiceDependency[] = [];
+
+    for (const row of result.rows) {
+      const source = row.source_service as string;
+      const target = row.target_service as string;
+      const count = row.call_count as number;
+
+      serviceCallCounts.set(source, (serviceCallCounts.get(source) || 0) + count);
+      serviceCallCounts.set(target, (serviceCallCounts.get(target) || 0) + count);
+      edges.push({ source, target, callCount: count });
+    }
+
+    const nodes = Array.from(serviceCallCounts.entries()).map(([name, callCount]) => ({
+      id: name,
+      name,
+      callCount,
+    }));
+
+    return { nodes, edges };
+  }
+
+  async deleteSpansByTimeRange(params: DeleteSpansByTimeRangeParams): Promise<DeleteResult> {
+    const start = Date.now();
+    const pool = this.getPool();
+    const s = this.schema;
+    const pids = Array.isArray(params.projectId) ? params.projectId : [params.projectId];
+
+    const conditions = ['project_id = ANY($1)', 'time >= $2', 'time <= $3'];
+    const values: unknown[] = [pids, params.from, params.to];
+    let idx = 4;
+
+    if (params.serviceName) {
+      const svc = Array.isArray(params.serviceName) ? params.serviceName : [params.serviceName];
+      conditions.push(`service_name = ANY($${idx++})`);
+      values.push(svc);
+    }
+
+    const result = await pool.query(
+      `DELETE FROM ${s}.spans WHERE ${conditions.join(' AND ')}`,
+      values,
+    );
+
+    // Also clean up orphaned traces
+    await pool.query(
+      `DELETE FROM ${s}.traces WHERE project_id = ANY($1)
+       AND NOT EXISTS (SELECT 1 FROM ${s}.spans WHERE spans.trace_id = traces.trace_id AND spans.project_id = traces.project_id)`,
+      [pids],
+    );
+
+    return {
+      deleted: Number(result.rowCount ?? 0),
+      executionTimeMs: Date.now() - start,
+    };
+  }
 }
 
 function mapRowToLogRecord(row: Record<string, unknown>): LogRecord {
@@ -428,5 +807,44 @@ function mapRowToStoredLogRecord(row: Record<string, unknown>): StoredLogRecord 
   return {
     id: row.id as string,
     ...mapRowToLogRecord(row),
+  };
+}
+
+function mapRowToSpanRecord(row: Record<string, unknown>): SpanRecord {
+  return {
+    time: row.time as Date,
+    spanId: row.span_id as string,
+    traceId: row.trace_id as string,
+    parentSpanId: row.parent_span_id as string | undefined,
+    organizationId: row.organization_id as string | undefined,
+    projectId: row.project_id as string,
+    serviceName: row.service_name as string,
+    operationName: row.operation_name as string,
+    startTime: row.start_time as Date,
+    endTime: row.end_time as Date,
+    durationMs: row.duration_ms as number,
+    kind: row.kind as SpanKind | undefined,
+    statusCode: row.status_code as SpanStatusCode | undefined,
+    statusMessage: row.status_message as string | undefined,
+    attributes: row.attributes as Record<string, unknown> | undefined,
+    events: row.events as Array<Record<string, unknown>> | undefined,
+    links: row.links as Array<Record<string, unknown>> | undefined,
+    resourceAttributes: row.resource_attributes as Record<string, unknown> | undefined,
+  };
+}
+
+function mapRowToTraceRecord(row: Record<string, unknown>): TraceRecord {
+  return {
+    traceId: row.trace_id as string,
+    organizationId: row.organization_id as string | undefined,
+    projectId: row.project_id as string,
+    serviceName: row.service_name as string,
+    rootServiceName: row.root_service_name as string | undefined,
+    rootOperationName: row.root_operation_name as string | undefined,
+    startTime: row.start_time as Date,
+    endTime: row.end_time as Date,
+    durationMs: row.duration_ms as number,
+    spanCount: row.span_count as number,
+    error: row.error as boolean,
   };
 }

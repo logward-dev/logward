@@ -7,16 +7,19 @@ import {
     getCacheTTL,
     hashParams
 } from '../../utils/cache.js';
-import { connection } from '../../queue/connection.js';
+import { getConnection } from '../../queue/connection.js';
 
 describe('Cache Utilities', () => {
     beforeEach(async () => {
         // Clear all cache keys before each test
-        const patterns = Object.values(CACHE_PREFIX).map(p => `${p}:*`);
-        for (const pattern of patterns) {
-            const keys = await connection.keys(pattern);
-            if (keys.length > 0) {
-                await connection.del(...keys);
+        const redis = getConnection();
+        if (redis) {
+            const patterns = Object.values(CACHE_PREFIX).map(p => `${p}:*`);
+            for (const pattern of patterns) {
+                const keys = await redis.keys(pattern);
+                if (keys.length > 0) {
+                    await redis.del(...keys);
+                }
             }
         }
         CacheManager.resetStats();

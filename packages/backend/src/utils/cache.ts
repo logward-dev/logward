@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { connection, isRedisAvailable } from '../queue/connection.js';
+import { getConnection, isRedisAvailable } from '../queue/connection.js';
 import { config } from '../config/index.js';
 
 /**
@@ -58,7 +58,7 @@ let cacheMisses = 0;
  * 2. Redis to be available (REDIS_URL set)
  */
 export function isCacheEnabled(): boolean {
-  return config.CACHE_ENABLED && isRedisAvailable() && connection !== null;
+  return config.CACHE_ENABLED && isRedisAvailable() && getConnection() !== null;
 }
 
 /**
@@ -185,12 +185,13 @@ export const CacheManager = {
    * Get a cached value
    */
   async get<T>(key: string): Promise<T | null> {
-    if (!isCacheEnabled() || !connection) {
+    const conn = getConnection();
+    if (!isCacheEnabled() || !conn) {
       return null;
     }
 
     try {
-      const cached = await connection.get(key);
+      const cached = await conn.get(key);
       if (cached) {
         cacheHits++;
         return JSON.parse(cached) as T;
@@ -208,12 +209,13 @@ export const CacheManager = {
    * Set a cached value with TTL
    */
   async set<T>(key: string, value: T, ttl: number = CACHE_TTL.QUERY): Promise<void> {
-    if (!isCacheEnabled() || !connection) {
+    const conn = getConnection();
+    if (!isCacheEnabled() || !conn) {
       return;
     }
 
     try {
-      await connection.setex(key, getCacheTTL(ttl), JSON.stringify(value));
+      await conn.setex(key, getCacheTTL(ttl), JSON.stringify(value));
     } catch (error) {
       console.error('[Cache] Error setting key:', key, error);
     }
@@ -223,12 +225,13 @@ export const CacheManager = {
    * Delete a specific key
    */
   async delete(key: string): Promise<void> {
-    if (!connection) {
+    const conn = getConnection();
+    if (!conn) {
       return;
     }
 
     try {
-      await connection.del(key);
+      await conn.del(key);
     } catch (error) {
       console.error('[Cache] Error deleting key:', key, error);
     }
@@ -239,7 +242,8 @@ export const CacheManager = {
    * IMPORTANT: Uses SCAN instead of KEYS to avoid blocking Redis
    */
   async deletePattern(pattern: string): Promise<number> {
-    if (!connection) {
+    const conn = getConnection();
+    if (!conn) {
       return 0;
     }
 
@@ -249,7 +253,7 @@ export const CacheManager = {
 
       do {
         // SCAN is O(1) per call, iterates incrementally
-        const [nextCursor, keys] = await connection.scan(
+        const [nextCursor, keys] = await conn.scan(
           cursor,
           'MATCH', pattern,
           'COUNT', 100  // Process 100 keys per iteration
@@ -258,7 +262,7 @@ export const CacheManager = {
 
         if (keys.length > 0) {
           // Use UNLINK for async deletion (non-blocking)
-          await connection.unlink(...keys);
+          await conn.unlink(...keys);
           totalDeleted += keys.length;
         }
       } while (cursor !== '0');
@@ -344,7 +348,8 @@ export const CacheManager = {
    * Uses DBSIZE instead of KEYS for key count (O(1) vs O(N))
    */
   async getStats(): Promise<CacheStats> {
-    if (!connection) {
+    const conn = getConnection();
+    if (!conn) {
       return {
         hits: cacheHits,
         misses: cacheMisses,
@@ -355,12 +360,12 @@ export const CacheManager = {
     }
 
     try {
-      const info = await connection.info('memory');
+      const info = await conn.info('memory');
       const memoryMatch = info.match(/used_memory_human:(\S+)/);
       const memoryUsage = memoryMatch ? memoryMatch[1] : 'unknown';
 
       // Use DBSIZE for total key count - O(1) operation
-      const keyCount = await connection.dbsize();
+      const keyCount = await conn.dbsize();
 
       const total = cacheHits + cacheMisses;
       const hitRate = total > 0 ? (cacheHits / total) * 100 : 0;

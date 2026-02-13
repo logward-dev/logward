@@ -5,8 +5,8 @@
  * They align with @logtide/shared types but are designed to be storage-agnostic.
  */
 
-import type { LogLevel } from '@logtide/shared';
-export type { LogLevel };
+import type { LogLevel, SpanKind, SpanStatusCode } from '@logtide/shared';
+export type { LogLevel, SpanKind, SpanStatusCode };
 
 export type EngineType = 'timescale' | 'clickhouse';
 
@@ -277,4 +277,127 @@ export interface StorageConfig {
   connectionTimeoutMs?: number;
   ssl?: boolean;
   options?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Span & Trace Types
+// ============================================================================
+
+/** A span record for storage */
+export interface SpanRecord {
+  time: Date;
+  spanId: string;
+  traceId: string;
+  parentSpanId?: string;
+  organizationId?: string;
+  projectId: string;
+  serviceName: string;
+  operationName: string;
+  startTime: Date;
+  endTime: Date;
+  durationMs: number;
+  kind?: SpanKind;
+  statusCode?: SpanStatusCode;
+  statusMessage?: string;
+  attributes?: Record<string, unknown>;
+  events?: Array<Record<string, unknown>>;
+  links?: Array<Record<string, unknown>>;
+  resourceAttributes?: Record<string, unknown>;
+}
+
+/** A trace record (aggregated from spans) */
+export interface TraceRecord {
+  traceId: string;
+  organizationId?: string;
+  projectId: string;
+  serviceName: string;
+  rootServiceName?: string;
+  rootOperationName?: string;
+  startTime: Date;
+  endTime: Date;
+  durationMs: number;
+  spanCount: number;
+  error: boolean;
+}
+
+/** Parameters for querying spans */
+export interface SpanQueryParams {
+  organizationId?: string | string[];
+  projectId?: string | string[];
+  traceId?: string | string[];
+  serviceName?: string | string[];
+  operationName?: string | string[];
+  kind?: SpanKind | SpanKind[];
+  statusCode?: SpanStatusCode | SpanStatusCode[];
+  from: Date;
+  to: Date;
+  fromExclusive?: boolean;
+  toExclusive?: boolean;
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+/** Result of a span query */
+export interface SpanQueryResult {
+  spans: SpanRecord[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  executionTimeMs?: number;
+}
+
+/** Parameters for querying traces */
+export interface TraceQueryParams {
+  organizationId?: string | string[];
+  projectId?: string | string[];
+  serviceName?: string | string[];
+  error?: boolean;
+  from: Date;
+  to: Date;
+  minDurationMs?: number;
+  maxDurationMs?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/** Result of a trace query */
+export interface TraceQueryResult {
+  traces: TraceRecord[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  executionTimeMs?: number;
+}
+
+/** Result of a batch span ingestion */
+export interface IngestSpansResult {
+  ingested: number;
+  failed: number;
+  durationMs: number;
+  errors?: Array<{ index: number; error: string }>;
+}
+
+/** A service dependency edge */
+export interface ServiceDependency {
+  source: string;
+  target: string;
+  callCount: number;
+}
+
+/** Result of a service dependency query */
+export interface ServiceDependencyResult {
+  nodes: Array<{ id: string; name: string; callCount: number }>;
+  edges: ServiceDependency[];
+}
+
+/** Parameters for deleting spans by time range */
+export interface DeleteSpansByTimeRangeParams {
+  projectId: string | string[];
+  from: Date;
+  to: Date;
+  serviceName?: string | string[];
 }

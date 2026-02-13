@@ -21,6 +21,15 @@ import type {
   TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
+  SpanRecord,
+  TraceRecord,
+  SpanQueryParams,
+  SpanQueryResult,
+  TraceQueryParams,
+  TraceQueryResult,
+  IngestSpansResult,
+  ServiceDependencyResult,
+  DeleteSpansByTimeRangeParams,
 } from './types.js';
 
 /**
@@ -86,4 +95,36 @@ export abstract class StorageEngine {
 
   /** Delete logs by time range */
   abstract deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult>;
+
+  // =========================================================================
+  // Span & Trace Operations
+  // =========================================================================
+
+  /** Ingest a batch of span records */
+  abstract ingestSpans(spans: SpanRecord[]): Promise<IngestSpansResult>;
+
+  /** Upsert a trace record (merge start/end times, sum span counts) */
+  abstract upsertTrace(trace: TraceRecord): Promise<void>;
+
+  /** Query spans with filters and pagination */
+  abstract querySpans(params: SpanQueryParams): Promise<SpanQueryResult>;
+
+  /** Get a single span by ID */
+  abstract getSpansByTraceId(traceId: string, projectId: string): Promise<SpanRecord[]>;
+
+  /** Query traces with filters and pagination */
+  abstract queryTraces(params: TraceQueryParams): Promise<TraceQueryResult>;
+
+  /** Get a single trace by ID */
+  abstract getTraceById(traceId: string, projectId: string): Promise<TraceRecord | null>;
+
+  /** Get service dependency graph from span parent-child relationships */
+  abstract getServiceDependencies(
+    projectId: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<ServiceDependencyResult>;
+
+  /** Delete spans by time range */
+  abstract deleteSpansByTimeRange(params: DeleteSpansByTimeRangeParams): Promise<DeleteResult>;
 }

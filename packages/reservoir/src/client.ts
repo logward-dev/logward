@@ -21,6 +21,15 @@ import type {
   TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
+  SpanRecord,
+  TraceRecord,
+  SpanQueryParams,
+  SpanQueryResult,
+  TraceQueryParams,
+  TraceQueryResult,
+  IngestSpansResult,
+  ServiceDependencyResult,
+  DeleteSpansByTimeRangeParams,
 } from './core/types.js';
 import type { StorageEngine } from './core/storage-engine.js';
 import { StorageEngineFactory } from './factory.js';
@@ -133,6 +142,54 @@ export class Reservoir {
   async deleteByTimeRange(params: DeleteByTimeRangeParams): Promise<DeleteResult> {
     this.ensureInitialized();
     return this.engine.deleteByTimeRange(params);
+  }
+
+  // =========================================================================
+  // Span & Trace Operations
+  // =========================================================================
+
+  async ingestSpans(spans: SpanRecord[]): Promise<IngestSpansResult> {
+    this.ensureInitialized();
+    return this.engine.ingestSpans(spans);
+  }
+
+  async upsertTrace(trace: TraceRecord): Promise<void> {
+    this.ensureInitialized();
+    return this.engine.upsertTrace(trace);
+  }
+
+  async querySpans(params: SpanQueryParams): Promise<SpanQueryResult> {
+    this.ensureInitialized();
+    return this.engine.querySpans(params);
+  }
+
+  async getSpansByTraceId(traceId: string, projectId: string): Promise<SpanRecord[]> {
+    this.ensureInitialized();
+    return this.engine.getSpansByTraceId(traceId, projectId);
+  }
+
+  async queryTraces(params: TraceQueryParams): Promise<TraceQueryResult> {
+    this.ensureInitialized();
+    return this.engine.queryTraces(params);
+  }
+
+  async getTraceById(traceId: string, projectId: string): Promise<TraceRecord | null> {
+    this.ensureInitialized();
+    return this.engine.getTraceById(traceId, projectId);
+  }
+
+  async getServiceDependencies(
+    projectId: string,
+    from?: Date,
+    to?: Date,
+  ): Promise<ServiceDependencyResult> {
+    this.ensureInitialized();
+    return this.engine.getServiceDependencies(projectId, from, to);
+  }
+
+  async deleteSpansByTimeRange(params: DeleteSpansByTimeRangeParams): Promise<DeleteResult> {
+    this.ensureInitialized();
+    return this.engine.deleteSpansByTimeRange(params);
   }
 
   getEngineType(): EngineType {

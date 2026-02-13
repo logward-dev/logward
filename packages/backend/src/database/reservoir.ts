@@ -32,6 +32,6 @@ function createReservoir(): Reservoir {
 export const reservoir = createReservoir();
 
 // Initialize (no-op for timescale with skipInitialize, creates table for clickhouse)
-reservoir.initialize().catch((err: unknown) => {
+export const reservoirReady = reservoir.initialize().catch((err: unknown) => {
   console.error('[Reservoir] Failed to initialize:', err);
 });

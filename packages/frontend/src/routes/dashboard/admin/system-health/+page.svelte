@@ -140,6 +140,8 @@
     let totalSpaceSaved = $derived(
         compressionStats.reduce((sum, h) => sum + h.spaceSavedBytes, 0),
     );
+
+    let isClickHouse = $derived(healthStats?.storageEngine === 'clickhouse');
 </script>
 
 <svelte:head>
@@ -150,9 +152,18 @@
     <!-- Header -->
     <div class="flex justify-between items-center">
         <div>
-            <h1 class="text-2xl font-bold tracking-tight">System Health</h1>
+            <div class="flex items-center gap-2.5">
+                <h1 class="text-2xl font-bold tracking-tight">System Health</h1>
+                {#if healthStats?.storageEngine}
+                    <span class="text-xs font-medium px-2 py-0.5 rounded-full {isClickHouse ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}">
+                        {isClickHouse ? 'ClickHouse' : 'TimescaleDB'}
+                    </span>
+                {/if}
+            </div>
             <p class="text-sm text-muted-foreground mt-0.5">
-                Database, compression, aggregates & infrastructure diagnostics
+                {isClickHouse
+                    ? 'PostgreSQL, ClickHouse, compression & infrastructure diagnostics'
+                    : 'Database, compression, aggregates & infrastructure diagnostics'}
             </p>
         </div>
         <div class="flex items-center gap-3">
@@ -175,10 +186,12 @@
 
     {#if $authStore.user?.is_admin}
         <!-- Connection Pool & Health -->
-        <div class="grid gap-4 md:grid-cols-3">
+        <div class="grid gap-4 md:grid-cols-2 {isClickHouse ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}">
             <Card class={healthStats?.database.status === 'healthy' ? 'border-green-500/30' : healthStats?.database.status === 'degraded' ? 'border-yellow-500/30' : 'border-red-500/30'}>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle class="text-sm font-medium">Database</CardTitle>
+                    <CardTitle class="text-sm font-medium">
+                        {isClickHouse ? 'PostgreSQL' : 'Database'}
+                    </CardTitle>
                     <Database class="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent class="space-y-3">
@@ -196,8 +209,35 @@
                         <span class="text-sm text-muted-foreground">Connections</span>
                         <span class="font-medium">{healthStats?.database.connections ?? "..."}</span>
                     </div>
+                    {#if isClickHouse}
+                        <p class="text-xs text-muted-foreground pt-1 border-t">Metadata store</p>
+                    {/if}
                 </CardContent>
             </Card>
+
+            {#if isClickHouse && healthStats?.clickhouse}
+                <Card class={healthStats.clickhouse.status === 'healthy' ? 'border-green-500/30' : healthStats.clickhouse.status === 'degraded' ? 'border-yellow-500/30' : 'border-red-500/30'}>
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium">ClickHouse</CardTitle>
+                        <Database class="h-4 w-4 text-orange-500" />
+                    </CardHeader>
+                    <CardContent class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground">Status</span>
+                            <span class="font-medium capitalize {healthStats.clickhouse.status === 'healthy' ? 'text-green-500' : healthStats.clickhouse.status === 'degraded' ? 'text-yellow-500' : 'text-red-500'}">
+                                {healthStats.clickhouse.status}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-muted-foreground">Latency</span>
+                            <span class="font-medium">
+                                {healthStats.clickhouse.latency >= 0 ? `${healthStats.clickhouse.latency}ms` : "N/A"}
+                            </span>
+                        </div>
+                        <p class="text-xs text-muted-foreground pt-1 border-t">Logs storage engine</p>
+                    </CardContent>
+                </Card>
+            {/if}
 
             <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -273,8 +313,16 @@
                         </Table.Header>
                         <Table.Body>
                             {#each databaseStats.tables as table}
+                                {@const isCh = table.name.startsWith('clickhouse.')}
                                 <Table.Row>
-                                    <Table.Cell class="font-mono text-sm">{table.name.replace('public.', '')}</Table.Cell>
+                                    <Table.Cell class="font-mono text-sm">
+                                        {#if isCh}
+                                            <span class="text-orange-500">{table.name.replace('clickhouse.', '')}</span>
+                                            <span class="text-xs text-orange-400/70 ml-1">CH</span>
+                                        {:else}
+                                            {table.name.replace('public.', '')}
+                                        {/if}
+                                    </Table.Cell>
                                     <Table.Cell class="text-right">{formatNumber(table.rows)}</Table.Cell>
                                     <Table.Cell class="text-right">{table.size}</Table.Cell>
                                     <Table.Cell class="text-right">{table.indexes_size}</Table.Cell>
@@ -291,7 +339,7 @@
         </Card>
 
         <!-- Compression & Continuous Aggregates -->
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-4 {isClickHouse ? '' : 'md:grid-cols-2'}">
             <!-- Compression Stats -->
             <Card>
                 <CardHeader class="pb-3">
@@ -316,7 +364,7 @@
                                         </span>
                                     </div>
                                     <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                                        <span>{ht.compressedChunks}/{ht.totalChunks} chunks</span>
+                                        <span>{ht.compressedChunks}/{ht.totalChunks} {isClickHouse ? 'parts' : 'chunks'}</span>
                                         <span>&middot;</span>
                                         <span>{ht.spaceSavedPretty} saved</span>
                                     </div>
@@ -341,41 +389,43 @@
                 </CardContent>
             </Card>
 
-            <!-- Continuous Aggregates -->
-            <Card>
-                <CardHeader class="pb-3">
-                    <CardTitle class="text-sm font-medium">Continuous Aggregates</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {#if aggregateStats.length > 0}
-                        <div class="space-y-4">
-                            {#each aggregateStats as agg}
-                                {@const staleness = aggregateStaleness(agg)}
-                                <div class="space-y-1">
-                                    <div class="flex items-center justify-between">
-                                        <span class="font-mono text-sm">{agg.viewName}</span>
-                                        <div class="flex items-center gap-1.5">
-                                            <Clock class="h-3 w-3 {staleness.color}" />
-                                            <span class="text-xs {staleness.color}">{staleness.label}</span>
+            <!-- Continuous Aggregates (TimescaleDB only) -->
+            {#if !isClickHouse}
+                <Card>
+                    <CardHeader class="pb-3">
+                        <CardTitle class="text-sm font-medium">Continuous Aggregates</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {#if aggregateStats.length > 0}
+                            <div class="space-y-4">
+                                {#each aggregateStats as agg}
+                                    {@const staleness = aggregateStaleness(agg)}
+                                    <div class="space-y-1">
+                                        <div class="flex items-center justify-between">
+                                            <span class="font-mono text-sm">{agg.viewName}</span>
+                                            <div class="flex items-center gap-1.5">
+                                                <Clock class="h-3 w-3 {staleness.color}" />
+                                                <span class="text-xs {staleness.color}">{staleness.label}</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <span>Refresh: {agg.refreshInterval}</span>
+                                            <span>&middot;</span>
+                                            <span>{formatNumber(agg.totalRows)} rows</span>
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                                        <span>Refresh: {agg.refreshInterval}</span>
-                                        <span>&middot;</span>
-                                        <span>{formatNumber(agg.totalRows)} rows</span>
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    {:else if loading}
-                        <div class="flex justify-center p-6">
-                            <RefreshCw class="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                    {:else}
-                        <p class="text-sm text-muted-foreground text-center py-6">No aggregates found</p>
-                    {/if}
-                </CardContent>
-            </Card>
+                                {/each}
+                            </div>
+                        {:else if loading}
+                            <div class="flex justify-center p-6">
+                                <RefreshCw class="h-5 w-5 animate-spin text-muted-foreground" />
+                            </div>
+                        {:else}
+                            <p class="text-sm text-muted-foreground text-center py-6">No aggregates found</p>
+                        {/if}
+                    </CardContent>
+                </Card>
+            {/if}
         </div>
 
         <!-- Performance Stats -->
@@ -384,19 +434,21 @@
                 <CardTitle class="text-sm font-medium">Storage & Performance</CardTitle>
             </CardHeader>
             <CardContent>
-                <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                        <div class="text-xs text-muted-foreground mb-1">Logs Storage</div>
-                        <div class="text-lg font-bold">{performanceStats?.storage.logsSize || "..."}</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted-foreground mb-1">Compression Ratio</div>
-                        <div class="text-lg font-bold text-green-500">
-                            {performanceStats?.storage.compressionRatio
-                                ? `${performanceStats.storage.compressionRatio.toFixed(1)}x`
-                                : "..."}
+                <div class="grid gap-6 md:grid-cols-2 {isClickHouse ? '' : 'lg:grid-cols-4'}">
+                    {#if !isClickHouse}
+                        <div>
+                            <div class="text-xs text-muted-foreground mb-1">Logs Storage</div>
+                            <div class="text-lg font-bold">{performanceStats?.storage.logsSize || "..."}</div>
                         </div>
-                    </div>
+                        <div>
+                            <div class="text-xs text-muted-foreground mb-1">Compression Ratio</div>
+                            <div class="text-lg font-bold text-green-500">
+                                {performanceStats?.storage.compressionRatio
+                                    ? `${performanceStats.storage.compressionRatio.toFixed(1)}x`
+                                    : "..."}
+                            </div>
+                        </div>
+                    {/if}
                     <div>
                         <div class="text-xs text-muted-foreground mb-1">Ingestion Throughput</div>
                         <div class="text-lg font-bold">
@@ -405,14 +457,16 @@
                                 : "..."}
                         </div>
                     </div>
-                    <div>
-                        <div class="text-xs text-muted-foreground mb-1">Avg Latency</div>
-                        <div class="text-lg font-bold">
-                            {performanceStats
-                                ? `${Math.round(performanceStats.ingestion.avgLatency)}ms`
-                                : "..."}
+                    {#if !isClickHouse}
+                        <div>
+                            <div class="text-xs text-muted-foreground mb-1">Avg Latency</div>
+                            <div class="text-lg font-bold">
+                                {performanceStats
+                                    ? `${Math.round(performanceStats.ingestion.avgLatency)}ms`
+                                    : "..."}
+                            </div>
                         </div>
-                    </div>
+                    {/if}
                 </div>
             </CardContent>
         </Card>
@@ -482,7 +536,9 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <Zap class="h-4 w-4 text-muted-foreground" />
-                        <CardTitle class="text-sm font-medium">Active Queries</CardTitle>
+                        <CardTitle class="text-sm font-medium">
+                            Active {isClickHouse ? 'PostgreSQL ' : ''}Queries
+                        </CardTitle>
                     </div>
                     {#if slowQueries}
                         <span class="text-xs text-muted-foreground">

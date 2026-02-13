@@ -1,6 +1,8 @@
 // Core types
 export type {
   LogLevel,
+  SpanKind,
+  SpanStatusCode,
   EngineType,
   StorageTier,
   SearchMode,
@@ -30,6 +32,16 @@ export type {
   TopValuesResult,
   DeleteByTimeRangeParams,
   DeleteResult,
+  SpanRecord,
+  TraceRecord,
+  SpanQueryParams,
+  SpanQueryResult,
+  TraceQueryParams,
+  TraceQueryResult,
+  IngestSpansResult,
+  ServiceDependency,
+  ServiceDependencyResult,
+  DeleteSpansByTimeRangeParams,
 } from './core/types.js';
 
 // Core abstractions
