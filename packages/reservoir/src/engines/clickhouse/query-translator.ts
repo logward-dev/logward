@@ -9,6 +9,16 @@ import type {
   TopValuesParams,
 } from '../../core/types.js';
 
+/** ClickHouse can't parse 0 as DateTime64(3) — clamp to 1ms after epoch */
+function toDateTime64(date: Date): number {
+  return Math.max(date.getTime() / 1000, 0.001);
+}
+
+/** hasToken() rejects needles with non-alphanumeric (separator) characters */
+function hasTokenSeparator(search: string): boolean {
+  return /[^a-zA-Z0-9]/.test(search);
+}
+
 const INTERVAL_MAP: Record<AggregationInterval, string> = {
   '1m': '1 MINUTE',
   '5m': '5 MINUTE',
@@ -40,9 +50,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     prewhere.push(`time ${params.fromExclusive ? '>' : '>='} {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     prewhere.push(`time ${params.toExclusive ? '<' : '<='} {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.traceId !== undefined) {
       prewhere.push(`trace_id = {p_trace_id:String}`);
@@ -72,7 +82,7 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     if (params.search) {
-      if (params.searchMode === 'substring') {
+      if (params.searchMode === 'substring' || hasTokenSeparator(params.search)) {
         conditions.push(`positionCaseInsensitive(message, {p_search:String}) > 0`);
         queryParams.p_search = params.search;
       } else {
@@ -91,7 +101,7 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
           const parsedTime = new Date(cursorTime);
           if (cursorId && !isNaN(parsedTime.getTime())) {
             conditions.push(`(time, id) < ({p_cursor_time:DateTime64(3)}, {p_cursor_id:UUID})`);
-            queryParams.p_cursor_time = parsedTime.getTime() / 1000;
+            queryParams.p_cursor_time = toDateTime64(parsedTime);
             queryParams.p_cursor_id = cursorId;
           }
         }
@@ -129,9 +139,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     prewhere.push(`time >= {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     prewhere.push(`time <= {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.organizationId !== undefined) {
       this.pushClickHouseFilter(conditions, queryParams, 'organization_id', params.organizationId);
@@ -158,9 +168,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     prewhere.push(`time ${params.fromExclusive ? '>' : '>='} {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     prewhere.push(`time ${params.toExclusive ? '<' : '<='} {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.organizationId !== undefined) {
       this.pushClickHouseFilter(conditions, queryParams, 'organization_id', params.organizationId);
@@ -187,7 +197,7 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     if (params.search) {
-      if (params.searchMode === 'substring') {
+      if (params.searchMode === 'substring' || hasTokenSeparator(params.search)) {
         conditions.push(`positionCaseInsensitive(message, {p_search:String}) > 0`);
         queryParams.p_search = params.search;
       } else {
@@ -215,9 +225,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     prewhere.push(`time ${params.fromExclusive ? '>' : '>='} {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     prewhere.push(`time ${params.toExclusive ? '<' : '<='} {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.organizationId !== undefined) {
       this.pushClickHouseFilter(conditions, queryParams, 'organization_id', params.organizationId);
@@ -275,9 +285,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     prewhere.push(`time ${params.fromExclusive ? '>' : '>='} {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     prewhere.push(`time ${params.toExclusive ? '<' : '<='} {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.organizationId !== undefined) {
       this.pushClickHouseFilter(conditions, queryParams, 'organization_id', params.organizationId);
@@ -336,9 +346,9 @@ export class ClickHouseQueryTranslator extends QueryTranslator {
     }
 
     conditions.push(`time >= {p_from:DateTime64(3)}`);
-    queryParams.p_from = params.from.getTime() / 1000;
+    queryParams.p_from = toDateTime64(params.from);
     conditions.push(`time < {p_to:DateTime64(3)}`);
-    queryParams.p_to = params.to.getTime() / 1000;
+    queryParams.p_to = toDateTime64(params.to);
 
     if (params.service !== undefined) {
       this.pushClickHouseFilter(conditions, queryParams, 'service', params.service);

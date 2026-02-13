@@ -35,6 +35,6 @@ export class StorageEngineFactory {
     if (!config.port) throw new Error('Storage config: port is required');
     if (!config.database) throw new Error('Storage config: database is required');
     if (!config.username) throw new Error('Storage config: username is required');
-    if (!config.password) throw new Error('Storage config: password is required');
+    if (config.password == null) throw new Error('Storage config: password is required');
   }
 }
