@@ -13,6 +13,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { correlationService } from './service.js';
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
 
 /**
  * Verify that the request is authenticated.
@@ -48,6 +49,29 @@ interface LogIdParams {
 
 interface BatchIdentifiersBody {
   logIds: string[];
+}
+
+/**
+ * Get all project IDs accessible to the requesting user
+ */
+async function getUserProjectIds(
+  request: { projectId?: string; user?: { id: string } },
+): Promise<string[]> {
+  // API key auth: single project
+  if (request.projectId) return [request.projectId];
+
+  // Session auth: all projects in user's orgs
+  if (request.user?.id) {
+    const projects = await db
+      .selectFrom('projects')
+      .innerJoin('organization_members', 'projects.organization_id', 'organization_members.organization_id')
+      .select('projects.id')
+      .where('organization_members.user_id', '=', request.user.id)
+      .execute();
+    return projects.map((p) => p.id);
+  }
+
+  return [];
 }
 
 /**
@@ -190,12 +214,19 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
       const { projectId } = request.query;
 
       try {
-        // Get the log to verify access
-        const log = await db
-          .selectFrom('logs')
-          .select(['project_id'])
-          .where('id', '=', logId)
-          .executeTakeFirst();
+        // Get the log to verify access (reservoir: works with any engine)
+        // Try provided projectId first, then search across user's accessible projects
+        let log = projectId
+          ? await reservoir.getById({ id: logId, projectId })
+          : null;
+
+        if (!log) {
+          const userProjectIds = await getUserProjectIds(request as any);
+          for (const pid of userProjectIds) {
+            log = await reservoir.getById({ id: logId, projectId: pid });
+            if (log) break;
+          }
+        }
 
         if (!log) {
           return reply.status(404).send({
@@ -205,7 +236,7 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
         }
 
         // Verify project access
-        const hasAccess = await verifyProjectAccess(request as any, log.project_id || projectId || '');
+        const hasAccess = await verifyProjectAccess(request as any, log.projectId || projectId || '');
         if (!hasAccess) {
           return reply.status(403).send({
             success: false,
@@ -285,22 +316,38 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        // Verify at least one log belongs to accessible project
-        const logs = await db
-          .selectFrom('logs')
-          .select(['id', 'project_id'])
-          .where('id', 'in', logIds)
-          .execute();
+        // Determine which projects to search for these logs
+        const searchProjectIds = projectId
+          ? [projectId]
+          : await getUserProjectIds(request as any);
 
-        if (logs.length === 0) {
+        if (searchProjectIds.length === 0) {
+          return reply.status(403).send({
+            success: false,
+            error: 'Access denied to these logs',
+          });
+        }
+
+        // Fetch logs by IDs across accessible projects (reservoir: works with any engine)
+        const allFoundLogs: Array<{ id: string; projectId: string }> = [];
+        for (const pid of searchProjectIds) {
+          const found = await reservoir.getByIds({ ids: logIds, projectId: pid });
+          for (const log of found) {
+            allFoundLogs.push({ id: log.id, projectId: log.projectId });
+          }
+          // Stop once we've found all requested logs
+          if (allFoundLogs.length >= logIds.length) break;
+        }
+
+        if (allFoundLogs.length === 0) {
           return reply.send({
             success: true,
             data: { identifiers: {} },
           });
         }
 
-        // Check access to the first log's project
-        const firstProjectId = logs[0].project_id || projectId || '';
+        // Verify project access for the first log's project
+        const firstProjectId = allFoundLogs[0].projectId || projectId || '';
         const hasAccess = await verifyProjectAccess(request as any, firstProjectId);
         if (!hasAccess) {
           return reply.status(403).send({
@@ -310,8 +357,8 @@ export default async function correlationRoutes(fastify: FastifyInstance) {
         }
 
         // Only return identifiers for logs in accessible projects
-        const accessibleLogIds = logs
-          .filter((log) => log.project_id === firstProjectId)
+        const accessibleLogIds = allFoundLogs
+          .filter((log) => log.projectId === firstProjectId)
           .map((log) => log.id);
 
         const identifiersMap = await correlationService.getLogIdentifiersBatch(accessibleLogIds);

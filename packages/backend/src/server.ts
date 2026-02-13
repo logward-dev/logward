@@ -37,6 +37,7 @@ import { initializeInternalLogging, shutdownInternalLogging } from './utils/inte
 import websocketPlugin from './plugins/websocket.js';
 import websocketRoutes from './modules/query/websocket.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
+import { validateStorageConfig } from './database/storage-config.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -191,6 +192,8 @@ export async function build(opts = {}) {
 }
 
 async function start() {
+  validateStorageConfig();
+
   await bootstrapService.runInitialBootstrap();
   await initializeInternalLogging();
   await enrichmentService.initialize();

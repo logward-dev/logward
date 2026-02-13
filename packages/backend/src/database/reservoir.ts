@@ -1,23 +1,37 @@
 import { Reservoir } from '@logtide/reservoir';
 import { pool } from './connection.js';
+import { STORAGE_ENGINE, getClickHouseConfig } from './storage-config.js';
 
 /**
- * Shared reservoir instance that reuses the existing pg pool.
- * Used for log ingestion and querying via raw parametrized SQL
- * instead of Kysely query builder for hot-path operations.
+ * Shared reservoir instance for log ingestion and querying.
+ *
+ * - timescale: reuses the existing pg pool, skipInitialize (table managed by migrations)
+ * - clickhouse: standalone connection, initialize() creates the logs table
  */
-export const reservoir = new Reservoir(
-  'timescale',
-  // Config not used when pool is injected, but required by the type
-  { host: '', port: 0, database: '', username: '', password: '' },
-  {
-    pool,
-    tableName: 'logs',
-    skipInitialize: true,
-  },
-);
+function createReservoir(): Reservoir {
+  if (STORAGE_ENGINE === 'clickhouse') {
+    return new Reservoir('clickhouse', getClickHouseConfig(), {
+      tableName: 'logs',
+      skipInitialize: false,
+    });
+  }
 
-// Initialize immediately (no-op since skipInitialize=true, but marks as ready)
+  // Default: timescale - reuse existing pg pool
+  return new Reservoir(
+    'timescale',
+    // Config not used when pool is injected, but required by the type
+    { host: '', port: 0, database: '', username: '', password: '' },
+    {
+      pool,
+      tableName: 'logs',
+      skipInitialize: true,
+    },
+  );
+}
+
+export const reservoir = createReservoir();
+
+// Initialize (no-op for timescale with skipInitialize, creates table for clickhouse)
 reservoir.initialize().catch((err: unknown) => {
   console.error('[Reservoir] Failed to initialize:', err);
 });

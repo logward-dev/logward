@@ -6,6 +6,7 @@
  */
 
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
 import type { LogInput } from '@logtide/shared';
 import { patternRegistry, type PatternDefinition } from './pattern-registry.js';
 
@@ -257,31 +258,27 @@ export class CorrelationService {
     const logIds = identifierRows.map((row) => row.log_id);
     const identifierType = identifierRows[0].identifier_type;
 
-    // Fetch actual logs
-    const logs = await db
-      .selectFrom('logs')
-      .selectAll()
-      .where('id', 'in', logIds)
-      .where('project_id', '=', projectId)
-      .orderBy('time', 'asc') // Chronological order for timeline
-      .execute();
+    // Fetch actual logs (reservoir: works with any engine)
+    const logsResult = await reservoir.getByIds({ ids: logIds, projectId });
+    // Sort chronologically (getByIds returns in unspecified order)
+    const sortedLogs = logsResult.sort((a, b) => a.time.getTime() - b.time.getTime());
 
     return {
       identifier: {
         type: identifierType,
         value: identifierValue,
       },
-      logs: logs.map((log) => ({
+      logs: sortedLogs.map((log) => ({
         id: log.id,
         time: log.time,
         service: log.service,
         level: log.level,
         message: log.message,
-        metadata: log.metadata,
-        traceId: log.trace_id,
-        projectId: log.project_id,
+        metadata: log.metadata ?? null,
+        traceId: log.traceId ?? null,
+        projectId: log.projectId ?? null,
       })),
-      total: logs.length,
+      total: sortedLogs.length,
       timeWindow: { from, to },
     };
   }
