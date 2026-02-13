@@ -412,6 +412,68 @@ describe('TimescaleEngine', () => {
     });
   });
 
+  describe('topValues', () => {
+    it('queries top values with GROUP BY', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { value: 'api', count: '150' },
+          { value: 'worker', count: '50' },
+        ],
+      });
+      await engine.connect();
+
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        limit: 10,
+      });
+
+      expect(result.values).toHaveLength(2);
+      expect(result.values[0].value).toBe('api');
+      expect(result.values[0].count).toBe(150);
+      expect(result.values[1].value).toBe('worker');
+      expect(result.values[1].count).toBe(50);
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('service AS value');
+      expect(sql).toContain('COUNT(*)');
+      expect(sql).toContain('GROUP BY value');
+      expect(sql).toContain('ORDER BY count DESC');
+    });
+
+    it('includes level filter when provided', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      await engine.topValues({
+        field: 'message',
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        level: ['error', 'critical'],
+      });
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('level = ANY');
+    });
+
+    it('returns empty for no results', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await engine.connect();
+
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+      });
+
+      expect(result.values).toHaveLength(0);
+    });
+  });
+
   describe('getCapabilities', () => {
     it('returns correct capabilities', () => {
       const caps = engine.getCapabilities();
@@ -532,6 +594,85 @@ describe('TimescaleQueryTranslator', () => {
 
       expect(result.query).toContain('OFFSET');
       expect(result.parameters).toContain(100);
+    });
+  });
+
+  describe('translateQuery exclusive bounds', () => {
+    it('uses > for fromExclusive', () => {
+      const result = translator.translateQuery({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        fromExclusive: true,
+      });
+
+      expect(result.query).toContain('time > $');
+      expect(result.query).not.toMatch(/time >= \$/);
+    });
+
+    it('uses < for toExclusive', () => {
+      const result = translator.translateQuery({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        toExclusive: true,
+      });
+
+      expect(result.query).toContain('time < $');
+      // Should not have time <= for the to bound
+      expect(result.query).not.toMatch(/time <= \$/);
+    });
+
+    it('supports sortOrder asc', () => {
+      const result = translator.translateQuery({
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        sortOrder: 'asc',
+      });
+
+      expect(result.query).toContain('ORDER BY time ASC, id ASC');
+    });
+  });
+
+  describe('translateTopValues', () => {
+    it('generates GROUP BY query for service field', () => {
+      const result = translator.translateTopValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        limit: 5,
+      });
+
+      expect(result.query).toContain('service AS value');
+      expect(result.query).toContain('COUNT(*) AS count');
+      expect(result.query).toContain('GROUP BY value');
+      expect(result.query).toContain('ORDER BY count DESC');
+      expect(result.query).toContain('LIMIT');
+    });
+
+    it('includes level filter', () => {
+      const result = translator.translateTopValues({
+        field: 'message',
+        projectId: 'proj-1',
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-02'),
+        level: ['error', 'critical'],
+      });
+
+      expect(result.query).toContain('level = ANY');
+    });
+
+    it('rejects unsafe field names', () => {
+      expect(() =>
+        translator.translateTopValues({
+          field: 'service; DROP TABLE logs',
+          projectId: 'proj-1',
+          from: new Date('2024-01-01'),
+          to: new Date('2024-01-02'),
+        })
+      ).toThrow();
     });
   });
 

@@ -204,12 +204,12 @@ export class QueryService {
         sortOrder: 'desc',
         limit: before,
       }),
-      // Logs after (exclusive, ascending)
+      // Logs after (exclusive, ascending) — no upper bound needed
       reservoir.query({
         projectId,
         from: time,
         fromExclusive: true,
-        to: new Date(),
+        to: new Date('9999-12-31T23:59:59.999Z'),
         sortOrder: 'asc',
         limit: after,
       }),

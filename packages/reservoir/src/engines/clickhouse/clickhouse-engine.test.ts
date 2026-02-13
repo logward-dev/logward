@@ -395,6 +395,144 @@ describe('ClickHouseEngine (integration)', () => {
     });
   });
 
+  describe('topValues', () => {
+    beforeEach(async () => {
+      const logs = [
+        makeLog({ service: 'api', level: 'info' }),
+        makeLog({ service: 'api', level: 'error' }),
+        makeLog({ service: 'api', level: 'error' }),
+        makeLog({ service: 'worker', level: 'info' }),
+        makeLog({ service: 'scheduler', level: 'warn', projectId: 'proj-2' }),
+      ];
+      await engine.ingest(logs);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('returns top values by count', async () => {
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.values.length).toBeGreaterThanOrEqual(2);
+      // api has 3 logs, worker has 1
+      const apiEntry = result.values.find(v => v.value === 'api');
+      expect(apiEntry).toBeDefined();
+      expect(apiEntry!.count).toBe(3);
+
+      const workerEntry = result.values.find(v => v.value === 'worker');
+      expect(workerEntry).toBeDefined();
+      expect(workerEntry!.count).toBe(1);
+    });
+
+    it('filters by level', async () => {
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+        level: 'error',
+      });
+
+      expect(result.values).toHaveLength(1);
+      expect(result.values[0].value).toBe('api');
+      expect(result.values[0].count).toBe(2);
+    });
+
+    it('returns top values for level field', async () => {
+      const result = await engine.topValues({
+        field: 'level',
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      const levels = result.values.map(v => v.value).sort();
+      expect(levels).toContain('info');
+      expect(levels).toContain('error');
+    });
+
+    it('respects limit', async () => {
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+        limit: 1,
+      });
+
+      expect(result.values).toHaveLength(1);
+      expect(result.values[0].value).toBe('api'); // highest count
+    });
+
+    it('respects project filter', async () => {
+      const result = await engine.topValues({
+        field: 'service',
+        projectId: 'proj-2',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      expect(result.values).toHaveLength(1);
+      expect(result.values[0].value).toBe('scheduler');
+    });
+  });
+
+  describe('query with exclusive bounds', () => {
+    beforeEach(async () => {
+      const logs = [
+        makeLog({ time: new Date('2025-01-15T10:00:00.000Z'), message: 'at-start' }),
+        makeLog({ time: new Date('2025-01-15T11:00:00.000Z'), message: 'middle' }),
+        makeLog({ time: new Date('2025-01-15T12:00:00.000Z'), message: 'at-end' }),
+      ];
+      await engine.ingest(logs);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    it('fromExclusive excludes exact from time', async () => {
+      const result = await engine.query({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T10:00:00.000Z'),
+        fromExclusive: true,
+        to: new Date('2025-01-16T00:00:00Z'),
+      });
+
+      // Should exclude the log at exactly 10:00:00
+      expect(result.logs).toHaveLength(2);
+      expect(result.logs.every(l => l.message !== 'at-start')).toBe(true);
+    });
+
+    it('toExclusive excludes exact to time', async () => {
+      const result = await engine.query({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-15T12:00:00.000Z'),
+        toExclusive: true,
+      });
+
+      // Should exclude the log at exactly 12:00:00
+      expect(result.logs).toHaveLength(2);
+      expect(result.logs.every(l => l.message !== 'at-end')).toBe(true);
+    });
+
+    it('sortOrder asc works', async () => {
+      const result = await engine.query({
+        projectId: 'proj-1',
+        from: new Date('2025-01-15T00:00:00Z'),
+        to: new Date('2025-01-16T00:00:00Z'),
+        sortOrder: 'asc',
+      });
+
+      expect(result.logs).toHaveLength(3);
+      const times = result.logs.map(l => l.time.getTime());
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]).toBeGreaterThanOrEqual(times[i - 1]);
+      }
+    });
+  });
+
   describe('deleteByTimeRange', () => {
     it('issues delete mutation', async () => {
       await engine.ingest([
