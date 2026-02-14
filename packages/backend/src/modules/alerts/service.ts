@@ -774,7 +774,7 @@ export class AlertsService {
     for (const bucket of aggResult.timeseries) {
       let count = 0;
       if (bucket.byLevel) {
-        for (const [lvl, n] of Object.entries(bucket.byLevel)) {
+        for (const [lvl, n] of Object.entries(bucket.byLevel) as [string, number][]) {
           if (levelSet.has(lvl as LogLevel)) count += n;
         }
       }
@@ -873,7 +873,7 @@ export class AlertsService {
       sortOrder: 'desc',
     });
 
-    return result.logs.map((log) => ({
+    return result.logs.map((log: { time: Date; service: string; level: string; message: string; traceId?: string }) => ({
       time: log.time,
       service: log.service,
       level: log.level,
@@ -903,7 +903,7 @@ export class AlertsService {
       service: svcFilter,
     });
 
-    return result.values.filter((s) => s !== 'unknown');
+    return result.values.filter((s: string) => s !== 'unknown');
   }
 
   /**

@@ -261,14 +261,14 @@ export class CorrelationService {
     // Fetch actual logs (reservoir: works with any engine)
     const logsResult = await reservoir.getByIds({ ids: logIds, projectId });
     // Sort chronologically (getByIds returns in unspecified order)
-    const sortedLogs = logsResult.sort((a, b) => a.time.getTime() - b.time.getTime());
+    const sortedLogs = logsResult.sort((a: { time: Date }, b: { time: Date }) => a.time.getTime() - b.time.getTime());
 
     return {
       identifier: {
         type: identifierType,
         value: identifierValue,
       },
-      logs: sortedLogs.map((log) => ({
+      logs: sortedLogs.map((log: { id: string; time: Date; service: string; level: string; message: string; metadata?: Record<string, unknown>; traceId?: string; projectId: string }) => ({
         id: log.id,
         time: log.time,
         service: log.service,

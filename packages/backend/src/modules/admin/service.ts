@@ -482,24 +482,24 @@ export class AdminService {
             ),
 
             reservoir.count({ from: oneHourAgo, to: now })
-                .then(r => ({ count: r.count })),
+                .then((r: { count: number }) => ({ count: r.count })),
 
             reservoir.count({ from: oneDayAgo, to: now })
-                .then(r => ({ count: r.count })),
+                .then((r: { count: number }) => ({ count: r.count })),
         ]);
 
         return {
             total: totalLogs.count,
-            perDay: logsPerDay.rows.map((row) => ({
+            perDay: logsPerDay.rows.map((row: { date: string; count: number }) => ({
                 date: row.date,
                 count: row.count,
             })),
-            topOrganizations: topOrgs.rows.map((org) => ({
+            topOrganizations: topOrgs.rows.map((org: { organizationId: string; organizationName: string; count: number }) => ({
                 organizationId: org.organizationId,
                 organizationName: org.organizationName,
                 count: org.count,
             })),
-            topProjects: topProjects.rows.map((proj) => ({
+            topProjects: topProjects.rows.map((proj: { projectId: string; projectName: string; organizationName: string; count: number }) => ({
                 projectId: proj.projectId,
                 projectName: proj.projectName,
                 organizationName: proj.organizationName,
@@ -553,11 +553,11 @@ export class AdminService {
 
         // Per-day counts from aggregate
         const perDay = logsPerDayResult.timeseries
-            .map(b => ({
+            .map((b: { bucket: Date; total: number }) => ({
                 date: b.bucket.toISOString().split('T')[0],
                 count: b.total,
             }))
-            .sort((a, b) => b.date.localeCompare(a.date))
+            .sort((a: { date: string }, b: { date: string }) => b.date.localeCompare(a.date))
             .slice(0, 30);
 
         // Top orgs/projects: count per project via reservoir, then aggregate by org
@@ -1781,7 +1781,7 @@ export class AdminService {
                     interval: '1h',
                 });
                 logsTimeline = {
-                    rows: aggResult.timeseries.map(b => ({
+                    rows: aggResult.timeseries.map((b: { bucket: Date; total: number }) => ({
                         bucket: b.bucket.toISOString(),
                         count: b.total,
                     })),

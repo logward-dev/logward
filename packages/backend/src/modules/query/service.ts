@@ -166,7 +166,7 @@ export class QueryService {
       limit: 1000,
     });
 
-    const result = queryResult.logs.map(log => ({
+    const result = queryResult.logs.map((log: { id: string; time: Date; projectId: string; service: string; level: string; message: string; metadata?: Record<string, unknown>; traceId?: string }) => ({
       id: log.id,
       time: log.time,
       projectId: log.projectId,
@@ -342,7 +342,7 @@ export class QueryService {
         to: to ?? new Date(),
         limit,
       });
-      result = topResult.values.map(v => ({ service: v.value, count: v.count }));
+      result = topResult.values.map((v: { value: string; count: number }) => ({ service: v.value, count: v.count }));
     }
 
     // Cache aggregation results
@@ -511,7 +511,7 @@ export class QueryService {
       level: ['error', 'critical'],
       limit,
     });
-    const result = topResult.values.map(v => ({ message: v.value, count: v.count }));
+    const result = topResult.values.map((v: { value: string; count: number }) => ({ message: v.value, count: v.count }));
 
     // Cache aggregation results
     await CacheManager.set(cacheKey, result, CACHE_TTL.STATS);

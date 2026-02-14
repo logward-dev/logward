@@ -474,15 +474,15 @@ export class ExceptionService {
     const storedLogs = await reservoir.getByIds({ ids: logIds, projectId });
 
     // Build lookup map and return in the same order
-    const logMap = new Map(storedLogs.map(l => [l.id, l]));
+    const logMap = new Map(storedLogs.map((l: { id: string; time: Date; service: string; message: string }) => [l.id, l]));
     const logs = logIds
       .map(id => logMap.get(id))
-      .filter(Boolean)
+      .filter((l): l is { id: string; time: Date; service: string; message: string } => Boolean(l))
       .map(l => ({
-        id: l!.id,
-        time: l!.time,
-        service: l!.service,
-        message: l!.message,
+        id: l.id,
+        time: l.time,
+        service: l.service,
+        message: l.message,
       }));
 
     return {

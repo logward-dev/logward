@@ -120,7 +120,8 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
           }
 
           // Apply client-side filters (service, level, hostname)
-          const filteredLogs = logs.filter((log) => {
+          type WsLog = { id: string; time: Date; projectId: string; service: string; level: LogLevel; message: string; metadata?: Record<string, unknown>; traceId?: string; spanId?: string };
+          const filteredLogs = logs.filter((log: WsLog) => {
             // Service filter
             if (serviceFilter && !serviceFilter.includes(log.service)) {
               return false;
@@ -133,7 +134,7 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
 
             // Hostname filter (from metadata.hostname)
             if (hostnameFilter) {
-              const logHostname = (log.metadata as any)?.hostname;
+              const logHostname = (log.metadata as Record<string, unknown> | undefined)?.hostname as string | undefined;
               if (!logHostname || !hostnameFilter.includes(logHostname)) {
                 return false;
               }
@@ -147,7 +148,7 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
           }
 
           // Transform to API format (reservoir returns camelCase)
-          const apiLogs = filteredLogs.map((log) => ({
+          const apiLogs = filteredLogs.map((log: WsLog) => ({
             id: log.id,
             time: log.time,
             projectId: log.projectId,

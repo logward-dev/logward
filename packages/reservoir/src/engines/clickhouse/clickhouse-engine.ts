@@ -266,9 +266,9 @@ export class ClickHouseEngine extends StorageEngine {
     const start = Date.now();
     const client = this.getClient();
 
-    // Generate UUIDs client-side since ClickHouse has no RETURNING
+    // Use provided IDs or generate client-side since ClickHouse has no RETURNING
     const logsWithIds = logs.map((log) => ({
-      id: randomUUID(),
+      id: log.id ?? randomUUID(),
       ...this.toClickHouseRow(log),
     }));
 
@@ -493,7 +493,7 @@ export class ClickHouseEngine extends StorageEngine {
   }
 
   private toClickHouseRow(log: LogRecord): Record<string, unknown> {
-    return {
+    const row: Record<string, unknown> = {
       time: log.time.getTime(),
       project_id: log.projectId,
       service: log.service,
@@ -503,6 +503,10 @@ export class ClickHouseEngine extends StorageEngine {
       trace_id: log.traceId ?? null,
       span_id: log.spanId ?? null,
     };
+    if (log.id) {
+      row.id = log.id;
+    }
+    return row;
   }
 
   // =========================================================================

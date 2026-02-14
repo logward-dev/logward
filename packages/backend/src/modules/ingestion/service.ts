@@ -90,7 +90,7 @@ export class IngestionService {
 
     // Insert via reservoir (raw parametrized SQL with RETURNING *)
     const ingestResult = await reservoir.ingestReturning(records);
-    const insertedLogs = ingestResult.rows.map((row) => ({
+    const insertedLogs = ingestResult.rows.map((row: { id: string; time: Date; projectId: string; service: string; level: string; message: string; metadata?: Record<string, unknown>; traceId?: string; spanId?: string }) => ({
       id: row.id,
       time: row.time,
       project_id: row.projectId,

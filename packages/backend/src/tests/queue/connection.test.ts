@@ -34,14 +34,14 @@ describe('Queue Connection Module', () => {
             expect(module.isRedisAvailable()).toBe(false);
         });
 
-        it('should export null connection when no Redis', async () => {
+        it('should return null from getConnection when no Redis', async () => {
             const module = await import('../../queue/connection.js');
-            expect(module.connection).toBeNull();
+            expect(module.getConnection()).toBeNull();
         });
 
-        it('should export null publisher when no Redis', async () => {
+        it('should return null from getPublisher when no Redis', async () => {
             const module = await import('../../queue/connection.js');
-            expect(module.publisher).toBeNull();
+            expect(module.getPublisher()).toBeNull();
         });
 
         it('should export createQueue function', async () => {
@@ -110,18 +110,20 @@ describe('Queue Connection Module', () => {
             expect(module.isRedisAvailable()).toBe(true);
         });
 
-        it('should export non-null connection when Redis configured', async () => {
+        it('should return non-null from getConnection when Redis configured', async () => {
             const module = await import('../../queue/connection.js');
-            expect(module.connection).not.toBeNull();
+            expect(module.getConnection()).not.toBeNull();
         });
 
-        it('should export non-null publisher when Redis configured', async () => {
+        it('should return non-null from getPublisher when Redis configured', async () => {
             const module = await import('../../queue/connection.js');
-            expect(module.publisher).not.toBeNull();
+            expect(module.getPublisher()).not.toBeNull();
         });
 
         it('should setup Redis event handlers', async () => {
-            await import('../../queue/connection.js');
+            const module = await import('../../queue/connection.js');
+            // Trigger lazy initialization
+            module.getConnection();
 
             // Verify event handlers were set up
             expect(mockRedis.on).toHaveBeenCalledWith('connect', expect.any(Function));
@@ -134,6 +136,8 @@ describe('Queue Connection Module', () => {
 
         it('should close connections properly', async () => {
             const module = await import('../../queue/connection.js');
+            // Trigger lazy initialization so there's something to close
+            module.getConnection();
 
             await module.closeConnections();
 

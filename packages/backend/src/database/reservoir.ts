@@ -25,6 +25,7 @@ function createReservoir(): Reservoir {
       pool,
       tableName: 'logs',
       skipInitialize: true,
+      projectIdType: 'uuid',
     },
   );
 }
