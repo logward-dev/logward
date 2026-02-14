@@ -5,6 +5,43 @@ All notable changes to LogTide will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-14
+
+### Added
+
+- **ClickHouse Storage Engine**: Full ClickHouse support as an alternative to TimescaleDB
+  - New `@logtide/reservoir` package — pluggable storage abstraction with a unified API for both engines
+  - Factory pattern: `StorageEngineFactory.create('timescale'|'clickhouse', config)` for engine selection
+  - Engine configured via `STORAGE_ENGINE` environment variable (`timescale` or `clickhouse`)
+  - ClickHouse-specific optimizations: `PREWHERE` clauses, `async_insert`, `ngrambf_v1` indexes for full-text search
+  - TimescaleDB-specific optimizations: `UNNEST` batch inserts, `pg_trgm` trigram indexes, connection pool error handling
+  - Span and trace ingestion support on both engines
+  - 26 integration tests running against both engines via Docker
+
+- **Full Log Query Migration to Reservoir**: All log operations now go through the storage abstraction layer
+  - Migrated: query, alerts, dashboard, admin, retention, baseline calculator, ingestion, correlation
+  - Engine-type branching for continuous aggregates (TimescaleDB fast path, ClickHouse raw fallback)
+  - Added `topValues`, `fromExclusive`/`toExclusive` bounds, and `getEngineType()` to reservoir API
+  - Conditional `drop_chunks` for retention (TimescaleDB only)
+
+### Fixed
+
+- **Log Context upper bound**: `getLogContext` "after" query was using `new Date()` as upper bound, which excluded future-timestamped logs
+
+### Performance
+
+- **Slow admin queries on large datasets**: Removed `COUNT(*)` full scans, switched to continuous aggregates, reduced default time windows, added caching
+- **ClickHouse query engine**: DateTime64(3) handling for correct millisecond precision, `hasToken()` fallback to `positionCaseInsensitive()` for needles with special characters
+- **TimescaleDB engine**: Removed redundant `idx_project_time` index, added `span_id` index, UNNEST-based batch inserts
+- **ClickHouse engine**: Removed `LowCardinality` on `project_id`, added `span_id` index, `IS NOT NULL` parity with TimescaleDB, empty array validation guards
+
+### Tests
+
+- Added platform timeline and active issues endpoint tests
+- Added reservoir integration tests: `topValues`, exclusive bounds, span/trace operations (both engines)
+
+---
+
 ## [0.6.0] - 2026-02-12
 
 ### Added
