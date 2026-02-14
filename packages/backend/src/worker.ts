@@ -10,9 +10,13 @@ import { alertsService } from './modules/alerts/index.js';
 import { enrichmentService } from './modules/siem/enrichment-service.js';
 import { retentionService } from './modules/retention/index.js';
 import { initializeInternalLogging, shutdownInternalLogging, getInternalLogger } from './utils/internal-logger.js';
+import { reservoirReady } from './database/reservoir.js';
 
 // Initialize internal logging
 await initializeInternalLogging();
+
+// Wait for reservoir to be ready before processing jobs that need it
+await reservoirReady;
 
 // Initialize enrichment services (downloads GeoLite2 if missing)
 await enrichmentService.initialize();

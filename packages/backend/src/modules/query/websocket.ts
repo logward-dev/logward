@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { db } from '../../database/index.js';
+import { reservoir } from '../../database/reservoir.js';
 import type { LogLevel } from '@logtide/shared';
 import {
   notificationManager,
@@ -108,22 +109,19 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
 
         try {
           // Fetch full logs from database (by log IDs)
-          // This query is fast because:
-          // 1. PostgreSQL shared buffers likely cached recent inserts
-          // 2. Log IDs are primary keys (indexed)
-          const logs = await db
-            .selectFrom('logs')
-            .selectAll()
-            .where('id', 'in', event.logIds)
-            .where('project_id', '=', projectId)
-            .execute();
+          // This query is fast because log IDs are primary keys (indexed)
+          const logs = await reservoir.getByIds({
+            ids: event.logIds,
+            projectId,
+          });
 
           if (logs.length === 0) {
             return;
           }
 
           // Apply client-side filters (service, level, hostname)
-          const filteredLogs = logs.filter((log) => {
+          type WsLog = { id: string; time: Date; projectId: string; service: string; level: LogLevel; message: string; metadata?: Record<string, unknown>; traceId?: string; spanId?: string };
+          const filteredLogs = logs.filter((log: WsLog) => {
             // Service filter
             if (serviceFilter && !serviceFilter.includes(log.service)) {
               return false;
@@ -136,7 +134,7 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
 
             // Hostname filter (from metadata.hostname)
             if (hostnameFilter) {
-              const logHostname = (log.metadata as any)?.hostname;
+              const logHostname = (log.metadata as Record<string, unknown> | undefined)?.hostname as string | undefined;
               if (!logHostname || !hostnameFilter.includes(logHostname)) {
                 return false;
               }
@@ -149,17 +147,17 @@ const websocketRoutes: FastifyPluginAsync = async (fastify) => {
             return;
           }
 
-          // Transform to API format
-          const apiLogs = filteredLogs.map((log) => ({
+          // Transform to API format (reservoir returns camelCase)
+          const apiLogs = filteredLogs.map((log: WsLog) => ({
             id: log.id,
             time: log.time,
-            projectId: log.project_id,
+            projectId: log.projectId,
             service: log.service,
             level: log.level,
             message: log.message,
             metadata: log.metadata,
-            traceId: log.trace_id,
-            spanId: log.span_id,
+            traceId: log.traceId,
+            spanId: log.spanId,
           }));
 
           // Send to WebSocket client (safe send checks socket state)

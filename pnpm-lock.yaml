@@ -37,6 +37,9 @@ importers:
       '@fastify/websocket':
         specifier: ^11.0.2
         version: 11.2.0
+      '@logtide/reservoir':
+        specifier: workspace:*
+        version: link:../reservoir
       '@logtide/sdk-node':
         specifier: ^0.1.0
         version: 0.1.1(fastify@5.7.4)
@@ -229,6 +232,31 @@ importers:
         specifier: ^6.4.1
         version: 6.4.1(@types/node@22.19.7)(jiti@1.21.7)(tsx@4.21.0)
 
+  packages/reservoir:
+    dependencies:
+      '@clickhouse/client':
+        specifier: ^1.17.0
+        version: 1.17.0
+      '@logtide/shared':
+        specifier: workspace:*
+        version: link:../shared
+      pg:
+        specifier: ^8.11.0
+        version: 8.16.3
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.25
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.15.6
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.25)
+
   packages/shared:
     dependencies:
       zod:
@@ -389,6 +417,13 @@ packages:
 
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
+
+  '@clickhouse/client-common@1.17.0':
+    resolution: {integrity: sha512-MiwwgXViFAQA2YZkN4ymF1ynzG0K49KeSX9/iOcmJetWkxqSekDdpyp1GjwATWa9R215uQ+hGzJtJujeQVZZIw==}
+
+  '@clickhouse/client@1.17.0':
+    resolution: {integrity: sha512-Y3DQoamKZ/Iyosoq7Lj7lqpDkQDK4R/5mI52yJs4ZLPIO+d6/CYDqTbFBIb4No3C/AlXUYE4TKhj/kXDpe6rOA==}
+    engines: {node: '>=16'}
 
   '@epic-web/invariant@1.0.0':
     resolution: {integrity: sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA==}
@@ -1974,6 +2009,7 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   gopd@1.2.0:
@@ -3521,6 +3557,12 @@ snapshots:
       '@babel/helper-validator-identifier': 7.28.5
 
   '@bcoe/v8-coverage@0.2.3': {}
+
+  '@clickhouse/client-common@1.17.0': {}
+
+  '@clickhouse/client@1.17.0':
+    dependencies:
+      '@clickhouse/client-common': 1.17.0
 
   '@epic-web/invariant@1.0.0': {}
 

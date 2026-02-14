@@ -416,10 +416,10 @@ describe('TracesService', () => {
   // getTrace
   // ==========================================================================
   describe('getTrace', () => {
-    it('should return undefined for non-existent trace', async () => {
+    it('should return null for non-existent trace', async () => {
       const result = await service.getTrace('non-existent-id', context.project.id);
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
 
     it('should return trace by ID', async () => {
@@ -448,7 +448,7 @@ describe('TracesService', () => {
 
       const result = await service.getTrace(trace.trace_id, context.project.id);
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 

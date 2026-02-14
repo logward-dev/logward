@@ -10,7 +10,7 @@ vi.mock('../../config/index.js', () => ({
 
 // Mock connection to be null
 vi.mock('../../queue/connection.js', () => ({
-    connection: null,
+    getConnection: () => null,
     isRedisAvailable: () => false,
 }));
 

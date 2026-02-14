@@ -1,0 +1,60 @@
+{
+  "name": "@logtide/reservoir",
+  "version": "0.6.1",
+  "description": "Pluggable storage abstraction for Logtide log management",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./engines/timescale": {
+      "types": "./dist/engines/timescale/index.d.ts",
+      "import": "./dist/engines/timescale/index.js"
+    },
+    "./engines/clickhouse": {
+      "types": "./dist/engines/clickhouse/index.d.ts",
+      "import": "./dist/engines/clickhouse/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.17.0",
+    "@logtide/shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "pg": "^8.11.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.0"
+  },
+  "keywords": [
+    "logs",
+    "storage",
+    "timescaledb",
+    "clickhouse",
+    "observability",
+    "abstraction"
+  ],
+  "license": "AGPL-3.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

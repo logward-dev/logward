@@ -10,10 +10,10 @@ const { mockGet, mockSetex, mockIsRedisAvailable } = vi.hoisted(() => ({
 
 // Mock Redis connection
 vi.mock('../../../queue/connection.js', () => ({
-    connection: {
+    getConnection: () => ({
         get: mockGet,
         setex: mockSetex,
-    },
+    }),
     isRedisAvailable: mockIsRedisAvailable,
 }));
 

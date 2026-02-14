@@ -62,6 +62,8 @@
     let refreshInterval: ReturnType<typeof setInterval>;
     let lastRefreshed = $state(new Date());
 
+    let isClickHouse = $derived(healthStats?.storageEngine === 'clickhouse');
+
     const usersAPI = new UsersAPI(() => get(authStore).token);
 
     $effect(() => {
@@ -191,7 +193,14 @@
     <!-- Header -->
     <div class="flex justify-between items-center">
         <div>
-            <h1 class="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
+            <div class="flex items-center gap-2.5">
+                <h1 class="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
+                {#if healthStats?.storageEngine}
+                    <span class="text-xs font-medium px-2 py-0.5 rounded-full {isClickHouse ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}">
+                        {isClickHouse ? 'ClickHouse' : 'TimescaleDB'}
+                    </span>
+                {/if}
+            </div>
             <p class="text-sm text-muted-foreground mt-0.5">
                 Platform health, performance & usage overview
             </p>
@@ -350,9 +359,15 @@
                             : "..."} <span class="text-sm font-normal text-muted-foreground">logs/s</span>
                     </div>
                     <p class="text-xs text-muted-foreground mt-1">
-                        Storage: {performanceStats?.storage.logsSize || "..."}
-                        {#if performanceStats?.storage.compressionRatio}
-                            &middot; <span class="text-green-500">{performanceStats.storage.compressionRatio.toFixed(1)}x</span> compression
+                        {#if performanceStats?.storage.logsSize && performanceStats.storage.logsSize !== 'N/A'}
+                            Storage: {performanceStats.storage.logsSize}
+                            {#if performanceStats.storage.compressionRatio}
+                                &middot; <span class="text-green-500">{performanceStats.storage.compressionRatio.toFixed(1)}x</span> compression
+                            {/if}
+                        {:else if performanceStats}
+                            {isClickHouse ? 'ClickHouse engine' : 'Storage: ...'}
+                        {:else}
+                            Storage: ...
                         {/if}
                     </p>
                 </CardContent>
@@ -572,20 +587,35 @@
             <button class="text-left" onclick={() => goto("/dashboard/admin/system-health")}>
                 <Card class="transition-shadow hover:shadow-md cursor-pointer h-full">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle class="text-sm font-medium">Database</CardTitle>
-                        <Server class="h-4 w-4 {healthColor(healthStats?.database.status)}" />
+                        <CardTitle class="text-sm font-medium">
+                            {isClickHouse ? 'ClickHouse' : 'Database'}
+                        </CardTitle>
+                        <Server class="h-4 w-4 {healthColor(isClickHouse ? healthStats?.clickhouse?.status : healthStats?.database.status)}" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold {healthColor(healthStats?.database.status)}">
-                            {healthStats?.database.latency ?? "..."}
-                            <span class="text-sm font-normal text-muted-foreground">ms</span>
-                        </div>
-                        <p class="text-xs text-muted-foreground mt-1">
-                            {healthStats?.database.connections || "?"} connections
-                            {#if healthStats?.pool}
-                                &middot; {healthStats.pool.waitingRequests} waiting
-                            {/if}
-                        </p>
+                        {#if isClickHouse && healthStats?.clickhouse}
+                            <div class="text-2xl font-bold {healthColor(healthStats.clickhouse.status)}">
+                                {healthStats.clickhouse.latency >= 0 ? healthStats.clickhouse.latency : "?"}
+                                <span class="text-sm font-normal text-muted-foreground">ms</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground mt-1">
+                                PG {healthStats.database.latency}ms
+                                {#if healthStats.pool}
+                                    &middot; {healthStats.pool.waitingRequests} waiting
+                                {/if}
+                            </p>
+                        {:else}
+                            <div class="text-2xl font-bold {healthColor(healthStats?.database.status)}">
+                                {healthStats?.database.latency ?? "..."}
+                                <span class="text-sm font-normal text-muted-foreground">ms</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground mt-1">
+                                {healthStats?.database.connections || "?"} connections
+                                {#if healthStats?.pool}
+                                    &middot; {healthStats.pool.waitingRequests} waiting
+                                {/if}
+                            </p>
+                        {/if}
                     </CardContent>
                 </Card>
             </button>
