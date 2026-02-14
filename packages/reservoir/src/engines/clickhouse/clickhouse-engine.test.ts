@@ -32,23 +32,34 @@ describe('ClickHouseEngine (integration)', () => {
   let client: ClickHouseClient;
 
   beforeAll(async () => {
-    // Create a direct client for setup/cleanup
+    // Connect to default database first to ensure test database exists
+    const setupClient = createClient({
+      url: `http://${TEST_CONFIG.host}:${TEST_CONFIG.port}`,
+      username: TEST_CONFIG.username,
+      password: TEST_CONFIG.password,
+    });
+
+    // Wait for ClickHouse to be ready
+    for (let i = 0; i < 20; i++) {
+      try {
+        await setupClient.query({ query: 'SELECT 1', format: 'JSONEachRow' });
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    // Create test database if it doesn't exist
+    await setupClient.command({ query: `CREATE DATABASE IF NOT EXISTS ${TEST_CONFIG.database}` });
+    await setupClient.close();
+
+    // Now connect to the test database
     client = createClient({
       url: `http://${TEST_CONFIG.host}:${TEST_CONFIG.port}`,
       username: TEST_CONFIG.username,
       password: TEST_CONFIG.password,
       database: TEST_CONFIG.database,
     });
-
-    // Wait for ClickHouse to be ready
-    for (let i = 0; i < 20; i++) {
-      try {
-        await client.query({ query: 'SELECT 1', format: 'JSONEachRow' });
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
 
     engine = new ClickHouseEngine(TEST_CONFIG, { tableName: TABLE_NAME });
     await engine.connect();
