@@ -9,6 +9,7 @@ WORKDIR /app
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
 COPY packages/shared ./packages/shared
+COPY packages/reservoir ./packages/reservoir
 COPY packages/backend ./packages/backend
 
 # Install dependencies
@@ -16,6 +17,7 @@ RUN pnpm install --frozen-lockfile
 
 # Build packages in order
 RUN pnpm --filter '@logtide/shared' build
+RUN pnpm --filter '@logtide/reservoir' build
 RUN pnpm --filter '@logtide/backend' build
 
 # Production stage
@@ -29,6 +31,7 @@ WORKDIR /app
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/reservoir/package.json ./packages/reservoir/
 COPY packages/backend/package.json ./packages/backend/
 
 # Install production dependencies only
@@ -36,6 +39,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 # Copy built files
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/reservoir/dist ./packages/reservoir/dist
 COPY --from=builder /app/packages/backend/dist ./packages/backend/dist
 COPY --from=builder /app/packages/backend/migrations ./packages/backend/migrations
 

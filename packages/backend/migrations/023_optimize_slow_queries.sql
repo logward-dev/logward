@@ -14,6 +14,10 @@
 -- The most effective optimization for hostname queries is keeping the time
 -- window short (6h default = ~350ms vs 7d = ~3s+).
 
+-- Disable statement timeout for this migration.
+-- ANALYZE on large hypertables can take minutes and will exceed the default pool timeout.
+SET statement_timeout = '0';
+
 -- Reduce chunk interval from 7 days to 1 day.
 -- With ~4.5 GB/day ingestion, weekly chunks grow to 31 GB uncompressed
 -- before compression can kick in (only works on closed chunks).
@@ -23,3 +27,6 @@ SELECT set_chunk_time_interval('logs', INTERVAL '1 day');
 
 -- Run ANALYZE to ensure planner has up-to-date statistics.
 ANALYZE logs;
+
+-- Reset statement timeout to default (pool-level setting will apply on next query).
+RESET statement_timeout;

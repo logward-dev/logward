@@ -156,8 +156,8 @@ export class TracesService {
       to: new Date(),
       limit: 10000,
     });
-    const serviceSet = new Set(result.traces.map((t) => t.serviceName));
-    return Array.from(serviceSet).sort();
+    const serviceSet = new Set(result.traces.map((t: { serviceName: string }) => t.serviceName));
+    return Array.from(serviceSet).sort() as string[];
   }
 
   async getServiceDependencies(projectId: string, from?: Date, to?: Date) {
@@ -210,14 +210,14 @@ export class TracesService {
 
     const traces = result.traces;
     const totalTraces = result.total;
-    const totalSpans = traces.reduce((sum, t) => sum + t.spanCount, 0);
+    const totalSpans = traces.reduce((sum: number, t: { spanCount: number }) => sum + t.spanCount, 0);
     const avgDuration = traces.length > 0
-      ? traces.reduce((sum, t) => sum + t.durationMs, 0) / traces.length
+      ? traces.reduce((sum: number, t: { durationMs: number }) => sum + t.durationMs, 0) / traces.length
       : 0;
     const maxDuration = traces.length > 0
-      ? Math.max(...traces.map((t) => t.durationMs))
+      ? Math.max(...traces.map((t: { durationMs: number }) => t.durationMs))
       : 0;
-    const errorCount = traces.filter((t) => t.error).length;
+    const errorCount = traces.filter((t: { error: boolean }) => t.error).length;
 
     return {
       total_traces: totalTraces,

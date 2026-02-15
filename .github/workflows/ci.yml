@@ -75,6 +75,9 @@ jobs:
       - name: Build shared package
         run: pnpm --filter '@logtide/shared' build
 
+      - name: Build reservoir package
+        run: pnpm --filter '@logtide/reservoir' build
+
       - name: Run backend tests with coverage
         working-directory: packages/backend
         env:
@@ -118,6 +121,55 @@ jobs:
           echo "::notice::Coverage $COVERAGE% meets the 80% threshold"
 
   # ====================
+  # Reservoir Tests
+  # ====================
+  reservoir-test:
+    name: Reservoir Tests
+    runs-on: ubuntu-latest
+
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.1
+        env:
+          CLICKHOUSE_DB: logtide_test
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+        ports:
+          - 18123:8123
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter '@logtide/shared' build
+
+      - name: Build reservoir package
+        run: pnpm --filter '@logtide/reservoir' build
+
+      - name: Run reservoir tests
+        working-directory: packages/reservoir
+        run: npx vitest run --reporter=verbose
+
+  # ====================
   # Typecheck
   # ====================
   typecheck:
@@ -144,6 +196,9 @@ jobs:
 
       - name: Build shared package
         run: pnpm --filter '@logtide/shared' build
+
+      - name: Build reservoir package
+        run: pnpm --filter '@logtide/reservoir' build
 
       - name: Typecheck backend
         run: pnpm --filter '@logtide/backend' typecheck
@@ -227,7 +282,7 @@ jobs:
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: [backend-test, typecheck, e2e-test]
+    needs: [backend-test, reservoir-test, typecheck, e2e-test]
 
     steps:
       - name: Checkout

@@ -30,6 +30,7 @@ export type AggregationInterval = '1m' | '5m' | '15m' | '1h' | '6h' | '1d' | '1w
 
 /** A log record for storage */
 export interface LogRecord {
+  id?: string;
   time: Date;
   organizationId?: string;
   projectId: string;

@@ -240,7 +240,7 @@ export class BaselineCalculatorService {
       if (aggResult.timeseries.length === 0) return null;
 
       // Sum only the requested levels per bucket
-      counts = aggResult.timeseries.map((bucket) => {
+      counts = aggResult.timeseries.map((bucket: { byLevel?: Record<string, number> }) => {
         let count = 0;
         if (bucket.byLevel) {
           for (const level of levels) {
@@ -248,7 +248,7 @@ export class BaselineCalculatorService {
           }
         }
         return count;
-      }).filter(c => c > 0).sort((a, b) => a - b);
+      }).filter((c: number) => c > 0).sort((a: number, b: number) => a - b);
 
       if (counts.length === 0) return null;
     }

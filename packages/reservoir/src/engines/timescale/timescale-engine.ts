@@ -55,6 +55,8 @@ export interface TimescaleEngineOptions {
   skipInitialize?: boolean;
   /** Include organization_id column in INSERT/queries (default: false) */
   hasOrganizationId?: boolean;
+  /** SQL type for the project_id column (default: 'text') */
+  projectIdType?: 'text' | 'uuid';
 }
 
 export class TimescaleEngine extends StorageEngine {
@@ -391,7 +393,9 @@ export class TimescaleEngine extends StorageEngine {
   private buildInsertQuery(logs: LogRecord[], returning = false): { query: string; values: unknown[] } {
     const s = this.schema;
     const t = this.tableName;
+    const hasIds = logs.length > 0 && logs[0].id != null;
 
+    const ids: string[] = [];
     const times: Date[] = [];
     const projectIds: string[] = [];
     const services: string[] = [];
@@ -402,6 +406,7 @@ export class TimescaleEngine extends StorageEngine {
     const spanIds: (string | null)[] = [];
 
     for (const log of logs) {
+      if (hasIds) ids.push(log.id!);
       times.push(log.time);
       projectIds.push(sanitizeNull(log.projectId));
       services.push(sanitizeNull(log.service));
@@ -412,12 +417,23 @@ export class TimescaleEngine extends StorageEngine {
       spanIds.push(log.spanId ?? null);
     }
 
-    let query = `INSERT INTO ${s}.${t} (time, project_id, service, level, message, metadata, trace_id, span_id) SELECT * FROM UNNEST($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::jsonb[], $7::text[], $8::text[])`;
+    let query: string;
+    let values: unknown[];
+    const pidType = this.options.projectIdType === 'uuid' ? 'uuid' : 'text';
+
+    if (hasIds) {
+      query = `INSERT INTO ${s}.${t} (id, time, project_id, service, level, message, metadata, trace_id, span_id) SELECT * FROM UNNEST($1::uuid[], $2::timestamptz[], $3::${pidType}[], $4::text[], $5::text[], $6::text[], $7::jsonb[], $8::text[], $9::text[])`;
+      values = [ids, times, projectIds, services, levels, messages, metadatas, traceIds, spanIds];
+    } else {
+      query = `INSERT INTO ${s}.${t} (time, project_id, service, level, message, metadata, trace_id, span_id) SELECT * FROM UNNEST($1::timestamptz[], $2::${pidType}[], $3::text[], $4::text[], $5::text[], $6::jsonb[], $7::text[], $8::text[])`;
+      values = [times, projectIds, services, levels, messages, metadatas, traceIds, spanIds];
+    }
+
     if (returning) {
       query += ' RETURNING *';
     }
 
-    return { query, values: [times, projectIds, services, levels, messages, metadatas, traceIds, spanIds] };
+    return { query, values };
   }
 
   // =========================================================================

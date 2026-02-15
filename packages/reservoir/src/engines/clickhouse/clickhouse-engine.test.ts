@@ -30,9 +30,29 @@ function makeLog(overrides: Partial<LogRecord> = {}): LogRecord {
 describe('ClickHouseEngine (integration)', () => {
   let engine: ClickHouseEngine;
   let client: ClickHouseClient;
+  let available = false;
 
   beforeAll(async () => {
-    // Create a direct client for setup/cleanup
+    // Probe ClickHouse availability
+    const setupClient = createClient({
+      url: `http://${TEST_CONFIG.host}:${TEST_CONFIG.port}`,
+      username: TEST_CONFIG.username,
+      password: TEST_CONFIG.password,
+    });
+
+    try {
+      await setupClient.query({ query: 'SELECT 1', format: 'JSONEachRow' });
+    } catch {
+      console.warn('ClickHouse not available at localhost:18123 — skipping integration tests');
+      await setupClient.close();
+      return;
+    }
+
+    // Create test database if it doesn't exist
+    await setupClient.command({ query: `CREATE DATABASE IF NOT EXISTS ${TEST_CONFIG.database}` });
+    await setupClient.close();
+
+    // Now connect to the test database
     client = createClient({
       url: `http://${TEST_CONFIG.host}:${TEST_CONFIG.port}`,
       username: TEST_CONFIG.username,
@@ -40,22 +60,14 @@ describe('ClickHouseEngine (integration)', () => {
       database: TEST_CONFIG.database,
     });
 
-    // Wait for ClickHouse to be ready
-    for (let i = 0; i < 20; i++) {
-      try {
-        await client.query({ query: 'SELECT 1', format: 'JSONEachRow' });
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
     engine = new ClickHouseEngine(TEST_CONFIG, { tableName: TABLE_NAME });
     await engine.connect();
     await engine.initialize();
+    available = true;
   }, 30_000);
 
   afterAll(async () => {
+    if (!available) return;
     try {
       await client.command({ query: `DROP TABLE IF EXISTS ${TABLE_NAME}` });
     } catch { /* ignore */ }
@@ -63,7 +75,8 @@ describe('ClickHouseEngine (integration)', () => {
     await client.close();
   });
 
-  beforeEach(async () => {
+  beforeEach(async ({ skip }) => {
+    if (!available) return skip();
     // Truncate table before each test
     await client.command({ query: `TRUNCATE TABLE IF EXISTS ${TABLE_NAME}` });
   });
@@ -124,8 +137,6 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ time: new Date('2025-01-15T14:00:00Z'), service: 'worker', level: 'error', message: 'worker crashed unexpectedly', projectId: 'proj-2' }),
       ];
       await engine.ingest(logs);
-      // ClickHouse may need a moment to make data available
-      await new Promise((r) => setTimeout(r, 500));
     });
 
     it('queries all logs within time range', async () => {
@@ -223,7 +234,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ time: new Date('2025-01-15T11:30:00Z'), level: 'warn' }),
       ];
       await engine.ingest(logs);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('aggregates by hour with byLevel', async () => {
@@ -246,7 +257,7 @@ describe('ClickHouseEngine (integration)', () => {
   describe('getById', () => {
     it('returns log by ID', async () => {
       const ingestResult = await engine.ingestReturning([makeLog()]);
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const log = await engine.getById({
         id: ingestResult.rows[0].id,
@@ -269,7 +280,7 @@ describe('ClickHouseEngine (integration)', () => {
 
     it('returns null for wrong project', async () => {
       const ingestResult = await engine.ingestReturning([makeLog()]);
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const log = await engine.getById({
         id: ingestResult.rows[0].id,
@@ -287,7 +298,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ message: 'second' }),
         makeLog({ message: 'third' }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const ids = ingestResult.rows.map((r) => r.id);
       const logs = await engine.getByIds({ ids: ids.slice(0, 2), projectId: 'proj-1' });
@@ -310,7 +321,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ level: 'info', service: 'worker', projectId: 'proj-2' }),
       ];
       await engine.ingest(logs);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('counts all logs for a project', async () => {
@@ -355,7 +366,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ service: 'scheduler', metadata: { hostname: 'server-3' } }),
       ];
       await engine.ingest(logs);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('gets distinct services', async () => {
@@ -405,7 +416,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ service: 'scheduler', level: 'warn', projectId: 'proj-2' }),
       ];
       await engine.ingest(logs);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('returns top values by count', async () => {
@@ -488,7 +499,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ time: new Date('2025-01-15T12:00:00.000Z'), message: 'at-end' }),
       ];
       await engine.ingest(logs);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('fromExclusive excludes exact from time', async () => {
@@ -539,7 +550,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeLog({ time: new Date('2025-01-10T12:00:00Z') }),
         makeLog({ time: new Date('2025-01-15T12:00:00Z') }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
 
       // ClickHouse DELETE is async - it returns immediately
       const result = await engine.deleteByTimeRange({
@@ -647,7 +658,7 @@ describe('ClickHouseEngine (integration)', () => {
       const result = await engine.ingestSpans([span]);
       expect(result.ingested).toBe(1);
 
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const spans = await engine.getSpansByTraceId('trace-abc', 'proj-1');
       expect(spans).toHaveLength(1);
@@ -666,7 +677,7 @@ describe('ClickHouseEngine (integration)', () => {
 
     it('inserts a new trace', async () => {
       await engine.upsertTrace(makeTrace({ traceId: 'trace-new' }));
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const trace = await engine.getTraceById('trace-new', 'proj-1');
       expect(trace).not.toBeNull();
@@ -682,7 +693,7 @@ describe('ClickHouseEngine (integration)', () => {
         endTime: new Date('2025-01-15T12:00:04Z'),
         spanCount: 2,
       }));
-      await new Promise((r) => setTimeout(r, 500));
+
 
       await engine.upsertTrace(makeTrace({
         traceId: 'trace-merge',
@@ -690,7 +701,7 @@ describe('ClickHouseEngine (integration)', () => {
         endTime: new Date('2025-01-15T12:00:05Z'),
         spanCount: 1,
       }));
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const trace = await engine.getTraceById('trace-merge', 'proj-1');
       expect(trace).not.toBeNull();
@@ -711,7 +722,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeSpan({ spanId: 'span-q3', time: new Date('2025-01-15T12:00:00Z'), startTime: new Date('2025-01-15T12:00:00Z'), serviceName: 'api', kind: 'server', projectId: 'proj-2' }),
       ];
       await engine.ingestSpans(spans);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('queries all spans for a project', async () => {
@@ -771,7 +782,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeSpan({ spanId: 'child', traceId: 'trace-t1', parentSpanId: 'root', startTime: new Date('2025-01-15T12:00:00.500Z') }),
         makeSpan({ spanId: 'other', traceId: 'trace-t2' }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('returns spans for specific trace ordered by start_time', async () => {
@@ -794,10 +805,29 @@ describe('ClickHouseEngine (integration)', () => {
     beforeEach(async () => {
       await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
 
-      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt1', durationMs: 1000, error: false }));
-      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt2', durationMs: 5000, error: true }));
-      await engine.upsertTrace(makeTrace({ traceId: 'trace-qt3', durationMs: 200, error: false, projectId: 'proj-2' }));
-      await new Promise((r) => setTimeout(r, 500));
+      await engine.upsertTrace(makeTrace({
+        traceId: 'trace-qt1',
+        startTime: new Date('2025-01-15T12:00:00Z'),
+        endTime: new Date('2025-01-15T12:00:01Z'),
+        durationMs: 1000,
+        error: false,
+      }));
+      await engine.upsertTrace(makeTrace({
+        traceId: 'trace-qt2',
+        startTime: new Date('2025-01-15T12:00:00Z'),
+        endTime: new Date('2025-01-15T12:00:05Z'),
+        durationMs: 5000,
+        error: true,
+      }));
+      await engine.upsertTrace(makeTrace({
+        traceId: 'trace-qt3',
+        startTime: new Date('2025-01-15T12:00:00Z'),
+        endTime: new Date('2025-01-15T12:00:00.200Z'),
+        durationMs: 200,
+        error: false,
+        projectId: 'proj-2',
+      }));
+
     });
 
     it('queries traces for a project', async () => {
@@ -842,7 +872,7 @@ describe('ClickHouseEngine (integration)', () => {
       await client.command({ query: 'TRUNCATE TABLE IF EXISTS traces' });
 
       await engine.upsertTrace(makeTrace({ traceId: 'trace-get1' }));
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('returns trace when found', async () => {
@@ -874,7 +904,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeSpan({ spanId: 'child-1', traceId: 'trace-dep', parentSpanId: 'parent-1', serviceName: 'db', startTime: new Date('2025-01-15T12:00:00.100Z') }),
         makeSpan({ spanId: 'child-2', traceId: 'trace-dep', parentSpanId: 'parent-1', serviceName: 'cache', startTime: new Date('2025-01-15T12:00:00.200Z') }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('returns service dependency graph', async () => {
@@ -905,7 +935,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeSpan({ spanId: 'p1', traceId: 'trace-same', serviceName: 'api' }),
         makeSpan({ spanId: 'c1', traceId: 'trace-same', parentSpanId: 'p1', serviceName: 'api' }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
 
       const result = await engine.getServiceDependencies('proj-1');
       expect(result.edges).toHaveLength(0);
@@ -921,7 +951,7 @@ describe('ClickHouseEngine (integration)', () => {
         makeSpan({ spanId: 'old-span', time: new Date('2025-01-10T12:00:00Z'), startTime: new Date('2025-01-10T12:00:00Z') }),
         makeSpan({ spanId: 'new-span', time: new Date('2025-01-15T12:00:00Z'), startTime: new Date('2025-01-15T12:00:00Z') }),
       ]);
-      await new Promise((r) => setTimeout(r, 500));
+
     });
 
     it('issues delete mutation for spans', async () => {

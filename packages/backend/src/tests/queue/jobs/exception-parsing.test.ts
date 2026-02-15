@@ -18,14 +18,7 @@ vi.mock('../../../queue/connection.js', () => {
       on: vi.fn(),
       close: vi.fn(),
     })),
-    connection: {
-      duplicate: vi.fn(() => ({
-        subscribe: vi.fn(),
-        on: vi.fn(),
-        unsubscribe: vi.fn(),
-        disconnect: vi.fn(),
-      })),
-    },
+    getConnection: () => null,
   };
 });
 

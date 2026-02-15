@@ -334,10 +334,10 @@ class DashboardService {
         to: lastHour,
         interval: '1h',
       });
-      historicalResults = aggResult.timeseries.flatMap((bucket) => {
+      historicalResults = aggResult.timeseries.flatMap((bucket: { bucket: Date; byLevel?: Record<string, number> }) => {
         const entries: Array<{ bucket: string | Date; level: string; count: string }> = [];
         if (bucket.byLevel) {
-          for (const [level, count] of Object.entries(bucket.byLevel)) {
+          for (const [level, count] of Object.entries(bucket.byLevel) as [string, number][]) {
             if (count > 0) {
               entries.push({ bucket: bucket.bucket, level, count: String(count) });
             }
@@ -354,10 +354,10 @@ class DashboardService {
       to: now,
       interval: '1h',
     });
-    recentResults = recentAgg.timeseries.flatMap((bucket) => {
+    recentResults = recentAgg.timeseries.flatMap((bucket: { bucket: Date; byLevel?: Record<string, number> }) => {
       const entries: Array<{ bucket: string; level: string; count: string }> = [];
       if (bucket.byLevel) {
-        for (const [level, count] of Object.entries(bucket.byLevel)) {
+        for (const [level, count] of Object.entries(bucket.byLevel) as [string, number][]) {
           if (count > 0) {
             entries.push({ bucket: bucket.bucket.toISOString(), level, count: String(count) });
           }
@@ -540,7 +540,7 @@ class DashboardService {
     const total = totalResult.count;
     if (total === 0) return [];
 
-    return topResult.values.map((s) => ({
+    return topResult.values.map((s: { value: string; count: number }) => ({
       name: s.value,
       count: s.count,
       percentage: Math.round((s.count / total) * 100),
@@ -718,7 +718,7 @@ class DashboardService {
       sortOrder: 'desc',
     });
 
-    const result = queryResult.logs.map((e) => ({
+    const result = queryResult.logs.map((e: { time: Date; service: string; level: string; message: string; projectId: string; traceId?: string }) => ({
       time: e.time.toISOString(),
       service: e.service,
       level: e.level as 'error' | 'critical',
